@@ -121,6 +121,11 @@ function setTitle(view: ViewId, detailTitle?: string): void {
 }
 
 async function go(view: ViewId): Promise<void> {
+  if (view === 'acc') {
+    // La liste Comptes fonctionnelle vit dans le shell React (/app/accounts).
+    window.location.href = '/app/accounts'
+    return
+  }
   currentView = view
   document.body.classList.toggle('home-cockpit-active', view === 'home')
   document.querySelectorAll<HTMLElement>('.view').forEach((node) => node.classList.toggle('active', node.id === `view-${view}`))
@@ -135,7 +140,6 @@ async function go(view: ViewId): Promise<void> {
   }
   try {
     if (view === 'home') await loadHome()
-    if (view === 'acc') await loadAccounts()
     if (view === 'per') await loadPeople()
     if (view === 'connecteurs') await loadConnectors()
     if (view === 'profil') await loadOwnProfile()

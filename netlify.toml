@@ -1,0 +1,12 @@
+# Déploiement Netlify — app Vite multi-pages.
+# Les routes React (/app/*) sont servies par app.html (équivalent du
+# middleware de dev vite.config.ts) ; le reste correspond aux pages HTML.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/app/*"
+  to = "/app.html"
+  status = 200

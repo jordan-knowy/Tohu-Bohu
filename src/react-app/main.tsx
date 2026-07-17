@@ -7,9 +7,11 @@ import '../styles/tokens.css'
 import '../styles/app.css'
 import '../styles/account-detail.css'
 import '../styles/person-detail.css'
+import '../styles/account-list.css'
 import { initials, requireSession, signOut } from '../lib/auth'
 import { getOrganizationId, saveSignalFeedback } from '../app/data'
 import PersonDetailPage from '../person-detail/PersonDetailPage'
+import AccountsListPage from '../account-list/AccountsListPage'
 import {
   addAccountNote,
   getAccountDetail,
@@ -75,7 +77,7 @@ function AppShell({ context }: { context: AppContext }) {
       <nav aria-label="Navigation principale">
         <a href="/tohu-app.html?view=cerveau">Ask Tohu</a>
         <a href="/tohu-app.html?view=home">Home</a>
-        <a className="active" href="/tohu-app.html?view=acc">Comptes</a>
+        <Link className="active" to="/app/accounts">Comptes</Link>
         <a href="/tohu-app.html?view=per">Personnes</a>
         <a href="/tohu-app.html?view=connecteurs">Connecteurs</a>
       </nav>
@@ -250,7 +252,7 @@ function AccountPage({ context }: { context: AppContext }) {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
   }, [accountId, context.workspaceId])
   useEffect(() => { void refresh() }, [refresh])
-  if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><a href="/tohu-app.html?view=acc">Retour aux comptes</a></div>
+  if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <div className="ra-skeleton" aria-label="Chargement de la fiche compte"><i /><i /><i /></div>
   const account = data.account
@@ -258,7 +260,7 @@ function AccountPage({ context }: { context: AppContext }) {
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }
   return <>
-    <div className="ra-page-actions"><a href="/tohu-app.html?view=acc">← Comptes</a><div><button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link></div></div>
+    <div className="ra-page-actions"><Link to="/app/accounts">← Comptes</Link><div><button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link></div></div>
     <section className={`ra-hero ${account.archivedAt ? 'archived' : ''}`}>
       <div className="ra-account-avatar">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}</div>
       <div className="ra-account-identity"><div className="ra-eyebrow">{account.strategic ? 'Compte stratégique' : account.relationshipStatus ?? 'Statut à confirmer'}</div><h1>{account.name}</h1>
@@ -313,6 +315,7 @@ async function boot() {
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
     <Route element={<AppShell context={context} />}>
       <Route index element={<Navigate to="/tohu-app.html?view=home" replace />} />
+      <Route path="/app/accounts" element={<AccountsListPage context={{ workspaceId: context.workspaceId, userId: context.session.user.id }} />} />
       <Route path="/app/accounts/:accountId" element={<AccountPage context={context} />} />
       <Route path="/app/people/:personId" element={<PersonDetailPage context={{ workspaceId: context.workspaceId, userId: context.session.user.id }} />} />
       <Route path="/app/connectors" element={<ConnectorsRedirect />} />

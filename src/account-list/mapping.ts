@@ -150,7 +150,7 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
       if (latest !== null && num(previous?.score) !== null) deltas.push(latest - num(previous?.score)!)
     }
     const meanDelta = deltas.length ? deltas.reduce((sum, value) => sum + value, 0) / deltas.length : null
-    const trend = meanDelta === null ? null : meanDelta > 1 ? 'up' : meanDelta < -1 ? 'down' : 'flat'
+    const trend: AccountListRow['trend'] = meanDelta === null ? null : meanDelta > 1 ? 'up' : meanDelta < -1 ? 'down' : 'flat'
 
     const startedAt = text(settings.relationship_started_at)
       ?? [...meetings.map((meeting) => text(meeting.starts_at))].filter((value): value is string => value !== null).sort()[0]

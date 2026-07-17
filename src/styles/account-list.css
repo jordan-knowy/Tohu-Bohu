@@ -14,7 +14,7 @@
 @keyframes paBlink{0%,100%{opacity:1}50%{opacity:.3}}
 .pa .crm-mvt-view{overflow:hidden;flex:1;position:relative;display:flex;align-items:center}
 .pa .crm-mvt-view::after{content:"";position:absolute;right:0;top:0;bottom:0;width:44px;background:linear-gradient(90deg,rgba(255,255,255,0),#fff);z-index:2;pointer-events:none}
-.pa .crm-mvt-track{display:inline-flex;align-items:center;white-space:nowrap;animation:paMv 60s linear infinite;will-change:transform}
+.pa .crm-mvt-track{display:inline-flex;align-items:center;white-space:nowrap;animation:paMv 140s linear infinite;will-change:transform}
 .pa .crm-mvt:hover .crm-mvt-track{animation-play-state:paused}
 @keyframes paMv{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .pa .crm-mv-item{display:inline-flex;align-items:center;gap:9px;padding:9px 24px;position:relative}
