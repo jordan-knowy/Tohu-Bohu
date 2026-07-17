@@ -189,7 +189,10 @@ function sortEntities<T extends Account | Person>(rows: T[], sort: string): T[] 
 const contactSelect = '*,companies(name),relationship_snapshots(engagement_score,last_contact_at,phase,snapshot_date),cognitive_profiles(global_confidence,summary,executive_summary,engagement_score,updated_at)'
 
 export async function getOrganizationId(): Promise<string> {
-  const { data, error } = await getSupabase().from('memberships').select('organization_id').limit(1).maybeSingle()
+  const { data: userData, error: userError } = await getSupabase().auth.getUser()
+  if (userError) throw userError
+  if (!userData.user) throw new Error('Aucune session active.')
+  const { data, error } = await getSupabase().from('memberships').select('organization_id').eq('user_id', userData.user.id).limit(1).maybeSingle()
   if (error) throw error
   if (!data?.organization_id) throw new Error('Aucune organisation n’est associée à ce compte.')
   return data.organization_id
