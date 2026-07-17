@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tohu — Prévisualisation Home (dev uniquement)</title>
+  </head>
+  <body class="app-page home-cockpit-active">
+    <div style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1A1040;color:#fff;font:700 10px 'JetBrains Mono',monospace;padding:6px 14px;display:flex;gap:14px;align-items:center">
+      <span>⚠ PRÉVISUALISATION DEV — données fictives, page non buildée en production</span>
+      <nav style="display:flex;gap:8px">
+        <a href="?state=cockpit" style="color:#D4C5F5">cockpit</a>
+        <a href="?state=s0" style="color:#D4C5F5">s0</a>
+        <a href="?state=s0-disconnected" style="color:#D4C5F5">s0 sans source</a>
+        <a href="?state=s2" style="color:#D4C5F5">s2</a>
+        <a href="?state=empty" style="color:#D4C5F5">cockpit vide</a>
+        <a href="?state=degraded" style="color:#D4C5F5">dégradé</a>
+        <a href="?state=error" style="color:#D4C5F5">erreur</a>
+      </nav>
+      <span id="console-errors" style="margin-left:auto;color:#96DDB8">console: 0 erreur</span>
+    </div>
+    <div class="app-main" style="margin-left:0;padding-top:30px">
+      <main class="content"><div id="home-content"></div></main>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script type="module" src="/src/app/home-preview.ts"></script>
+  </body>
+</html>

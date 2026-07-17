@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connexion — Tohu</title>
+  </head>
+  <body class="auth-page">
+    <main class="auth-shell">
+      <section class="auth-story">
+        <div id="brand"></div>
+        <div class="story-copy">
+          <span class="hero-kicker">Ton équipe sait déjà beaucoup</span>
+          <h1>Tohu l’aide à<br />s’en souvenir.</h1>
+          <p>Retrouve les personnes, les signaux et le contexte qui font avancer chaque relation.</p>
+        </div>
+        <div class="story-quote"><span>“</span><p>La bonne information, dans les mains de la bonne personne, au bon moment.</p></div>
+      </section>
+      <section class="auth-actions">
+        <div class="login-card panel">
+          <span class="auth-eyebrow">Accès sécurisé</span>
+          <h2>Bienvenue sur Tohu</h2>
+          <p class="auth-intro">Connecte-toi avec ton compte professionnel.</p>
+          <div class="sso-list">
+            <button class="sso google" data-provider="google"><span class="sso-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.3c1.9-1.8 2.9-4.4 2.9-7.4z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.7-2.4l-3.3-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-4V7.4H3a10 10 0 0 0 0 9.2L6.4 14z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.9 1.5l2.9-2.9A9.8 9.8 0 0 0 3 7.4L6.4 10c.8-2.4 3-4.1 5.6-4.1z"/></svg></span><span>Continuer avec Google</span></button>
+            <button class="sso microsoft" data-provider="azure"><span class="sso-ic tiles" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>Continuer avec Microsoft</span></button>
+            <button class="sso linkedin" data-provider="linkedin_oidc"><span class="sso-ic li" aria-hidden="true">in</span><span>Continuer avec LinkedIn</span></button>
+          </div>
+          <div class="or"><span></span><b>ou</b><span></span></div>
+          <p class="auth-help">Besoin d’un accès ? Demande une invitation à l’administrateur de ton équipe.</p>
+          <p id="auth-error" class="error-text" role="alert"></p>
+          <p class="legal">En continuant, tu acceptes les <a href="#">CGU</a> et la <a href="#">Politique de confidentialité</a>.</p>
+          <a class="back-home" href="/">← Retour à l’accueil</a>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/pages/login.ts"></script>
+  </body>
+</html>

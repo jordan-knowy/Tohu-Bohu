@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tohu — Cerveau relationnel</title>
+  </head>
+  <body class="app-page app-loading">
+    <div class="boot-screen" id="boot-screen"><div class="boot-logo" id="boot-logo"></div><span class="spinner"></span><p>Connexion au cerveau relationnel…</p></div>
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sb" id="sidebar">
+        <div class="sb-logo" id="brand"></div>
+        <button class="sb-collapse" id="collapse" aria-label="Réduire la navigation">‹</button>
+        <nav class="sb-nav" aria-label="Navigation principale">
+          <button class="nav-item" data-view="cerveau"><span class="nav-ic kbrand">T</span><span class="nav-label">Ask Tohu</span></button>
+          <button class="nav-item" data-view="home"><span class="nav-ic">⌂</span><span class="nav-label">Home</span></button>
+          <button class="nav-item" data-view="acc"><span class="nav-ic">▦</span><span class="nav-label">Comptes</span><span class="nav-count" id="accounts-count">0</span></button>
+          <button class="nav-item" data-view="per"><span class="nav-ic">♙</span><span class="nav-label">Personnes</span><span class="nav-count" id="people-count">0</span></button>
+          <span class="sb-spacer"></span><span class="sb-divider"></span>
+          <button class="nav-item" data-view="connecteurs"><span class="nav-ic">⌁</span><span class="nav-label">Connecteurs</span></button>
+          <button class="nav-item" data-view="profil"><span class="nav-ic">◎</span><span class="nav-label">Mon profil</span></button>
+        </nav>
+        <button class="sb-user nav-item" data-view="me"><span class="sb-avatar" id="sb-avatar">T</span><span class="nav-label"><b id="sb-name">Membre Tohu</b><small id="sb-plan">Tohu pro</small></span></button>
+      </aside>
+      <div class="app-main">
+        <header class="topbar">
+          <div><h1 id="page-title">Ask Tohu</h1><p id="page-subtitle">Le cerveau relationnel de ton équipe</p></div>
+          <div class="global-search"><span>⌕</span><input id="global-search" type="search" placeholder="Rechercher un compte, une personne…" autocomplete="off"/><div class="search-results" id="search-results" hidden></div></div>
+        </header>
+        <main class="content">
+          <section class="view" id="view-cerveau">
+            <div class="ask-layout">
+              <div class="ask-hero">
+                <span class="ask-mark">T</span>
+                <p class="ask-kicker">Ask Tohu</p>
+                <h2>Que veux-tu comprendre<br />aujourd’hui ?</h2>
+                <p>Interroge la mémoire relationnelle de ton équipe. Les réponses s’appuient uniquement sur les données auxquelles tu as accès.</p>
+              </div>
+              <div class="ask-thread" id="ask-thread" aria-live="polite"></div>
+              <div class="ask-suggestions" id="ask-suggestions">
+                <button>Quels comptes demandent mon attention ?</button>
+                <button>Avec qui reprendre contact cette semaine ?</button>
+                <button>Résume les derniers signaux de mon équipe</button>
+              </div>
+              <form class="ask-composer" id="ask-form"><textarea id="ask-input" rows="1" placeholder="Pose une question à Tohu…" required></textarea><button class="ask-send" aria-label="Envoyer">↑</button></form>
+              <p class="ask-disclaimer">Tohu peut se tromper. Les réponses sensibles doivent être vérifiées.</p>
+            </div>
+          </section>
+          <section class="view" id="view-home"><div id="home-content"></div></section>
+          <section class="view" id="view-acc">
+            <div class="view-toolbar"><div><h2>Portefeuille de comptes</h2><p>Entreprises et organisations suivies par ton équipe.</p></div><button class="btn-view" data-create="account">+ Nouveau compte</button></div>
+            <div class="filterbar panel"><label class="filter-search">⌕ <input id="account-search" placeholder="Rechercher un compte…" /></label><select id="account-status" class="select compact"><option value="">Tous les statuts</option><option value="active">Actifs</option><option value="watch">À surveiller</option><option value="inactive">Inactifs</option></select><select id="account-sort" class="select compact"><option value="updated_at.desc">Plus récents</option><option value="name.asc">Nom A–Z</option><option value="relationship_score.desc">Score décroissant</option><option value="relationship_score.asc">Score croissant</option></select></div>
+            <div class="list-panel panel" id="accounts-list"></div>
+          </section>
+          <section class="view" id="view-per">
+            <div class="view-toolbar"><div><h2>Personnes suivies</h2><p>Contacts et profils relationnels de l’équipe.</p></div><button class="btn-view" data-create="person">+ Nouvelle personne</button></div>
+            <div class="filterbar panel"><label class="filter-search">⌕ <input id="people-search" placeholder="Rechercher une personne…" /></label><select id="people-status" class="select compact"><option value="">Tous les statuts</option><option value="active">Actifs</option><option value="watch">À surveiller</option><option value="inactive">Inactifs</option></select><select id="people-sort" class="select compact"><option value="updated_at.desc">Plus récents</option><option value="full_name.asc">Nom A–Z</option><option value="relationship_score.desc">Score décroissant</option><option value="relationship_score.asc">Score croissant</option></select></div>
+            <div class="list-panel panel" id="people-list"></div>
+          </section>
+          <section class="view" id="view-detail"><button class="detail-back btn-secondary" id="detail-back">← Retour</button><div id="detail-content"></div></section>
+          <section class="view" id="view-connecteurs"><div id="connectors-content"></div></section>
+          <section class="view" id="view-profil"><div id="profile-content"></div></section>
+          <section class="view" id="view-me"><div id="settings-content"></div></section>
+        </main>
+      </div>
+    </div>
+    <div class="modal-layer" id="modal" hidden><div class="modal panel" role="dialog" aria-modal="true"><div class="panel-head"><div><div class="panel-title" id="modal-title"></div><div class="panel-sub" id="modal-subtitle"></div></div><button class="modal-close" id="modal-close" aria-label="Fermer">×</button></div><form class="panel-body modal-form" id="modal-form"></form></div></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

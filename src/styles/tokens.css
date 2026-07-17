@@ -1,0 +1,57 @@
+:root {
+  --bg:#F9F8FC;--bg2:#F0EEF8;--bg3:#E8E4F4;--white:#FFFFFF;
+  --night:#1A1040;--night2:#2A1E60;
+  --violet:#6E50C8;--violet-d:#5A3EAA;--violet-l:#D4C5F5;
+  --violet-s:rgba(110,80,200,.08);--violet-m:rgba(110,80,200,.15);--violet-b:rgba(110,80,200,.10);--violet-x:rgba(110,80,200,.18);
+  --t1:#1A1040;--t2:#5A4880;--t3:#9082B8;--t4:#C4B8E0;
+  --sage:#2EA86A;--sage-s:#E4F5ED;--sage-l:#96DDB8;
+  --amber:#C97A20;--amber-s:#FBF0E2;--amber-l:#F0C07A;
+  --coral:#D94F63;--coral-s:#FDEAED;--coral-l:#F0A0AD;
+  --blue:#3D6FCC;--blue-s:#E5EDFF;--blue-l:#9DBAF5;
+  --teal:#2896A8;--teal-s:#E2F4F7;
+  --border:rgba(110,80,200,.10);--border-m:rgba(110,80,200,.18);--border-s:rgba(110,80,200,.28);
+  --sh-xs:0 1px 4px rgba(110,80,200,.07);--sh-sm:0 2px 16px rgba(110,80,200,.08);
+  --sh-md:0 6px 28px rgba(110,80,200,.11);--sh-lg:0 16px 56px rgba(110,80,200,.14);
+  --r-sm:6px;--r-md:10px;--r-lg:14px;--r-xl:20px;--r-2xl:28px;--r-f:999px;
+  --font:'Epilogue',sans-serif;--mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.4,0,.2,1);--overshoot:cubic-bezier(.22,.68,0,1.2);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--font);font-size:13px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit}
+button,a{transition:all .16s var(--ease)}
+button{color:inherit}
+a{color:inherit}
+[hidden]{display:none!important}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.mono{font-family:var(--mono)}
+.muted{color:var(--t3)}
+.error-text{color:var(--coral);font-size:11px;min-height:18px}
+.success-text{color:var(--sage);font-size:11px;min-height:18px}
+.btn-view,.btn-secondary,.btn-danger{min-height:42px;border-radius:var(--r-f);padding:0 18px;font-weight:800;border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn-view{background:var(--violet);color:#fff;box-shadow:0 5px 16px rgba(110,80,200,.22)}
+.btn-view:hover{background:var(--violet-d);box-shadow:0 8px 22px rgba(110,80,200,.28);transform:translateY(-1px)}
+.btn-secondary{background:var(--white);border-color:var(--border-m);color:var(--t2)}
+.btn-secondary:hover{border-color:var(--violet);color:var(--violet);box-shadow:var(--sh-xs)}
+.btn-danger{background:var(--coral-s);border-color:rgba(217,79,99,.22);color:var(--coral)}
+.btn-view:disabled,.btn-secondary:disabled,.btn-danger:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.panel{background:var(--white);border:1px solid var(--border);border-radius:var(--r-xl);box-shadow:var(--sh-sm)}
+.panel-head{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.panel-ic{width:30px;height:30px;display:grid;place-items:center;border-radius:var(--r-md);background:var(--violet-s);color:var(--violet)}
+.panel-title{font-weight:900;letter-spacing:-.02em}
+.panel-sub{font-size:11px;color:var(--t3)}
+.panel-body{padding:18px}
+.field{display:grid;gap:6px}
+.field label{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3)}
+.input,.select,.textarea{width:100%;border:1px solid var(--border-m);border-radius:var(--r-md);background:var(--white);color:var(--t1);padding:11px 12px;outline:none}
+.input:focus,.select:focus,.textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violet-s)}
+.textarea{resize:vertical;min-height:92px}
+.logo{display:inline-flex;align-items:center;gap:9px;text-decoration:none}
+.logo-mark{display:flex;width:31px;height:31px}
+.logo-mark svg{width:100%;height:100%;display:block}
+.logo-word{font-weight:900;font-size:20px;letter-spacing:-.04em}.logo-word i{font-style:normal;color:var(--violet)}
+.spinner{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:780px){.btn-view,.btn-secondary{min-height:44px}}

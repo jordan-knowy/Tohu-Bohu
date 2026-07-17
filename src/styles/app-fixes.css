@@ -1,0 +1,41 @@
+.entity-row {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.entity-row:last-child {
+  border-bottom: 0;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.panel-head > span:not(.panel-ic) {
+  min-width: 0;
+}
+
+.panel-title,
+.panel-sub {
+  display: block;
+}
+
+.panel-sub {
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.connector-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

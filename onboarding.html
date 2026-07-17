@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bienvenue — Tohu</title>
+  </head>
+  <body class="onboarding-page">
+    <header class="onboarding-nav"><div id="brand"></div><button id="logout" class="text-link">Se déconnecter</button></header>
+    <main class="onboarding-main">
+      <div class="onboarding-progress" aria-label="Progression"><i class="active"></i><i></i></div>
+      <section class="onboarding-card panel" id="step-identity">
+        <span class="auth-eyebrow">Étape 1 sur 2</span>
+        <div class="identity-head"><div class="profile-avatar" id="avatar">T</div><div><h1 id="welcome">Bienvenue dans Tohu</h1><p id="identity-email"></p></div></div>
+        <p class="step-copy">Ton identité professionnelle nous aide à personnaliser ton cerveau relationnel.</p>
+        <div class="field"><label for="role">Ton rôle dans l’équipe</label><select class="select" id="role"><option value="">Sélectionner un rôle</option><option>Direction</option><option>Commercial</option><option>Customer Success</option><option>Partenariats</option><option>Opérations</option><option>Autre</option></select></div>
+        <p id="onboarding-error" class="error-text" role="alert"></p>
+        <button id="next" class="btn-view full">Suivant <span>→</span></button>
+      </section>
+      <section class="onboarding-card panel" id="step-connectors" hidden>
+        <span class="auth-eyebrow">Étape 2 sur 2</span>
+        <h1>Connecte tes sources</h1>
+        <p class="step-copy">Facultatif pour commencer. Tu pourras les gérer à tout moment dans Tohu.</p>
+        <div class="onboarding-connectors" id="connector-list"></div>
+        <p id="connector-error" class="error-text" role="alert"></p>
+        <div class="onboarding-actions"><button id="previous" class="btn-secondary">Précédent</button><button id="finish" class="btn-view">Voir mon cerveau relationnel <span>→</span></button></div>
+        <button id="skip" class="text-link centered">Passer cette étape</button>
+      </section>
+    </main>
+    <script type="module" src="/src/pages/onboarding.ts"></script>
+  </body>
+</html>
