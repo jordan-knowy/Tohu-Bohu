@@ -57,6 +57,8 @@ export type ProfileRow = {
   website_url: string | null
   product_summary: string | null
   onboarding_completed: boolean
+  platform_role: 'user' | 'super_admin'
+  is_super_admin: boolean
 }
 
 export type UserBehaviorProfile = {
@@ -181,9 +183,13 @@ export async function listAccounts(search = '', status = '', sort = 'updated_at.
     const term = escapeFilter(search)
     query = query.or(`name.ilike.%${term}%,domain.ilike.%${term}%,industry.ilike.%${term}%`)
   }
-  const { data, error } = await query
+  const [{ data, error }, { data: archivedRows }] = await Promise.all([
+    query,
+    getSupabase().from('account_settings').select('company_id').not('archived_at', 'is', null),
+  ])
   if (error) throw error
-  const rows = (data ?? []).map((row) => mapAccount(row as DbRow)).filter((row) => !status || row.status === status)
+  const archivedIds = new Set((archivedRows ?? []).map((row) => String(row.company_id)))
+  const rows = (data ?? []).map((row) => mapAccount(row as DbRow)).filter((row) => !archivedIds.has(row.id) && (!status || row.status === status))
   return sortEntities(rows, sort)
 }
 
@@ -193,9 +199,13 @@ export async function listPeople(search = '', status = '', sort = 'updated_at.de
     const term = escapeFilter(search)
     query = query.or(`full_name.ilike.%${term}%,email.ilike.%${term}%,role_title.ilike.%${term}%`)
   }
-  const { data, error } = await query
+  const [{ data, error }, { data: archivedRows }] = await Promise.all([
+    query,
+    getSupabase().from('person_settings').select('contact_id').not('archived_at', 'is', null),
+  ])
   if (error) throw error
-  const rows = (data ?? []).map((row) => mapPerson(row as DbRow)).filter((row) => !status || row.status === status)
+  const archivedIds = new Set((archivedRows ?? []).map((row) => String(row.contact_id)))
+  const rows = (data ?? []).map((row) => mapPerson(row as DbRow)).filter((row) => !archivedIds.has(row.id) && (!status || row.status === status))
   return sortEntities(rows, sort)
 }
 
@@ -304,7 +314,7 @@ export async function setConnector(userId: string, provider: string, status: Con
 }
 
 export async function getProfile(userId: string): Promise<ProfileRow> {
-  const { data, error } = await getSupabase().from('profiles').select('id,full_name,avatar_url,role_title,company_name,website_url,product_summary,onboarding_completed').eq('id', userId).single()
+  const { data, error } = await getSupabase().from('profiles').select('id,full_name,avatar_url,role_title,company_name,website_url,product_summary,onboarding_completed,platform_role,is_super_admin').eq('id', userId).single()
   if (error) throw error
   return { ...data, full_name: data.full_name ?? 'Membre Tohu', email: null, role: data.role_title, role_title: data.role_title } as ProfileRow
 }

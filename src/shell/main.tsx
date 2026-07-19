@@ -19,6 +19,7 @@ import '../styles/account-detail.css'
 import '../styles/person-detail.css'
 import '../styles/account-list.css'
 import '../styles/person-list.css'
+import '../styles/super-admin.css'
 import { tohuLogo } from '../components/logo'
 import { displayName, initials, requireSession } from '../lib/auth'
 import { getOrganizationId, getProfile, listAccounts, listPeople } from '../services/data'
@@ -34,6 +35,7 @@ import HomePage from './pages/HomePage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import ProfilePage from './pages/ProfilePage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
+import SuperAdminPage from '../super-admin/SuperAdminPage'
 
 type AppContext = { session: Session; workspaceId: string }
 
@@ -101,7 +103,11 @@ function AppShell({ context }: { context: AppContext }) {
     })
     loadFooter()
     window.addEventListener('tohu:profile-updated', loadFooter)
-    return () => window.removeEventListener('tohu:profile-updated', loadFooter)
+    window.addEventListener('tohu:workspace-updated', loadFooter)
+    return () => {
+      window.removeEventListener('tohu:profile-updated', loadFooter)
+      window.removeEventListener('tohu:workspace-updated', loadFooter)
+    }
   }, [context.session.user, context.workspaceId])
 
   useEffect(() => {
@@ -158,6 +164,7 @@ async function boot() {
   const workspaceId = await getOrganizationId()
   const context = { session, workspaceId }
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
+    <Route path="/super-admin" element={<SuperAdminPage />} />
     <Route element={<AppShell context={context} />}>
       <Route index element={<Navigate to="/app/home" replace />} />
       <Route path="/app/home" element={<ToastProvider><HomePage context={context} /></ToastProvider>} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { Link } from 'react-router-dom'
 import { getSupabase } from '../../lib/supabase'
 import { signOut } from '../../lib/auth'
 import { getProfile, type ProfileRow } from '../../services/data'
@@ -98,6 +99,16 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
         <p className="plan-copy">Statut : {plan.status}. La facturation n’est pas encore gérée depuis cette interface.</p>
       </div>
     </section>
+    {profile.platform_role === 'super_admin' && profile.is_super_admin ? <section className="panel super-admin-entry">
+      <header className="panel-head">
+        <span className="super-admin-entry__badge">TOHU INTERNE</span>
+        <span><span className="panel-title">Mode Super Admin</span><span className="panel-sub">Pilotage global et KPIs de la plateforme</span></span>
+      </header>
+      <div className="panel-body">
+        <p>Accède à la vue consolidée de Tohu. Cet espace est séparé des données de ton workspace.</p>
+        <Link className="btn-view" to="/super-admin">Activer le mode Super Admin <span aria-hidden="true">→</span></Link>
+      </div>
+    </section> : null}
     <section className="panel">
       <header className="panel-head"><span><span className="panel-title">Session</span><span className="panel-sub">Sécurité de ton compte</span></span></header>
       <div className="panel-body"><button type="button" className="btn-secondary" onClick={() => void signOut()}>Se déconnecter</button></div>
