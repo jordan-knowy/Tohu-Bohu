@@ -1,0 +1,46 @@
+create schema if not exists extensions;
+
+alter extension vector set schema extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
+
+revoke execute on function public.is_org_member(uuid) from public, anon, authenticated;
+revoke execute on function public.is_org_admin(uuid) from public, anon, authenticated;
+
+create index if not exists audit_logs_actor_user_id_idx on public.audit_logs(actor_user_id);
+create index if not exists audit_logs_organization_id_idx on public.audit_logs(organization_id);
+create index if not exists behavioral_signals_organization_id_idx on public.behavioral_signals(organization_id);
+create index if not exists behavioral_signals_profile_id_idx on public.behavioral_signals(profile_id);
+create index if not exists brief_insights_brief_id_idx on public.brief_insights(brief_id);
+create index if not exists brief_insights_organization_id_idx on public.brief_insights(organization_id);
+create index if not exists briefs_organization_id_idx on public.briefs(organization_id);
+create index if not exists communication_messages_contact_id_idx on public.communication_messages(contact_id);
+create index if not exists communication_messages_organization_id_idx on public.communication_messages(organization_id);
+create index if not exists communication_messages_thread_id_idx on public.communication_messages(thread_id);
+create index if not exists communication_threads_organization_id_idx on public.communication_threads(organization_id);
+create index if not exists companies_organization_id_idx on public.companies(organization_id);
+create index if not exists connectors_user_id_idx on public.connectors(user_id);
+create index if not exists contacts_company_id_idx on public.contacts(company_id);
+create index if not exists interaction_axis_scores_organization_id_idx on public.interaction_axis_scores(organization_id);
+create index if not exists interaction_axis_scores_profile_id_idx on public.interaction_axis_scores(profile_id);
+create index if not exists interaction_mode_scores_organization_id_idx on public.interaction_mode_scores(organization_id);
+create index if not exists interaction_mode_scores_profile_id_idx on public.interaction_mode_scores(profile_id);
+create index if not exists meeting_participants_contact_id_idx on public.meeting_participants(contact_id);
+create index if not exists meeting_participants_meeting_id_idx on public.meeting_participants(meeting_id);
+create index if not exists meeting_participants_organization_id_idx on public.meeting_participants(organization_id);
+create index if not exists meeting_transcripts_meeting_id_idx on public.meeting_transcripts(meeting_id);
+create index if not exists meeting_transcripts_organization_id_idx on public.meeting_transcripts(organization_id);
+create index if not exists meetings_company_id_idx on public.meetings(company_id);
+create index if not exists meetings_owner_user_id_idx on public.meetings(owner_user_id);
+create index if not exists notes_author_user_id_idx on public.notes(author_user_id);
+create index if not exists notes_contact_id_idx on public.notes(contact_id);
+create index if not exists notes_meeting_id_idx on public.notes(meeting_id);
+create index if not exists notes_organization_id_idx on public.notes(organization_id);
+create index if not exists notification_preferences_user_id_idx on public.notification_preferences(user_id);
+create index if not exists oauth_accounts_connector_id_idx on public.oauth_accounts(connector_id);
+create index if not exists oauth_accounts_organization_id_idx on public.oauth_accounts(organization_id);
+create index if not exists privacy_settings_user_id_idx on public.privacy_settings(user_id);
+create index if not exists relationship_edges_from_contact_id_idx on public.relationship_edges(from_contact_id);
+create index if not exists relationship_edges_organization_id_idx on public.relationship_edges(organization_id);
+create index if not exists relationship_edges_to_contact_id_idx on public.relationship_edges(to_contact_id);
+create index if not exists sync_jobs_connector_id_idx on public.sync_jobs(connector_id);
+create index if not exists sync_jobs_organization_id_idx on public.sync_jobs(organization_id);

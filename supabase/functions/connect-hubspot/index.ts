@@ -68,21 +68,56 @@ Deno.serve(async (req) => {
         return Response.redirect(`${APP_URL}/app/connectors?error=hubspot_token_exchange`, 302);
       }
 
-      await (supabase.from('connectors') as any).upsert({
+      // Ligne de base « not_connected » : le statut ne passe à « connected » qu'après
+      // le stockage effectif du jeton chiffré (même garde-fou que connect-email-provider).
+      const { data: connector, error: connectorError } = await supabase.from('connectors').upsert({
         organization_id: orgId,
         user_id: userId,
         provider: 'hubspot',
-        status: 'connected',
+        status: 'not_connected',
         scopes: SCOPES.split(' '),
-        metadata: {
-          access_token: tokenData.access_token,
-          refresh_token: tokenData.refresh_token,
-          expires_in: tokenData.expires_in,
-          token_stored_at: new Date().toISOString(),
-        },
+        metadata: { connected_at: new Date().toISOString() },
         last_synced_at: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'organization_id,user_id,provider' });
+      }, { onConflict: 'organization_id,user_id,provider' }).select('id').single();
+      if (connectorError || !connector) {
+        console.error('HubSpot connector upsert failed:', connectorError?.message);
+        return Response.redirect(`${APP_URL}/app/connectors?error=hubspot_internal`, 302);
+      }
+
+      // Identifie le portail HubSpot connecté (hub_id/hub_domain) pour l'afficher dans l'UI.
+      let hubId: string | null = null;
+      let hubDomain: string | null = null;
+      try {
+        const infoRes = await fetch(`https://api.hubapi.com/oauth/v1/access-tokens/${tokenData.access_token}`);
+        if (infoRes.ok) {
+          const info = await infoRes.json();
+          hubId = info.hub_id != null ? String(info.hub_id) : null;
+          hubDomain = info.hub_domain ?? null;
+        }
+      } catch (infoError) {
+        console.error('HubSpot token-info lookup failed:', infoError instanceof Error ? infoError.message : infoError);
+      }
+
+      const { error: oauthError } = await supabase.rpc('store_oauth_tokens_server', {
+        p_organization_id: orgId,
+        p_connector_id: connector.id,
+        p_provider_account_id: hubId ?? 'hubspot',
+        p_access_token: tokenData.access_token,
+        p_refresh_token: tokenData.refresh_token ?? null,
+        p_expires_at: new Date(Date.now() + Math.max(60, Number(tokenData.expires_in ?? 1800)) * 1000).toISOString(),
+      });
+      if (oauthError) {
+        console.error('HubSpot token storage failed:', oauthError.message);
+        await supabase.from('connectors').update({ status: 'error', metadata: { last_error: oauthError.message.slice(0, 500) } }).eq('id', connector.id);
+        return Response.redirect(`${APP_URL}/app/connectors?error=hubspot_token_storage`, 302);
+      }
+
+      await supabase.from('connectors').update({
+        status: 'connected',
+        metadata: { hub_id: hubId, hub_domain: hubDomain, connected_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).eq('id', connector.id);
 
       return Response.redirect(`${APP_URL}/app/connectors?connected=hubspot`, 302);
     } catch (e: any) {

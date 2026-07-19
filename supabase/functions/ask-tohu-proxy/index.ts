@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
         model: Deno.env.get('OPENROUTER_MODEL') ?? 'openai/gpt-4.1-mini',
         temperature: 0.2,
         messages: [
-          { role: 'system', content: `Tu es Ask Tohu, le cerveau relationnel d'une équipe. Réponds en français, de façon directe, utile et sobre. Appuie-toi uniquement sur le contexte JSON fourni. N'invente aucune donnée. Si l'information manque, dis-le clairement. Contexte accessible à cet utilisateur : ${context}` },
+          { role: 'system', content: `Tu es Ask Bohu, le cerveau relationnel d'une équipe. Réponds en français, de façon directe, utile et sobre. Appuie-toi uniquement sur le contexte JSON fourni. N'invente aucune donnée. Si l'information manque, dis-le clairement. Contexte accessible à cet utilisateur : ${context}` },
           ...safeHistory,
           { role: 'user', content: message.trim() },
         ],
