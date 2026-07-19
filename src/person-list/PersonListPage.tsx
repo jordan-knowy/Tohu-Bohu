@@ -61,7 +61,7 @@ function CreatePersonModal({ onClose, refresh }: { onClose: () => void; refresh:
     <div className="dxp-iov-bg" onClick={onClose} />
     <div className="dxp-iov-card">
       <div className="dxp-iov-head">Intégrer des personnes<button type="button" className="dxp-iov-x" aria-label="Fermer" onClick={onClose}>✕</button></div>
-      <div className="dxp-iov-sub">Ajoute une personne suivie par ton équipe.</div>
+      <div className="dxp-iov-sub">Ajoute explicitement une personne suivie par ton équipe, y compris une adresse générique ou une newsletter volontairement suivie.</div>
       <form onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 10, marginTop: 6 }}>
         <div className="field"><label htmlFor="pl-name">Nom complet</label><input className="input" id="pl-name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Prénom Nom" required /></div>
         <div className="field"><label htmlFor="pl-email">Email</label><input className="input" id="pl-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="prenom.nom@exemple.com" /></div>

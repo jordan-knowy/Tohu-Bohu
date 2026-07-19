@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { classifyEmailAutomation } from './email-classification.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,7 @@ type Mail = {
   sentAt: string
   body: string
   direction: 'inbound' | 'outbound'
+  headers?: Record<string, string>
 }
 type Analysis = {
   executive_summary?: string
@@ -50,13 +52,6 @@ const PUBLIC_EMAIL_DOMAINS = new Set([
 function corporateDomain(email: string): string | null {
   const domain = cleanEmail(email).split('@')[1] ?? ''
   return domain && !PUBLIC_EMAIL_DOMAINS.has(domain) ? domain : null
-}
-
-/** Expéditeur automatisé (notification, no-reply, boîte générique) : jamais transformé en contact/compte. */
-function isNotificationSender(email: string): boolean {
-  if (/noreply|no-reply|donotreply|bounce|mailer-daemon/i.test(email)) return true
-  const local = email.split('@')[0] ?? ''
-  return /noreply|no-reply|notifications?|alerts?|support|info|contact|newsletter/i.test(local)
 }
 
 function companyNameFromDomain(domain: string): string {
@@ -112,6 +107,13 @@ function header(headers: Array<{ name: string; value: string }>, name: string): 
   return headers.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ?? ''
 }
 
+function automationHeaders(headers: Array<{ name: string; value: string }>): Record<string, string> {
+  const names = new Set(['auto-submitted', 'precedence', 'list-id', 'list-unsubscribe', 'x-auto-response-suppress'])
+  return Object.fromEntries(headers
+    .filter((item) => names.has(item.name.toLowerCase()))
+    .map((item) => [item.name.toLowerCase(), item.value]))
+}
+
 async function refreshAccessToken(provider: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
   const isGoogle = provider === 'google'
   const clientId = Deno.env.get(isGoogle ? 'GOOGLE_CLIENT_ID' : 'MICROSOFT_CLIENT_ID')
@@ -141,7 +143,7 @@ async function gmailMessages(token: string, ownEmail: string): Promise<Mail[]> {
       const from = parseAddress(header(headers, 'From'))
       const to = header(headers, 'To').split(',').map(parseAddress).filter((item) => item.email)
       const direction = from.email === ownEmail ? 'outbound' as const : 'inbound' as const
-      return { id, threadId, subject: header(headers, 'Subject'), from, to, sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(), body: sanitizeBody(gmailBody(message.payload)), direction }
+      return { id, threadId, subject: header(headers, 'Subject'), from, to, sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(), body: sanitizeBody(gmailBody(message.payload)), direction, headers: automationHeaders(headers) }
     }))
     output.push(...batch.filter((item): item is Mail => Boolean(item?.body)))
   }
@@ -260,7 +262,7 @@ Deno.serve(async (request) => {
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? user.email)
     const messages = provider === 'google' ? await gmailMessages(accessToken, ownEmail) : await microsoftMessages(accessToken, ownEmail)
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
-    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id').eq('organization_id', organizationId).is('merged_into_contact_id', null)
+    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary').eq('organization_id', organizationId).is('merged_into_contact_id', null)
     const contactByEmail = new Map<string, any>()
     for (const item of existingContacts ?? []) {
       for (const email of [item.email, ...(item.secondary_emails ?? [])]) {
@@ -271,12 +273,29 @@ Deno.serve(async (request) => {
     const contactCorpus = new Map<string, string[]>()
     const responsibleCorpus: string[] = []
     let storedMessages = 0
+    let skippedAutomated = 0
+    const skippedReasons: Record<string, number> = {}
 
     for (const message of messages) {
       const external = message.direction === 'inbound' ? message.from : message.to.find((item) => item.email !== ownEmail)
       if (!external?.email || external.email === ownEmail) continue
-      if (isNotificationSender(external.email)) continue
       let contact = contactByEmail.get(external.email)
+      const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
+      const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
+        sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
+      ))
+      const classification = classifyEmailAutomation({
+        email: external.email,
+        name: external.name,
+        subject: message.subject,
+        body: message.body,
+        headers: message.headers,
+      })
+      if (classification.automated && !manuallyIntegrated) {
+        skippedAutomated++
+        for (const reason of classification.reasons) skippedReasons[reason] = (skippedReasons[reason] ?? 0) + 1
+        continue
+      }
       if (!contact) {
         let companyId: string | null = null
         const domain = corporateDomain(external.email)
@@ -346,9 +365,10 @@ Deno.serve(async (request) => {
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Mise à jour des profils comportementaux', progress: 90 }).eq('id', syncJobId)
 
-    await supabase.from('connectors').update({ status: 'connected', last_synced_at: new Date().toISOString(), metadata: { ...(connector.metadata ?? {}), last_sync: { messages: storedMessages, people_analyzed: peopleAnalyzed, responsible_analyzed: responsibleAnalyzed } }, updated_at: new Date().toISOString() }).eq('id', connector.id)
-    if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, messages: storedMessages, people_analyzed: peopleAnalyzed, responsible_analyzed: responsibleAnalyzed, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
-    return json({ success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, analysisErrors: analysisErrors.slice(0, 5) })
+    const syncSummary = { messages: storedMessages, people_analyzed: peopleAnalyzed, responsible_analyzed: responsibleAnalyzed, automated_messages_ignored: skippedAutomated, ignored_reasons: skippedReasons }
+    await supabase.from('connectors').update({ status: 'connected', last_synced_at: new Date().toISOString(), metadata: { ...(connector.metadata ?? {}), last_sync: syncSummary }, updated_at: new Date().toISOString() }).eq('id', connector.id)
+    if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
+    return json({ success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5) })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Synchronisation impossible'
     if (syncJobId) {

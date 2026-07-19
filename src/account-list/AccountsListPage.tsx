@@ -183,6 +183,7 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
   const [candidates, setCandidates] = useState<AccountCandidate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [manual, setManual] = useState('')
+  const [manualDomain, setManualDomain] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   useEffect(() => {
     detectAccountCandidates(workspaceId).then(setCandidates).catch((reason) => setError(reason instanceof Error ? reason.message : 'Détection impossible'))
@@ -205,7 +206,7 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
     if (!manual.trim()) return
     setBusy('manual')
     try {
-      await createAccount({ name: manual.trim() })
+      await createAccount({ name: manual.trim(), domain: manualDomain.trim() || null })
       toast(`Compte « ${manual.trim()} » créé.`)
       await refresh()
       onClose()
@@ -219,7 +220,7 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
     <div className="dxp-iov-bg" onClick={onClose} />
     <div className="dxp-iov-card">
       <div className="dxp-iov-head">Intégrer des comptes<button type="button" className="dxp-iov-x" aria-label="Fermer" onClick={onClose}>✕</button></div>
-      <div className="dxp-iov-sub">Détectés depuis tes échanges réels (domaines professionnels de ta messagerie) — choisis ceux à intégrer &amp; scorer.</div>
+      <div className="dxp-iov-sub">Les newsletters et expéditeurs automatiques sont ignorés par défaut. Tu peux toujours intégrer volontairement leur compte ci-dessous.</div>
       {error && <div className="dxa-empty">{error}</div>}
       {!error && candidates === null && <div className="dxa-empty">Détection en cours dans tes échanges…</div>}
       {candidates !== null && !candidates.length && <div className="dxa-empty">Aucun candidat détecté — connecte ou synchronise une boîte mail, ou crée un compte manuellement.</div>}
@@ -239,6 +240,8 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
       <form className="dxp-iov-manual" onSubmit={(event) => void createManual(event)}>
         <label className="sr-only" htmlFor="pa-manual-name">Nom du compte</label>
         <input id="pa-manual-name" placeholder="Nom de l’entreprise" value={manual} onChange={(event) => setManual(event.target.value)} />
+        <label className="sr-only" htmlFor="pa-manual-domain">Domaine du compte</label>
+        <input id="pa-manual-domain" placeholder="Domaine (facultatif, ex. exemple.com)" value={manualDomain} onChange={(event) => setManualDomain(event.target.value)} />
         <button className="dxp-iov-idbtn" disabled={busy !== null || !manual.trim()}>Créer le compte</button>
       </form>
     </div>
