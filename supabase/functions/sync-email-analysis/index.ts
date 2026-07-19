@@ -118,7 +118,7 @@ async function refreshAccessToken(provider: string, refreshToken: string): Promi
   const clientSecret = Deno.env.get(isGoogle ? 'GOOGLE_CLIENT_SECRET' : 'MICROSOFT_CLIENT_SECRET')
   if (!clientId || !clientSecret) throw new Error(`Secrets OAuth ${provider} manquants`)
   const params: Record<string, string> = { client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }
-  if (!isGoogle) params.scope = 'openid profile email offline_access Mail.Read Calendars.Read'
+  if (!isGoogle) params.scope = 'openid profile email offline_access User.Read Mail.Read Calendars.Read'
   const response = await fetch(isGoogle ? 'https://oauth2.googleapis.com/token' : 'https://login.microsoftonline.com/common/oauth2/v2.0/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params),
   })

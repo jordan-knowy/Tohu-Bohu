@@ -15,7 +15,7 @@ const LINKEDIN_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden=
 
 const connectors: Connector[] = [
   { provider: 'google', databaseProvider: 'google', label: 'Google Workspace', detail: 'Gmail et Google Calendar', icon: GOOGLE_ICON, identity: 'google', scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly' },
-  { provider: 'azure', databaseProvider: 'microsoft', label: 'Microsoft 365', detail: 'Outlook et calendrier Microsoft', icon: MICROSOFT_ICON, identity: 'azure', scopes: 'email openid profile offline_access Mail.Read Calendars.Read' },
+  { provider: 'azure', databaseProvider: 'microsoft', label: 'Microsoft 365', detail: 'Outlook et calendrier Microsoft', icon: MICROSOFT_ICON, identity: 'azure', scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin_oidc' as Provider, databaseProvider: 'linkedin', label: 'LinkedIn', detail: 'Identité et mouvements de poste', icon: LINKEDIN_ICON, identity: 'linkedin_oidc', scopes: 'openid profile email' },
 ]
 

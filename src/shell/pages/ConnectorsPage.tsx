@@ -21,7 +21,7 @@ type ConnectorDefinition =
 
 export const connectorDefinitions: ConnectorDefinition[] = [
   { provider: 'google', label: 'Google Workspace', description: 'Gmail, réunions et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly' },
-  { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access Mail.Read Calendars.Read' },
+  { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
   { provider: 'salesforce', label: 'Salesforce', description: 'Comptes et contacts synchronisés depuis Salesforce.', icon: SALESFORCE_ICON, kind: 'edge', functionSlug: 'connect-salesforce' },
@@ -134,7 +134,12 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const options = {
       redirectTo: absoluteUrl(`/tohu-app.html?start=connecteurs&connector=${encodeURIComponent(provider)}`),
       scopes: definition.scopes,
-      queryParams: provider === 'google' ? { access_type: 'offline', prompt: 'consent' } : undefined,
+      // Google : consentement forcé pour obtenir un refresh_token. Microsoft : sans
+      // select_account, Azure réutilise silencieusement la session Microsoft active
+      // du navigateur au lieu de laisser choisir le compte (perso vs pro).
+      queryParams: (provider === 'google'
+        ? { access_type: 'offline', prompt: 'consent' }
+        : provider === 'microsoft' ? { prompt: 'select_account' } : undefined) as Record<string, string> | undefined,
     }
     const { error: authError } = alreadyLinked
       ? await getSupabase().auth.signInWithOAuth({ provider: definition.auth, options })
