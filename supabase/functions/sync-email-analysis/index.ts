@@ -177,6 +177,14 @@ async function microsoftMessages(token: string, ownEmail: string): Promise<Mail[
   return [...inbox, ...sent]
 }
 
+/** Confiance en pourcentage entier 0-100 : le modèle renvoie parfois un ratio 0-1
+ *  (0.9) que les colonnes integer rejettent — on normalise et on arrondit. */
+function pct(value: unknown): number {
+  const parsed = Number(value ?? 0)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.round(Math.max(0, Math.min(100, parsed <= 1 ? parsed * 100 : parsed)))
+}
+
 function extractJson(value: string): Analysis {
   try { return JSON.parse(value) } catch {
     const match = value.match(/\{[\s\S]*\}/)
@@ -313,7 +321,7 @@ Deno.serve(async (request) => {
     if (responsibleCorpus.length >= 3) {
       try {
         const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', user.id).single()).data?.full_name ?? user.email ?? 'Responsable', 'responsable', responsibleCorpus)
-        await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: user.id, global_confidence: Math.max(0, Math.min(100, Number(result.global_confidence ?? 0))), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: Number(result.cognitive_mode_confidence ?? 0), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
+        await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: user.id, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
         responsibleAnalyzed = true
       } catch (error) {
         analysisErrors.push(`responsable: ${error instanceof Error ? error.message : 'analyse impossible'}`)
@@ -326,9 +334,9 @@ Deno.serve(async (request) => {
       try {
         const contact = [...contactByEmail.values()].find((item) => item.id === contactId)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts)
-        const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({ organization_id: organizationId, contact_id: contactId, profile_version: 1, global_confidence: Math.max(0, Math.min(100, Number(result.global_confidence ?? 0))), summary: result.executive_summary ?? null, executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: Number(result.cognitive_mode_confidence ?? 0), behavioral_analysis_data: result.behavioral_analysis_data ?? [], updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
+        const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({ organization_id: organizationId, contact_id: contactId, profile_version: 1, global_confidence: pct(result.global_confidence), summary: result.executive_summary ?? null, executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
         if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')
-        const signals = (result.behavioral_analysis_data ?? []).slice(0, 6).map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait ?? 'communication_style', text: item.observation ?? '', inference: item.trait ?? null, inference_level: 'observed', confidence: Math.max(0, Math.min(100, Number(item.confidence ?? 0))), source_type: `email_${provider}_analysis`, source_ref: `sync:${new Date().toISOString()}`, observed_at: new Date().toISOString() })).filter((item) => item.text)
+        const signals = (result.behavioral_analysis_data ?? []).slice(0, 6).map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait ?? 'communication_style', text: item.observation ?? '', inference: item.trait ?? null, inference_level: 'observed', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${new Date().toISOString()}`, observed_at: new Date().toISOString() })).filter((item) => item.text)
         if (signals.length) await supabase.from('behavioral_signals').insert(signals)
         peopleAnalyzed++
       } catch (error) {

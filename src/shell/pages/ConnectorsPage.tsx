@@ -36,6 +36,14 @@ function formatDate(value: string | null | undefined, fallback = 'Jamais'): stri
   return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
 }
 
+/** FunctionsHttpError.message est générique (« Edge Function returned a non-2xx status
+ *  code ») ; le vrai détail est dans error.context (la Response brute de l'edge function). */
+async function invokeError(error: unknown, fallback: string): Promise<Error> {
+  const detail = await (error as { context?: Response })?.context?.clone?.().json?.().catch(() => null)
+  if (detail?.error) return new Error(String(detail.error))
+  return error instanceof Error && !error.message.includes('non-2xx') ? error : new Error(fallback)
+}
+
 type PageContext = { session: Session; workspaceId: string }
 
 /** Connecteurs — port fidèle de la vue du shell historique (mêmes classes connector-*). */
@@ -54,8 +62,8 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   const syncEmailProvider = useCallback(async (provider: string) => {
     if (provider !== 'google' && provider !== 'microsoft') return
     toast(`Synchronisation ${provider === 'google' ? 'Google Workspace' : 'Microsoft 365'} lancée…`)
-    const { data, error: invokeError } = await getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId, provider } })
-    if (invokeError || data?.error) throw invokeError ?? new Error(data.error)
+    const { data, error } = await getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId, provider } })
+    if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation impossible.')
     await refresh()
     toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour.`)
   }, [organizationId, refresh, toast])
@@ -69,7 +77,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const session = sessionData.session ?? context.session
     if (!session.provider_token) throw new Error('Jeton fournisseur absent. Reconnecte ce compte pour autoriser la lecture des emails.')
     const definition = connectorDefinitions.find((item) => item.provider === provider)
-    const { data, error: invokeError } = await getSupabase().functions.invoke('connect-email-provider', {
+    const { data, error } = await getSupabase().functions.invoke('connect-email-provider', {
       body: {
         organizationId,
         provider,
@@ -79,7 +87,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
         scopes: definition?.kind === 'supabase' ? definition.scopes.split(' ') : [],
       },
     })
-    if (invokeError || data?.error) throw invokeError ?? new Error(data.error)
+    if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Connexion impossible.')
   }, [context.session, organizationId])
 
   // Retour d'OAuth : ?connector= (providers Supabase Auth, via /tohu-app.html redirigé ici)
@@ -116,12 +124,8 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const definition = connectorDefinitions.find((item) => item.provider === provider)
     if (!definition) return
     if (definition.kind === 'edge') {
-      const { data, error: invokeError } = await getSupabase().functions.invoke(definition.functionSlug, { body: { organizationId } })
-      if (invokeError || !data?.url) {
-        // FunctionsHttpError.message est générique ; le vrai détail est dans error.context (la Response brute).
-        const detail = await (invokeError as { context?: Response })?.context?.json?.().catch(() => null)
-        throw new Error(detail?.error ?? `Connexion ${definition.label} indisponible.`)
-      }
+      const { data, error } = await getSupabase().functions.invoke(definition.functionSlug, { body: { organizationId } })
+      if (error || !data?.url) throw await invokeError(error, `Connexion ${definition.label} indisponible.`)
       window.location.href = data.url
       return
     }
@@ -143,8 +147,8 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
 
   const disconnectProvider = async (provider: string) => {
     if (provider === 'google' || provider === 'microsoft') {
-      const { data, error: invokeError } = await getSupabase().functions.invoke('connect-email-provider', { body: { organizationId, provider, action: 'disconnect' } })
-      if (invokeError || data?.error) throw invokeError ?? new Error(data.error)
+      const { data, error } = await getSupabase().functions.invoke('connect-email-provider', { body: { organizationId, provider, action: 'disconnect' } })
+      if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Déconnexion impossible.')
     } else {
       await setConnector(context.session.user.id, provider, 'disconnected')
     }
