@@ -77,6 +77,7 @@ function AppShell({ context }: { context: AppContext }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('tohu-sidebar-collapsed') === 'true')
   const [counts, setCounts] = useState({ accounts: 0, people: 0 })
   const [footer, setFooter] = useState({ name: displayName(context.session.user), plan: 'Tohu', avatarUrl: null as string | null })
+  const [avatarError, setAvatarError] = useState(false)
 
   useEffect(() => {
     document.body.classList.add('app-page')
@@ -96,6 +97,7 @@ function AppShell({ context }: { context: AppContext }) {
         plan: subscription.data?.plan_id ? `Tohu ${subscription.data.plan_id}` : 'Tohu',
         avatarUrl: profile.avatar_url,
       })
+      setAvatarError(false)
     })
     loadFooter()
     window.addEventListener('tohu:profile-updated', loadFooter)
@@ -132,7 +134,7 @@ function AppShell({ context }: { context: AppContext }) {
         <Link className={item('profil')} to="/app/profile"><span className="nav-ic">{ProfileNavIcon}</span><span className="nav-label">Mon profil</span></Link>
       </nav>
       <Link className={`sb-user ${item('me')}`} to="/app/account">
-        <span className="sb-avatar">{footer.avatarUrl ? <img src={footer.avatarUrl} alt="" /> : initials(footer.name)}</span>
+        <span className="sb-avatar">{footer.avatarUrl && !avatarError ? <img src={footer.avatarUrl} alt="" onError={() => setAvatarError(true)} /> : initials(footer.name)}</span>
         <span className="nav-label"><b>{footer.name}</b><small>{footer.plan}</small></span>
       </Link>
     </aside>
