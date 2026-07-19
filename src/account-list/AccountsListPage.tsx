@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createAccount } from '../app/data'
+import { createAccount } from '../services/data'
 import { initials } from '../lib/auth'
 import { ToastProvider, useBusy, useToast, formatMonth } from '../person-detail/ui'
-import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, type AccountListRow, type AccountTier, type PortfolioPoint } from './mapping'
+import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, tickerDurationSeconds, type AccountListRow, type AccountTier, type PortfolioPoint, type TeamMember } from './mapping'
 import {
   detectAccountCandidates, getAccountsOverview, reassignAccounts, setListFavorite,
   setListOwner, setListRelationType, setListWatch, trackCandidates,
@@ -15,13 +15,13 @@ type PageContext = { workspaceId: string; userId: string }
 const TIERS: AccountTier[] = ['Critique', 'Sous tension', 'À traiter', 'Stables', 'À qualifier']
 const RELATION_TYPES = Object.keys(RELATION_COLORS)
 
-const DocIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l3 3v17H6z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>
-const LinkIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a4 4 0 0 1 4-4h2v2H8a2 2 0 0 0 0 4h2v2H8a4 4 0 0 1-4-4z" /><path d="M14 7h2a4 4 0 0 1 0 8h-2v-2h2a2 2 0 0 0 0-4h-2z" /><path d="M8 11h8v2H8z" /></svg>
-const MailIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.2z" /></svg>
-const StarIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 5.9 6.5.6-4.9 4.3 1.45 6.35L12 17.7 6.1 19.75 7.55 13.4 2.65 9.1l6.5-.6z" /></svg>
-const CheckIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
+export const DocIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l3 3v17H6z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>
+export const LinkIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a4 4 0 0 1 4-4h2v2H8a2 2 0 0 0 0 4h2v2H8a4 4 0 0 1-4-4z" /><path d="M14 7h2a4 4 0 0 1 0 8h-2v-2h2a2 2 0 0 0 0-4h-2z" /><path d="M8 11h8v2H8z" /></svg>
+export const MailIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.2z" /></svg>
+export const StarIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 5.9 6.5.6-4.9 4.3 1.45 6.35L12 17.7 6.1 19.75 7.55 13.4 2.65 9.1l6.5-.6z" /></svg>
+export const CheckIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
 
-const CHANNEL_ICONS = {
+export const CHANNEL_ICONS = {
   email: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M4 7l8 6 8-6" /></svg>,
   visio: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2.5" /><path d="M15 10l6-3v10l-6-3z" /></svg>,
   linkedin: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M7 10v7M7 7v.01M11 17v-4a2 2 0 0 1 4 0v4" /></svg>,
@@ -36,12 +36,13 @@ function Ticker({ overview }: { overview: AccountsOverview }) {
     <span className="crm-mv-t">{item.tag}</span>
     <span className="crm-mv-txt"><b>{item.account}</b> · {item.summary}</span>
   </span>)
+  const duration = tickerDurationSeconds(overview.ticker.length)
   return <div className="crm-mvt" role="marquee" aria-label="Insights comptes en direct">
     <div className="crm-mvt-head">
       <div className="crm-mvt-head-t"><span className="crm-mvt-hic">{DocIcon}</span>Insights comptes</div>
       <div className="crm-mvt-head-s">Live</div>
     </div>
-    <div className="crm-mvt-view"><div className="crm-mvt-track">{sequence}{sequence}</div></div>
+    <div className="crm-mvt-view"><div className="crm-mvt-track" style={{ '--mvt-duration': `${duration}s` } as React.CSSProperties}>{sequence}{sequence}</div></div>
   </div>
 }
 
@@ -120,7 +121,7 @@ function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview;
   </div>
 }
 
-function FilterChip({ label, options, selected, onToggle }: { label: string; options: Array<{ value: string; color?: string }>; selected: string[]; onToggle: (value: string) => void }) {
+export function FilterChip({ label, options, selected, onToggle }: { label: string; options: Array<{ value: string; color?: string }>; selected: string[]; onToggle: (value: string) => void }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -244,7 +245,7 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
   </div>
 }
 
-function MemberPicker({ overview, anchor, currentId, onPick, onClose }: { overview: AccountsOverview; anchor: { x: number; y: number }; currentId: string | null; onPick: (memberId: string) => void; onClose: () => void }) {
+export function MemberPicker({ overview, anchor, currentId, onPick, onClose }: { overview: { team: TeamMember[] }; anchor: { x: number; y: number }; currentId: string | null; onPick: (memberId: string) => void; onClose: () => void }) {
   useEffect(() => {
     const close = () => onClose()
     document.addEventListener('click', close)

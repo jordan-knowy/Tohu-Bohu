@@ -15,7 +15,7 @@
  *   priorité = urgence (0-40) + impact (0-30) + confiance (0-20) + fraîcheur (0-10)
  */
 
-import { relationLevel, type HomeAccountSummary, type HomeAtRiskAccount, type HomePriorityAction, type HomeSignal } from './home-types'
+import { relationLevel, type HomeAccountSummary, type HomeAtRiskAccount, type HomePriorityAction, type HomeSignal } from './types'
 
 export type ScoredAccount = {
   id: string

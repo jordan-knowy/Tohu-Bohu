@@ -65,6 +65,13 @@ export function logoColor(name: string): string {
   return LOGO_COLORS[hash % LOGO_COLORS.length]!
 }
 
+/** Durée du ticker proportionnelle au nombre d'items, pour une vitesse de
+ *  défilement perçue identique quel que soit le volume de contenu (Comptes,
+ *  Personnes, Home). ~9s de lecture par item, jamais en dessous de 45s. */
+export function tickerDurationSeconds(itemCount: number): number {
+  return Math.max(70, itemCount * 14)
+}
+
 export function monthsBetween(iso: string | null, now: Date): number | null {
   if (!iso) return null
   const start = new Date(iso)
@@ -130,11 +137,12 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
     meetingsByCompany.set(companyId, [...(meetingsByCompany.get(companyId) ?? []), meeting])
   }
 
-  return raw.companies.map((company) => {
+  return raw.companies.flatMap((company) => {
     const id = String(company.id)
     const context = object(company.public_context)
     const linked = contactsByCompany.get(id) ?? []
     const settings = object(settingsByCompany.get(id))
+    if (settings.archived_at) return []
     const meetings = meetingsByCompany.get(id) ?? []
 
     const scores = linked.map((contact) => latestContactScore(contact, historyByContact)).filter((value): value is number => value !== null)
@@ -158,7 +166,7 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
 
     const ownerId = text(settings.primary_owner_user_id) ?? mostCommonOwner(linked)
     const emailChannel = linked.some((contact) => raw.messageContactIds.has(String(contact.id)))
-    return {
+    return [{
       id,
       name: text(company.name) ?? 'Compte',
       meta: [text(company.industry), text(context.location)].filter(Boolean).join(' · ') || null,
@@ -179,7 +187,7 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
       ownerName: ownerId ? raw.profileNames.get(ownerId) ?? null : null,
       tier: accountTier(score),
       tracked: company.is_tracked !== false,
-    }
+    }]
   }).sort((a, b) => (a.score ?? 101) - (b.score ?? 101) || a.name.localeCompare(b.name))
 }
 

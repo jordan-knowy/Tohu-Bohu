@@ -19,7 +19,7 @@ import {
   daysSince,
   deriveActions,
   type ScoredAccount,
-} from './home-priority'
+} from './priority'
 import type {
   HomeAccountCandidate,
   HomeCoachingData,
@@ -28,9 +28,9 @@ import type {
   HomeSourceStatus,
   HomeSyncJob,
   HomeTeamMember,
-} from './home-types'
-import { relationLevel } from './home-types'
-import { signalTitle } from './signal-labels'
+} from './types'
+import { relationLevel } from './types'
+import { signalTitle } from '../services/signal-labels'
 
 type DbRow = Record<string, unknown>
 

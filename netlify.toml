@@ -1,6 +1,7 @@
 # Déploiement Netlify — app Vite multi-pages.
-# Les routes React (/app/*) sont servies par app.html (équivalent du
-# middleware de dev vite.config.ts) ; le reste correspond aux pages HTML.
+# Toutes les routes /app/* sont servies par le shell React unifié (app.html).
+# /tohu-app.html reste un fichier statique servi tel quel : c'est le redirecteur
+# legacy (anciens favoris + redirectTo OAuth whitelistés chez Supabase).
 
 [build]
   command = "npm run build"

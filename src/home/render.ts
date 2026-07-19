@@ -22,16 +22,17 @@ import {
   saveActionState,
   saveInsightFeedback,
   setTrackedCompanies,
-} from './home-service'
-import { saveSignalFeedback, type ProfileRow } from './data'
-import { relationLevel } from './home-types'
+} from './service'
+import { saveSignalFeedback, type ProfileRow } from '../services/data'
+import { tickerDurationSeconds } from '../account-list/mapping'
+import { relationLevel } from './types'
 import type {
   HomeAccountCandidate,
   HomeDashboardData,
   HomePriorityAction,
   HomeRelationLevel,
   HomeSignal,
-} from './home-types'
+} from './types'
 
 export type HomeContext = {
   container: HTMLElement
@@ -40,7 +41,7 @@ export type HomeContext = {
   organizationId: string
   toast: (message: string, type?: 'default' | 'error') => void
   goView: (view: 'cerveau' | 'acc' | 'per' | 'connecteurs' | 'me') => void
-  /** Ouvre Ask Tohu avec un contexte prérempli (mode simulation). */
+  /** Ouvre Ask Bohu avec un contexte prérempli (mode simulation). */
   askSimulation: (prompt: string) => void
   onCounts?: (accounts: number, people: number) => void
   /** Injection (tests, prévisualisation dev) : remplace le service par défaut. */
@@ -433,25 +434,37 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
 }
 
 function highlightsMarkup(data: HomeDashboardData): string {
-  const fromActions = data.priorityActions.slice(0, 2).map((action) => ({
+  const fromActions = data.priorityActions.slice(0, 12).map((action) => ({
     label: ACTION_LABELS[action.type] ?? action.type,
-    tone: action.type === 'risque' ? 'risk' : action.type === 'opportunite' || action.type === 'mouvement' ? 'opportunity' : 'relationship',
+    src: action.type === 'risque' ? 'ext' : 'int',
+    name: action.accountName ?? action.personName ?? '',
     title: action.title,
     accountId: action.accountId,
     personId: action.personId,
   }))
-  const items = fromActions.length ? fromActions : data.latestSignals.slice(0, 2).map((signal) => ({
+  const items = fromActions.length ? fromActions : data.latestSignals.slice(0, 12).map((signal) => ({
     label: signal.signalType,
-    tone: 'signal',
+    src: 'int' as const,
+    name: signal.accountName ?? signal.personName ?? '',
     title: signal.title,
     accountId: signal.accountId,
     personId: signal.personId,
   }))
   if (!items.length) return ''
-  return `<section class="home-highlights" aria-label="Highlights du jour">
-    <div class="home-highlights-label"><i aria-hidden="true"></i> Highlights du jour</div>
-    <div class="home-highlights-stream">${items.map((item) => `<button class="home-highlight" data-tone="${esc(item.tone)}" ${item.accountId ? `data-open-account="${esc(item.accountId)}"` : item.personId ? `data-open-person="${esc(item.personId)}"` : ''}><span>${esc(item.label)}</span><b>${esc(item.title)}</b><i aria-hidden="true">→</i></button>`).join('')}</div>
-  </section>`
+  const duration = tickerDurationSeconds(items.length)
+  const rowMarkup = items.map((item) => `<button class="crm-mv-item ${esc(item.src)}" ${item.accountId ? `data-open-account="${esc(item.accountId)}"` : item.personId ? `data-open-person="${esc(item.personId)}"` : ''}>
+    <span class="crm-mv-ic">${item.src === 'ext' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>'}</span>
+    <span class="crm-mv-src">${item.src === 'ext' ? 'Risque' : 'Signal'}</span>
+    <span class="crm-mv-t">${esc(item.label)}</span>
+    <span class="crm-mv-txt">${item.name ? `<b>${esc(item.name)}</b> · ` : ''}${esc(item.title)}</span>
+  </button>`).join('')
+  return `<div class="crm-mvt" role="marquee" aria-label="Highlights du jour en direct">
+    <div class="crm-mvt-head">
+      <div class="crm-mvt-head-t"><span class="crm-mvt-hic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l3 3v17H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>Highlights du jour</div>
+      <div class="crm-mvt-head-s">Live</div>
+    </div>
+    <div class="crm-mvt-view"><div class="crm-mvt-track" style="--mvt-duration:${duration}s">${rowMarkup}${rowMarkup}</div></div>
+  </div>`
 }
 
 function activityMarkup(data: HomeDashboardData): string {

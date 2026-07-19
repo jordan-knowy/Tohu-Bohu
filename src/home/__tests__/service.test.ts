@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus } from '../home-service'
+import { buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus } from '../service'
 
 const NOW = new Date('2026-07-15T12:00:00Z')
 

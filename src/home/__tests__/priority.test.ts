@@ -8,8 +8,8 @@ import {
   priorityOf,
   riskScore,
   type ScoredAccount,
-} from '../home-priority'
-import { relationLevel, type HomeSignal } from '../home-types'
+} from '../priority'
+import { relationLevel, type HomeSignal } from '../types'
 
 const NOW = new Date('2026-07-15T12:00:00Z')
 

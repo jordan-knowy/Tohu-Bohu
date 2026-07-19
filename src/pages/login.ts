@@ -18,7 +18,7 @@ async function routeExistingSession(): Promise<void> {
   const { data } = await getSupabase().auth.getSession()
   if (!data.session) return
   const { data: profile } = await getSupabase().from('profiles').select('onboarding_completed').eq('id', data.session.user.id).maybeSingle()
-  window.location.replace(profile?.onboarding_completed ? '/tohu-app.html' : '/onboarding.html')
+  window.location.replace(profile?.onboarding_completed ? '/app/home' : '/onboarding.html')
 }
 
 async function login(provider: Provider): Promise<void> {

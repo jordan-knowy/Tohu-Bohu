@@ -898,11 +898,11 @@
 .pp .rel-dot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block}
 .pp .rel-v{font-weight:700;color:#fff}
 .pp .rel-c{color:rgba(212,197,245,.6);font-size:9px}
-.pp .rel-menu{position:fixed;display:none;z-index:9999;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 48px rgba(20,15,40,.25);padding:6px;min-width:240px}
-.pp .rel-menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink);background:none;border:none;border-radius:8px;padding:9px 11px;cursor:pointer}
-.pp .rel-menu button:hover{background:var(--lavande)}
-.pp .rel-menu .rel-dot{width:8px;height:8px}
-.pp .rel-menu .rm-def{margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
+.rel-menu{position:fixed;display:none;z-index:9999;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 48px rgba(20,15,40,.25);padding:6px;min-width:240px}
+.rel-menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink);background:none;border:none;border-radius:8px;padding:9px 11px;cursor:pointer}
+.rel-menu button:hover{background:var(--lavande)}
+.rel-menu .rel-dot{width:8px;height:8px}
+.rel-menu .rm-def{margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
 .pp .reco-post .pdot{width:8px;height:8px;border-radius:50%;flex:none;position:relative}
 .pp .reco-post.off .pdot{background:#C4BCD8}
 .pp .reco-hint{font-family:var(--mono);font-size:9px;color:var(--t3);margin:-3px 0 13px}

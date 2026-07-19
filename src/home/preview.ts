@@ -10,9 +10,10 @@ import '../styles/fonts.css'
 import '../styles/tokens.css'
 import '../styles/app.css'
 import '../styles/home.css'
-import { renderHome } from './home'
-import type { ProfileRow } from './data'
-import type { HomeDashboardData } from './home-types'
+import '../styles/account-list.css'
+import { renderHome } from './render'
+import type { ProfileRow } from '../services/data'
+import type { HomeDashboardData } from './types'
 
 if (!import.meta.env.DEV) {
   window.location.replace('/tohu-app.html')
@@ -195,7 +196,7 @@ if (container) {
     organizationId: 'preview-org',
     toast,
     goView: (view) => toast(`(preview) navigation vers « ${view} »`),
-    askSimulation: (prompt) => toast(`(preview) Ask Tohu prérempli : ${prompt}`),
+    askSimulation: (prompt) => toast(`(preview) Ask Bohu prérempli : ${prompt}`),
     loadDashboard: () => state === 'error'
       ? Promise.reject(new Error('Erreur simulée du service (preview) — vérifie la connexion Supabase.'))
       : Promise.resolve(fixtureFor(state)),

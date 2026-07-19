@@ -147,6 +147,19 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
   if (error) throw error
 }
 
+/** Supprime une personne de Tohu : archivage (réversible), pas de suppression
+ *  physique — préserve l'historique réel (emails, réunions, signaux). */
+export async function setPersonArchived(data: PersonDetailData, userId: string, archived: boolean): Promise<void> {
+  const { error } = await getSupabase().from('person_settings').upsert({
+    organization_id: data.person.workspaceId,
+    contact_id: data.person.id,
+    archived_at: archived ? new Date().toISOString() : null,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,contact_id' })
+  if (error) throw error
+}
+
 export async function updatePersonRecommendationStatus(data: PersonDetailData, recommendationId: string, userId: string, status: PersonRecommendationStatus, dueAt?: string): Promise<void> {
   const now = new Date().toISOString()
   const values: Row = { status, updated_by: userId, updated_at: now }

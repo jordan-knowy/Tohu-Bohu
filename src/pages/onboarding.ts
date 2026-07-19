@@ -8,10 +8,15 @@ import { absoluteUrl, getSupabase } from '../lib/supabase'
 
 type Connector = { provider: Provider; databaseProvider: 'google' | 'microsoft' | 'linkedin'; label: string; detail: string; icon: string; identity: string; scopes: string }
 
+// Logos officiels (Simple Icons, MIT) — monochrome, colorés via currentColor comme les autres icônes de l'app.
+const GOOGLE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/></svg>'
+const MICROSOFT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0v11.408h11.408V0zm12.594 0v11.408H24V0zM0 12.594V24h11.408V12.594zm12.594 0V24H24V12.594z"/></svg>'
+const LINKEDIN_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>'
+
 const connectors: Connector[] = [
-  { provider: 'google', databaseProvider: 'google', label: 'Google Workspace', detail: 'Gmail et Google Calendar', icon: 'G', identity: 'google', scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly' },
-  { provider: 'azure', databaseProvider: 'microsoft', label: 'Microsoft 365', detail: 'Outlook et calendrier Microsoft', icon: 'M', identity: 'azure', scopes: 'email openid profile offline_access Mail.Read Calendars.Read' },
-  { provider: 'linkedin_oidc' as Provider, databaseProvider: 'linkedin', label: 'LinkedIn', detail: 'Identité et mouvements de poste', icon: 'in', identity: 'linkedin_oidc', scopes: 'openid profile email' },
+  { provider: 'google', databaseProvider: 'google', label: 'Google Workspace', detail: 'Gmail et Google Calendar', icon: GOOGLE_ICON, identity: 'google', scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly' },
+  { provider: 'azure', databaseProvider: 'microsoft', label: 'Microsoft 365', detail: 'Outlook et calendrier Microsoft', icon: MICROSOFT_ICON, identity: 'azure', scopes: 'email openid profile offline_access Mail.Read Calendars.Read' },
+  { provider: 'linkedin_oidc' as Provider, databaseProvider: 'linkedin', label: 'LinkedIn', detail: 'Identité et mouvements de poste', icon: LINKEDIN_ICON, identity: 'linkedin_oidc', scopes: 'openid profile email' },
 ]
 
 let session: Session
@@ -111,7 +116,7 @@ async function finish(): Promise<void> {
     if (button) { button.disabled = false; button.textContent = 'Voir mon cerveau relationnel →' }
     return
   }
-  window.location.replace('/tohu-app.html?start=cerveau')
+  window.location.replace('/app/ask')
 }
 
 async function boot(): Promise<void> {
@@ -122,7 +127,7 @@ async function boot(): Promise<void> {
   text('#avatar', initials(name))
   const { data: profile } = await getSupabase().from('profiles').select('role_title,onboarding_completed').eq('id', session.user.id).maybeSingle()
   if (profile?.onboarding_completed) {
-    window.location.replace('/tohu-app.html')
+    window.location.replace('/app/home')
     return
   }
   const role = document.querySelector<HTMLSelectElement>('#role')

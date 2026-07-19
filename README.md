@@ -27,10 +27,10 @@ La `service_role` et les secrets OAuth ne doivent jamais être placés dans `.en
 - comptes issus de `companies` et personnes issues de `contacts` ;
 - recherche, tri, création et fiches relationnelles ;
 - signaux entreprise et comportementaux, réunions et feedback utilisateur ;
-- connecteurs Google, Microsoft et LinkedIn ;
+- connecteurs Google, Microsoft, LinkedIn, HubSpot et Salesforce ;
 - ingestion Gmail/Outlook et analyses comportementales du responsable et des personnes ;
 - profil, préférences de notification et abonnement ;
-- Ask Tohu via une Edge Function authentifiée.
+- Ask Bohu via une Edge Function authentifiée.
 
 ## Supabase
 
@@ -78,7 +78,7 @@ Les fonctions [connect-email-provider](supabase/functions/connect-email-provider
 
 Une personne doit disposer d’au moins trois messages exploitables pour lancer son analyse. Les sorties IA sont des synthèses prudentes : aucune pathologie ni donnée sensible ne doit être inférée.
 
-## Ask Tohu
+## Ask Bohu
 
 La fonction [ask-tohu-proxy](supabase/functions/ask-tohu-proxy/index.ts) lit `companies`, `contacts`, `company_signals` et `behavioral_signals` avec le JWT de l’utilisateur, donc à travers les RLS existantes.
 
@@ -92,12 +92,12 @@ supabase secrets set SITE_URL=http://127.0.0.1:5173
 
 ## Home
 
-La Home (`src/app/home.ts`) est le cockpit relationnel quotidien :
+La Home (`src/home/render.ts`) est le cockpit relationnel quotidien :
 
 - **Expérience A** (aucun compte suivi) : invitation S0 → détection S1 (ingestion réelle + RPC `detect_account_candidates` journalisée dans `sync_jobs`) → sélection S2 (limite du forfait) → activation S3 (RPC `set_tracked_companies`, limite validée côté serveur). Le parcours reprend après un rafraîchissement via `sync_jobs`.
 - **Expérience B** : bandeau forfait, digest depuis la dernière visite (`profiles.last_home_seen_at`), score global agrégé des scores persistés, sources, compteurs, Top 5 Meilleurs/À risque, coaching (`user_behavioral_profiles`), actions du jour (états persistés dans `home_action_states`), signaux avec drawer de validation (`signal_feedback`).
 
-Les données passent par le service unique [src/app/home-service.ts](src/app/home-service.ts) (requêtes parallèles, RLS). Les règles de priorité/risque sont documentées et testées dans [src/app/home-priority.ts](src/app/home-priority.ts).
+Les données passent par le service unique [src/home/service.ts](src/home/service.ts) (requêtes parallèles, RLS). Les règles de priorité/risque sont documentées et testées dans [src/home/priority.ts](src/home/priority.ts).
 
 Migrations Home du projet : `202607150009_home_foundation.sql` puis
 `202607150010_home_rpcs.sql`. Le client conserve un mode dégradé explicite
@@ -112,10 +112,10 @@ Ces deux migrations sont appliquées sur `bgmtzwfafcgjklgygvtx`. La fonction
 Le panneau « Lecture stratégique » de la fiche compte affiche une synthèse
 relationnelle réelle, générée côté serveur par l'Edge Function
 [account-strategic-reading](supabase/functions/account-strategic-reading/index.ts)
-(OpenRouter, mêmes secrets qu'Ask Tohu) et persistée dans
+(OpenRouter, mêmes secrets qu'Ask Bohu) et persistée dans
 `account_strategic_readings` (migration `202607160011`, lecture RLS membre,
 écriture service role). Règle de suffisance documentée et testée dans
-[src/app/strategic-reading.ts](src/app/strategic-reading.ts) : au moins un
+[src/services/strategic-reading.ts](src/services/strategic-reading.ts) : au moins un
 contact lié et 3 éléments d'historique (signaux + réunions + échanges), sinon
 « Lecture en construction » — aucune synthèse n'est inventée. Le prompt ne
 reçoit que des métadonnées persistées (jamais de corps d'email).

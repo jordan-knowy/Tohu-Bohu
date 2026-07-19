@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
-import { getPersonDetail, setPersonFavorite, setPersonRoles, setPersonWatch } from './service'
+import { getPersonDetail, setPersonArchived, setPersonFavorite, setPersonRoles, setPersonWatch } from './service'
 import { BehaviorSection, RecommendationsSection, RelationSection } from './sections'
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonDetailData } from './types'
@@ -28,27 +29,44 @@ function ChipMenu({ label, value, color, options, onSelect, icon }: {
   onSelect: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const rootRef = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
     document.addEventListener('click', close)
+    window.addEventListener('scroll', () => setOpen(false), { capture: true, once: true })
     return () => document.removeEventListener('click', close)
   }, [open])
+  const toggle = () => {
+    if (!open && rootRef.current) {
+      const rect = rootRef.current.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 6, left: rect.left })
+    }
+    setOpen((current) => !current)
+  }
   return <span ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
-    <button type="button" className="rel-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+    <button type="button" className="rel-chip" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
       <span className="rel-k">{label}</span>
       {color && <span className="rel-dot" style={{ background: color }} />}
       {icon}
       <span className="rel-v">{value ?? 'À qualifier'}</span>
       <span className="rel-c" aria-hidden="true">▾</span>
     </button>
-    {open && <div className="rel-menu" role="menu" style={{ display: 'block', position: 'absolute', top: 'calc(100% + 6px)', left: 0 }}>
-      {options.map((option) => <button type="button" role="menuitem" key={option.value} onClick={() => { setOpen(false); onSelect(option.value) }}>
-        {option.color && <span className="rel-dot" style={{ background: option.color }} />}
-        {option.value}<span className="rm-def">{option.hint}</span>
-      </button>)}
-    </div>}
+    {open && menuPos && createPortal(
+      <div ref={menuRef} className="rel-menu" role="menu" style={{ display: 'block', top: menuPos.top, left: menuPos.left }}>
+        {options.map((option) => <button type="button" role="menuitem" key={option.value} onClick={() => { setOpen(false); onSelect(option.value) }}>
+          {option.color && <span className="rel-dot" style={{ background: option.color }} />}
+          {option.value}<span className="rm-def">{option.hint}</span>
+        </button>)}
+      </div>,
+      document.body,
+    )}
   </span>
 }
 
@@ -197,9 +215,32 @@ function FavoriteRow({ data, userId, refresh }: { data: PersonDetailData; userId
   </div>
 }
 
+const TrashIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+const RestoreIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4v6h6" /><path d="M4.5 13a8 8 0 1 0 2-8.5L4 10" /></svg>
+
+function ArchiveIconButton({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const archived = Boolean(data.person.archivedAt)
+  const toggle = () => {
+    if (!archived && !window.confirm(`Supprimer ${data.person.fullName} de Tohu ? La fiche sera masquée des listes mais l’historique réel (emails, réunions, signaux) reste conservé — tu pourras la restaurer à tout moment.`)) return
+    void run('archive', async () => {
+      await setPersonArchived(data, userId, !archived)
+      toast(archived ? `${data.person.fullName} restaurée.` : `${data.person.fullName} supprimée des listes.`)
+      await refresh()
+    })
+  }
+  return <button type="button" className="kfav-star" disabled={busy !== null} title={archived ? 'Restaurer cette personne' : 'Supprimer cette personne'} aria-label={archived ? 'Restaurer cette personne' : 'Supprimer cette personne'} onClick={toggle} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}>
+    <span style={{ width: 16, height: 16, display: 'inline-flex' }}>{archived ? RestoreIcon : TrashIcon}</span>
+  </button>
+}
+
 function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   return <>
-    <div className="pp-back"><a href="/tohu-app.html?view=per">← Personnes</a></div>
+    <div className="pp-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Link to="/app/people">← Personnes</Link>
+      <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
+    </div>
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
     <div className="page">
@@ -240,8 +281,8 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   }, [context.workspaceId, personId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
 
-  if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><a href="/tohu-app.html?view=per">Retour aux personnes</a></div>
-  if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><a href="/tohu-app.html?view=per">Retour aux personnes</a></div>
+  if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
+  if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger la personne</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <div className="ra-skeleton" aria-label="Chargement de la fiche personne"><i /><i /><i /></div>
 

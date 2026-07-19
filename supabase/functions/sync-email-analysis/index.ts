@@ -52,6 +52,13 @@ function corporateDomain(email: string): string | null {
   return domain && !PUBLIC_EMAIL_DOMAINS.has(domain) ? domain : null
 }
 
+/** Expéditeur automatisé (notification, no-reply, boîte générique) : jamais transformé en contact/compte. */
+function isNotificationSender(email: string): boolean {
+  if (/noreply|no-reply|donotreply|bounce|mailer-daemon/i.test(email)) return true
+  const local = email.split('@')[0] ?? ''
+  return /noreply|no-reply|notifications?|alerts?|support|info|contact|newsletter/i.test(local)
+}
+
 function companyNameFromDomain(domain: string): string {
   const base = domain.split('.')[0] ?? domain
   return base.split(/[-_]+/).filter(Boolean)
@@ -260,6 +267,7 @@ Deno.serve(async (request) => {
     for (const message of messages) {
       const external = message.direction === 'inbound' ? message.from : message.to.find((item) => item.email !== ownEmail)
       if (!external?.email || external.email === ownEmail) continue
+      if (isNotificationSender(external.email)) continue
       let contact = contactByEmail.get(external.email)
       if (!contact) {
         let companyId: string | null = null

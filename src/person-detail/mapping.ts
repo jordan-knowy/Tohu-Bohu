@@ -1,7 +1,7 @@
 // Mapping pur des lignes Supabase vers PersonDetailData.
 // Aucune requête ici : tout est testable sans réseau.
 
-import { signalTitle } from '../app/signal-labels'
+import { signalTitle } from '../services/signal-labels'
 import {
   MIN_BEHAVIOR_INTERACTIONS,
   type DataSourceReference,

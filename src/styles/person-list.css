@@ -1,0 +1,19 @@
+/* Liste Personnes — réutilise les blocs génériques de account-list.css (.pa
+   ticker/toolbar/popover/passation/modale). Seule la grille de la table
+   diffère (colonnes propres aux personnes : poste, compte, dernier contact). */
+
+.pa .dxpp-head,.pa .dxpp-row{display:grid;grid-template-columns:24px 38px 20px 1.05fr .85fr .85fr .6fr 42px 78px 118px 40px 44px;gap:13px;align-items:center}
+.pa .dxpp-head{padding:11px 18px;font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--border);background:#FBFAFE}
+.pa .dxpp-head .center{justify-content:center;text-align:center}
+.pa .dxpp-row{padding:12px 18px;border-bottom:1px solid #F1EEF9;cursor:pointer;position:relative;transition:background .12s;background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left;font:inherit;color:inherit}
+.pa .dxpp-row:last-child{border-bottom:0}.pa .dxpp-row:hover{background:#FBFAFE}
+.pa .dxpp-job{font-family:var(--mono);font-size:10px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa .dxpp-acc{font-family:var(--font);font-weight:700;font-size:12px;color:var(--violet);background:none;border:0;padding:0;cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa .dxpp-acc:hover{text-decoration:underline}
+.pa .dxpp-acc.muted{color:var(--t3);cursor:default}
+.pa .dxpp-acc.muted:hover{text-decoration:none}
+
+@media(max-width:1080px){
+  .pa .dxpp-head,.pa .dxpp-row{grid-template-columns:24px 38px 20px 1.3fr 40px 40px 44px}
+  .pa .dxpp-job,.pa .dxpp-acc,.pa .dxp-dur,.pa .dxp-chans,.pa .dxpp-h-job,.pa .dxpp-h-acc,.pa .dxpp-h-dur,.pa .dxpp-h-last,.pa .dxpp-h-ch{display:none}
+}

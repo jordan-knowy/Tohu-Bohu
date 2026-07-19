@@ -306,8 +306,6 @@
 .home-cockpit-active .content{max-width:1640px;padding:30px 40px 90px}
 .home-cockpit-active .app-main{background:linear-gradient(180deg,#fbfaff 0,#f8f6fc 100%)}
 @media(min-width:781px){
-  .home-cockpit-active .sb:not(.collapsed){width:252px;padding-inline:18px}
-  .home-cockpit-active .sb:not(.collapsed)~.app-main{margin-left:252px}
   .home-cockpit-active .topbar{height:84px;padding-inline:40px;background:rgba(255,255,255,.88)}
   .home-cockpit-active .topbar h1{font-size:22px}
   .home-cockpit-active .topbar p{margin-top:3px;text-transform:uppercase;letter-spacing:.08em}

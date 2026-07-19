@@ -1,27 +1,19 @@
-import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react'
-import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import '../styles/fonts.css'
-import '../styles/tokens.css'
-import '../styles/app.css'
-import '../styles/account-detail.css'
-import '../styles/person-detail.css'
-import '../styles/account-list.css'
-import { initials, requireSession, signOut } from '../lib/auth'
-import { getOrganizationId, saveSignalFeedback } from '../app/data'
-import PersonDetailPage from '../person-detail/PersonDetailPage'
-import AccountsListPage from '../account-list/AccountsListPage'
+import { initials } from '../lib/auth'
+import { saveSignalFeedback } from '../services/data'
 import {
   addAccountNote,
   getAccountDetail,
+  setAccountArchived,
   setAccountFavorite,
   setAccountWatch,
   updateRecommendationStatus,
-} from '../account-detail/service'
-import type { AccountDetailData, AccountPerson, Provenance } from '../account-detail/types'
+} from './service'
+import type { AccountDetailData, AccountPerson, Provenance } from './types'
 
-type AppContext = { session: Session; workspaceId: string }
+type PageContext = { session: Session; workspaceId: string }
 
 const WATCH_FAMILIES = ['gouvernance', 'dirigeants', 'recrutements', 'événements légaux', 'financement', 'presse', 'appels d’offres', 'renouvellements', 'signaux métier', 'changements d’interlocuteurs']
 const FACT_LABELS: Record<string, string> = {
@@ -68,26 +60,6 @@ function historyPoints(history: AccountDetailData['relationship']['history']): s
     const y = height - item.score / 100 * height
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
-}
-
-function AppShell({ context }: { context: AppContext }) {
-  return <div className="ra-shell">
-    <aside className="ra-sidebar">
-      <Link className="ra-brand" to="/app"><span className="ra-brand-mark">T</span><span>tohu<i>.</i></span></Link>
-      <nav aria-label="Navigation principale">
-        <a href="/tohu-app.html?view=cerveau">Ask Tohu</a>
-        <a href="/tohu-app.html?view=home">Home</a>
-        <Link className="active" to="/app/accounts">Comptes</Link>
-        <a href="/tohu-app.html?view=per">Personnes</a>
-        <a href="/tohu-app.html?view=connecteurs">Connecteurs</a>
-      </nav>
-      <button className="ra-signout" onClick={() => void signOut()}>Se déconnecter</button>
-    </aside>
-    <div className="ra-main">
-      <header className="ra-topbar"><div><strong>Fiche Compte</strong><span>Cockpit relationnel sourcé</span></div><span className="ra-user">{initials(context.session.user.email ?? 'T')}</span></header>
-      <main className="ra-content"><Outlet context={context} /></main>
-    </div>
-  </div>
 }
 
 function Empty({ title, children }: { title: string; children: React.ReactNode }) {
@@ -241,7 +213,7 @@ function Signals({ data, userId, refresh }: { data: AccountDetailData; userId: s
   </section>
 }
 
-function AccountPage({ context }: { context: AppContext }) {
+export default function AccountDetailPage({ context }: { context: PageContext }) {
   const { accountId = '' } = useParams()
   const navigate = useNavigate()
   const [data, setData] = useState<AccountDetailData | null>(null)
@@ -259,8 +231,14 @@ function AccountPage({ context }: { context: AppContext }) {
   const relation = data.relationship
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }
+  const archived = Boolean(account.archivedAt)
+  const toggleArchived = async () => {
+    if (!archived && !window.confirm(`Supprimer ${account.name} de Tohu ? Le compte sera masqué des listes mais l’historique réel (contacts, signaux, échanges) reste conservé — tu pourras le restaurer à tout moment.`)) return
+    await setAccountArchived(data, context.session.user.id, !archived)
+    await refresh()
+  }
   return <>
-    <div className="ra-page-actions"><Link to="/app/accounts">← Comptes</Link><div><button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link></div></div>
+    <div className="ra-page-actions"><Link to="/app/accounts">← Comptes</Link><div><button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link><button onClick={() => void toggleArchived()} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}>{archived ? 'Restaurer ce compte' : 'Supprimer ce compte'}</button></div></div>
     <section className={`ra-hero ${account.archivedAt ? 'archived' : ''}`}>
       <div className="ra-account-avatar">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}</div>
       <div className="ra-account-identity"><div className="ra-eyebrow">{account.strategic ? 'Compte stratégique' : account.relationshipStatus ?? 'Statut à confirmer'}</div><h1>{account.name}</h1>
@@ -275,7 +253,7 @@ function AccountPage({ context }: { context: AppContext }) {
     <div className="ra-source-controls">
       <div>{data.sources.length ? data.sources.map((source) => <span className={source.status} key={source.provider}>{source.label} · {source.status} · {formatDate(source.lastSyncedAt)}</span>) : <span>Aucune source contributrice confirmée</span>}</div>
       <button onClick={() => setWatchOpen(true)} className={account.watchEnabled ? 'on' : ''}>Veille Tohu {account.watchEnabled ? 'activée' : 'désactivée'}</button>
-      <a href="/tohu-app.html?view=connecteurs">Gérer les connecteurs</a>
+      <Link to="/app/connectors">Gérer les connecteurs</Link>
     </div>
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
     <div className="ra-layout"><div className="ra-primary">
@@ -296,35 +274,3 @@ function WatchDialog({ selected, onClose, onSave }: { selected: string[]; onClos
     </section>
   </div>
 }
-
-function ConnectorsRedirect() {
-  // Le gestionnaire de connecteurs vit encore dans le shell historique.
-  useEffect(() => { window.location.replace('/tohu-app.html?view=connecteurs') }, [])
-  return <div className="ra-skeleton" aria-label="Ouverture des connecteurs"><i /></div>
-}
-
-function PlaceholderPage() {
-  const navigate = useNavigate()
-  return <div className="ra-state"><h1>Vue contextualisée</h1><p>Cette destination conserve le contexte Compte dans l’URL. Son écran complet appartient au lot suivant.</p><button onClick={() => navigate(-1)}>Retour</button></div>
-}
-
-async function boot() {
-  const session = await requireSession()
-  const workspaceId = await getOrganizationId()
-  const context = { session, workspaceId }
-  createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
-    <Route element={<AppShell context={context} />}>
-      <Route index element={<Navigate to="/tohu-app.html?view=home" replace />} />
-      <Route path="/app/accounts" element={<AccountsListPage context={{ workspaceId: context.workspaceId, userId: context.session.user.id }} />} />
-      <Route path="/app/accounts/:accountId" element={<AccountPage context={context} />} />
-      <Route path="/app/people/:personId" element={<PersonDetailPage context={{ workspaceId: context.workspaceId, userId: context.session.user.id }} />} />
-      <Route path="/app/connectors" element={<ConnectorsRedirect />} />
-      <Route path="/app/signals" element={<PlaceholderPage />} />
-      <Route path="/app/ask" element={<PlaceholderPage />} />
-    </Route>
-  </Routes></BrowserRouter></StrictMode>)
-}
-
-void boot().catch((error) => {
-  createRoot(document.getElementById('root')!).render(<div className="ra-state error"><h1>Tohu ne peut pas démarrer</h1><p>{error instanceof Error ? error.message : 'Erreur inattendue'}</p></div>)
-})

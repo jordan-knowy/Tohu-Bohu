@@ -279,6 +279,19 @@ export async function setAccountWatch(data: AccountDetailData, userId: string, e
   if (error) throw error
 }
 
+/** Supprime un compte de Tohu : archivage (réversible), pas de suppression
+ *  physique — préserve l'historique réel (contacts, signaux, échanges). */
+export async function setAccountArchived(data: AccountDetailData, userId: string, archived: boolean): Promise<void> {
+  const { error } = await getSupabase().from('account_settings').upsert({
+    organization_id: data.account.workspaceId,
+    company_id: data.account.id,
+    archived_at: archived ? new Date().toISOString() : null,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,company_id' })
+  if (error) throw error
+}
+
 export async function updateRecommendationStatus(data: AccountDetailData, recommendationId: string, userId: string, status: 'completed' | 'dismissed' | 'postponed'): Promise<void> {
   const now = new Date().toISOString()
   const values: Row = { status, updated_by: userId, updated_at: now }

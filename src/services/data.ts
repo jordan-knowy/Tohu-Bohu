@@ -1,6 +1,4 @@
 import { getSupabase } from '../lib/supabase'
-import { mapStrategicReading, type StrategicReading } from './strategic-reading'
-import { signalTitle } from './signal-labels'
 
 export type EntityStatus = 'active' | 'watch' | 'inactive'
 
@@ -38,27 +36,6 @@ export type Person = {
   notes: string | null
   created_at: string
   updated_at: string
-}
-
-export type Signal = {
-  id: string
-  entity_type: 'account' | 'person'
-  entity_id: string
-  signal_type: string
-  title: string
-  summary: string | null
-  source: string
-  confidence: number | null
-  occurred_at: string
-}
-
-export type Interaction = {
-  id: string
-  interaction_type: string
-  title: string
-  summary: string | null
-  source: string | null
-  occurred_at: string
 }
 
 export type ConnectorRow = {
@@ -222,85 +199,6 @@ export async function listPeople(search = '', status = '', sort = 'updated_at.de
   return sortEntities(rows, sort)
 }
 
-export async function getAccountDetail(id: string): Promise<{ account: Account; people: Person[]; signals: Signal[]; interactions: Interaction[]; reading: StrategicReading | null }> {
-  const client = getSupabase()
-  const [accountResult, peopleResult, signalsResult, meetingsResult, readingResult] = await Promise.all([
-    client.from('companies').select('*').eq('id', id).single(),
-    client.from('contacts').select(contactSelect).eq('company_id', id).is('merged_into_contact_id', null),
-    client.from('company_signals').select('*').eq('company_id', id).order('observed_at', { ascending: false }).limit(50),
-    client.from('meetings').select('*').eq('company_id', id).order('starts_at', { ascending: false }).limit(50),
-    client.from('account_strategic_readings').select('content,confidence,source_counts,model,generated_at').eq('company_id', id).maybeSingle(),
-  ])
-  if (accountResult.error) throw accountResult.error
-  if (peopleResult.error) throw peopleResult.error
-  if (signalsResult.error) throw signalsResult.error
-  if (meetingsResult.error) throw meetingsResult.error
-  // Table absente (migration 202607160011 non appliquée) : lecture indisponible, jamais simulée.
-  const reading = readingResult.error ? null : mapStrategicReading(readingResult.data as DbRow | null)
-  return {
-    account: mapAccount(accountResult.data as DbRow),
-    reading,
-    people: (peopleResult.data ?? []).map((row) => mapPerson(row as DbRow)),
-    signals: (signalsResult.data ?? []).map((row) => ({
-      id: row.id,
-      entity_type: 'account' as const,
-      entity_id: row.company_id,
-      signal_type: row.family,
-      title: row.title,
-      summary: row.summary,
-      source: row.source ?? 'Veille entreprise',
-      confidence: nullableNumber(row.confidence),
-      occurred_at: row.observed_at ?? row.created_at,
-    })),
-    interactions: (meetingsResult.data ?? []).map((row) => ({
-      id: row.id,
-      interaction_type: row.meeting_type ?? 'meeting',
-      title: row.title,
-      summary: row.description,
-      source: row.platform,
-      occurred_at: row.starts_at ?? row.created_at,
-    })),
-  }
-}
-
-export async function getPersonDetail(id: string): Promise<{ person: Person; accounts: Account[]; signals: Signal[]; interactions: Interaction[] }> {
-  const client = getSupabase()
-  const [personResult, signalsResult, participantsResult] = await Promise.all([
-    client.from('contacts').select(contactSelect).eq('id', id).single(),
-    client.from('behavioral_signals').select('*').eq('contact_id', id).order('observed_at', { ascending: false }).limit(50),
-    client.from('meeting_participants').select('meetings(*)').eq('contact_id', id).limit(50),
-  ])
-  if (personResult.error) throw personResult.error
-  if (signalsResult.error) throw signalsResult.error
-  if (participantsResult.error) throw participantsResult.error
-  const rawPerson = personResult.data as DbRow
-  const company = firstRecord(rawPerson.companies)
-  const meetings = (participantsResult.data ?? []).map((row) => firstRecord(row.meetings)).filter((row) => row.id)
-  return {
-    person: mapPerson(rawPerson),
-    accounts: company.id ? [mapAccount({ ...company, organization_id: rawPerson.organization_id })] : [],
-    signals: (signalsResult.data ?? []).map((row) => ({
-      id: row.id,
-      entity_type: 'person' as const,
-      entity_id: row.contact_id,
-      signal_type: row.signal_type,
-      title: signalTitle(row.signal_type, row.inference, row.text),
-      summary: row.text,
-      source: row.source_type,
-      confidence: nullableNumber(row.confidence),
-      occurred_at: row.observed_at ?? row.created_at,
-    })),
-    interactions: meetings.map((row) => ({
-      id: String(row.id),
-      interaction_type: String(row.meeting_type ?? 'meeting'),
-      title: String(row.title ?? 'Rendez-vous'),
-      summary: nullableString(row.description),
-      source: nullableString(row.platform),
-      occurred_at: String(row.starts_at ?? row.created_at),
-    })),
-  }
-}
-
 export async function listManagedAccounts(userId: string): Promise<Account[]> {
   const { data, error } = await getSupabase()
     .from('contacts')
@@ -314,7 +212,7 @@ export async function listManagedAccounts(userId: string): Promise<Account[]> {
     const company = firstRecord(row.companies)
     if (company.id) unique.set(String(company.id), mapAccount(company))
   }
-  return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return [...unique.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
 export async function createAccount(values: Partial<Account>): Promise<Account> {
@@ -379,19 +277,6 @@ export async function createPerson(values: Partial<Person>): Promise<Person> {
   const { data, error } = await client.from('contacts').update(contactUpdates).eq('id', String(resolvedContact.contact_id)).select(contactSelect).single()
   if (error) throw error
   return mapPerson(data as DbRow)
-}
-
-/**
- * Génère (ou régénère) la lecture stratégique d'un compte via l'Edge Function
- * `account-strategic-reading`. Le serveur revalide la suffisance des données :
- * `insufficient` liste ce qui manque quand aucune synthèse n'est possible.
- */
-export async function generateStrategicReading(companyId: string): Promise<{ reading: StrategicReading | null; insufficient: string[] | null }> {
-  const organizationId = await getOrganizationId()
-  const { data, error } = await getSupabase().functions.invoke('account-strategic-reading', { body: { organizationId, companyId } })
-  if (error || data?.error) throw error ?? new Error(String(data.error))
-  if (data?.insufficient) return { reading: null, insufficient: Array.isArray(data.missing) ? data.missing.map(String) : [] }
-  return { reading: mapStrategicReading(record(data?.reading)), insufficient: null }
 }
 
 export async function saveSignalFeedback(signalId: string, userId: string, verdict: 'confirmed' | 'dismissed'): Promise<void> {
