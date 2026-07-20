@@ -48,9 +48,14 @@ function cleanName(value: string | null | undefined, email: string): string {
 }
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
-  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
+  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.fr',
+  'hotmail.com', 'hotmail.fr', 'live.com', 'live.fr', 'msn.com',
   'icloud.com', 'me.com', 'yahoo.com', 'yahoo.fr', 'proton.me', 'protonmail.com',
-  'orange.fr', 'wanadoo.fr', 'free.fr', 'laposte.net', 'gmx.fr',
+  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
+  'gmx.com', 'gmx.fr', 'aol.com', 'mac.com',
+  // Domaines partagés par une profession : ils identifient une boîte mail,
+  // jamais l'employeur commun de leurs titulaires.
+  'avocat.com', 'avocat.fr',
 ])
 
 function corporateDomain(email: string): string | null {
@@ -260,6 +265,15 @@ function extractJson(value: string): Analysis {
   }
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    const value = error as Record<string, unknown>
+    return String(value.message ?? value.error_description ?? value.details ?? JSON.stringify(value))
+  }
+  return String(error ?? 'analyse impossible')
+}
+
 async function analyze(name: string, role: 'responsable' | 'contact', excerpts: string[]): Promise<Analysis> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
@@ -328,7 +342,7 @@ Deno.serve(async (request) => {
     const scan = provider === 'google' ? await gmailMessages(accessToken, ownEmail) : await microsoftMessages(accessToken, ownEmail)
     const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
-    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary').eq('organization_id', organizationId).is('merged_into_contact_id', null)
+    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
     const contactByEmail = new Map<string, any>()
     for (const item of existingContacts ?? []) {
       for (const email of [item.email, ...(item.secondary_emails ?? [])]) {
@@ -391,7 +405,7 @@ Deno.serve(async (request) => {
             p_source: `email_${provider}`,
           }).maybeSingle()
           if (error || !resolved?.contact_id) continue
-          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: user.id }
+          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: user.id, is_tracked: false }
           contactByEmail.set(external.email, contact)
         } else if (!contact.owner_user_id) {
           await supabase.from('contacts').update({ owner_user_id: user.id }).eq('id', contact.id)
@@ -400,14 +414,14 @@ Deno.serve(async (request) => {
         messageContacts.push(contact)
       }
 
-      const primaryContact = messageContacts[0]
+      const primaryContact = messageContacts.find((item) => item.is_tracked === true) ?? messageContacts[0]
       if (!primaryContact || message.discoveryOnly) continue
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) continue
       const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
-      else if (message.body) contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), message.body])
+      else if (message.body && primaryContact.is_tracked === true) contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), message.body])
     }
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Détection des personnes et organisations', progress: 60 }).eq('id', syncJobId)
@@ -420,7 +434,7 @@ Deno.serve(async (request) => {
         await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: user.id, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
         responsibleAnalyzed = true
       } catch (error) {
-        analysisErrors.push(`responsable: ${error instanceof Error ? error.message : 'analyse impossible'}`)
+        analysisErrors.push(`responsable: ${errorMessage(error)}`)
       }
     }
 
@@ -432,11 +446,14 @@ Deno.serve(async (request) => {
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts)
         const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({ organization_id: organizationId, contact_id: contactId, profile_version: 1, global_confidence: pct(result.global_confidence), summary: result.executive_summary ?? null, executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
         if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')
-        const signals = (result.behavioral_analysis_data ?? []).slice(0, 6).map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait ?? 'communication_style', text: item.observation ?? '', inference: item.trait ?? null, inference_level: 'observed', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${new Date().toISOString()}`, observed_at: new Date().toISOString() })).filter((item) => item.text)
-        if (signals.length) await supabase.from('behavioral_signals').insert(signals)
+        const signals = (result.behavioral_analysis_data ?? []).slice(0, 6).map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait ?? 'communication_style', text: item.observation ?? '', inference: item.trait ?? null, inference_level: 'observable', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${new Date().toISOString()}`, observed_at: new Date().toISOString() })).filter((item) => item.text)
+        if (signals.length) {
+          const { error: signalsError } = await supabase.from('behavioral_signals').insert(signals)
+          if (signalsError) throw signalsError
+        }
         peopleAnalyzed++
       } catch (error) {
-        analysisErrors.push(`contact ${contactId}: ${error instanceof Error ? error.message : 'analyse impossible'}`)
+        analysisErrors.push(`contact ${contactId}: ${errorMessage(error)}`)
       }
     }
 

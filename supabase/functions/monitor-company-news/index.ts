@@ -151,12 +151,14 @@ Deno.serve(async (req) => {
 
   if (isCron) {
     const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-    const { data } = await supabase
+    let query = supabase
       .from('companies')
       .select('id, name, domain, organization_id, last_monitored_at')
-      .or(`last_monitored_at.is.null,last_monitored_at.lt.${cutoff}`)
-      .order('last_monitored_at', { ascending: true, nullsFirst: true })
-      .limit(25);
+      .eq('is_tracked', true);
+    query = body.organizationId
+      ? query.eq('organization_id', body.organizationId)
+      : query.or(`last_monitored_at.is.null,last_monitored_at.lt.${cutoff}`);
+    const { data } = await query.order('last_monitored_at', { ascending: true, nullsFirst: true }).limit(25);
     companies = (data ?? []) as Company[];
   } else {
     const auth = req.headers.get('Authorization');
@@ -169,6 +171,8 @@ Deno.serve(async (req) => {
       .from('companies')
       .select('id, name, domain, organization_id')
       .eq('organization_id', organizationId)
+      .eq('is_tracked', true)
+      .order('tracked_at', { ascending: false, nullsFirst: false })
       .limit(limit);
     companies = (data ?? []) as Company[];
   }
@@ -197,4 +201,3 @@ Deno.serve(async (req) => {
 
   return jsonResponse({ success: true, inserted: allInserted.length, scanned: companies.length, notified, mode: isCron ? 'cron' : 'user' });
 });
-

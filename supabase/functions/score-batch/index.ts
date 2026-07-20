@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
     if (sec?.value && sec.value === cronHeader) isCron = true;
   }
 
-  let cq = supabase.from('contacts').select('id, organization_id, created_at, owner_user_id').is('merged_into_contact_id', null);
+  let cq = supabase.from('contacts').select('id, organization_id, created_at, owner_user_id').eq('is_tracked', true).is('merged_into_contact_id', null);
   if (!isCron) {
     const auth = req.headers.get('Authorization');
     if (!auth) return jsonResponse({ error: 'Missing authorization' }, 401);
@@ -115,8 +115,10 @@ Deno.serve(async (req) => {
     if (uErr || !user) return jsonResponse({ error: 'Unauthorized' }, 401);
     if (!body.organizationId) return jsonResponse({ error: 'organizationId required' }, 400);
     cq = cq.eq('organization_id', body.organizationId);
+  } else if (body.organizationId) {
+    cq = cq.eq('organization_id', body.organizationId);
   }
-  const { data: contacts } = await cq.limit(400);
+  const { data: contacts } = await cq.limit(2000);
   if (!contacts?.length) return jsonResponse({ success: true, scored: 0 });
 
   const ids = contacts.map((c: any) => c.id);
@@ -140,6 +142,8 @@ Deno.serve(async (req) => {
 
   const profileRows: any[] = [];
   const histRows: any[] = [];
+  const relationshipRows: any[] = [];
+  const personSnapshotRows: any[] = [];
   const MONTHS = [5, 4, 3, 2, 1, 0];
   const now = Date.now();
 
@@ -156,7 +160,16 @@ Deno.serve(async (req) => {
       lastScore = r.finalScore;
       const snapDate = new Date(nowMs).toISOString().slice(0, 10);
       if (userId) histRows.push({ organization_id: c.organization_id, contact_id: c.id, user_id: userId, score: r.finalScore, phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, snapshot_date: snapDate });
-      if (ma === 0) profileRows.push({ organization_id: c.organization_id, contact_id: c.id, profile_version: 1, engagement_score: r.finalScore, score_delta: r.delta, score_phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, global_confidence: r.confidence, updated_at: new Date().toISOString() });
+      if (ma === 0) {
+        const interactionDates = [
+          ...cm.map((message: any) => message.sent_at),
+          ...cmeet.map((meeting: any) => meeting.starts_at),
+        ].filter(Boolean).map((value: string) => new Date(value).getTime()).filter(Number.isFinite);
+        const lastInteractionAt = interactionDates.length ? new Date(Math.max(...interactionDates)).toISOString() : null;
+        profileRows.push({ organization_id: c.organization_id, contact_id: c.id, profile_version: 1, engagement_score: r.finalScore, score_delta: r.delta, score_phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, global_confidence: r.confidence, updated_at: new Date().toISOString() });
+        if (userId) relationshipRows.push({ organization_id: c.organization_id, user_id: userId, contact_id: c.id, engagement_score: r.finalScore, score_evolution: r.delta, phase: r.phase, phase_started_at: new Date().toISOString(), last_contact_at: lastInteractionAt, last_contact_type: cm.length ? 'email' : cmeet.length ? 'meeting' : null, reciprocity_pct: r.sr, snapshot_date: snapDate });
+        personSnapshotRows.push({ organization_id: c.organization_id, contact_id: c.id, score: r.finalScore, phase: r.phase === 'growth' ? 'growing' : r.phase === 'decline' ? 'declining' : 'stable', phase_delta: r.delta, intensity_score: r.si, reciprocity_score: r.sr, recency_score: r.sl, confidence: r.confidence, total_interactions: stats.totalInteractions, email_interactions: cm.length, meeting_interactions: cmeet.length, last_interaction_at: lastInteractionAt, computed_at: new Date().toISOString(), model_version: 'relationship-score-v1', source_type: 'computed', source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred' });
+      }
     }
   }
 
@@ -167,6 +180,17 @@ Deno.serve(async (req) => {
   }
   for (let i = 0; i < histRows.length; i += 200) {
     await supabase.from('contact_score_history').upsert(histRows.slice(i, i + 200), { onConflict: 'organization_id,contact_id,user_id,snapshot_date', ignoreDuplicates: false });
+  }
+  for (let i = 0; i < relationshipRows.length; i += 200) {
+    await supabase.from('relationship_snapshots').upsert(relationshipRows.slice(i, i + 200), { onConflict: 'organization_id,user_id,contact_id,snapshot_date', ignoreDuplicates: false });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: existingToday } = await supabase.from('person_relationship_score_snapshots')
+    .select('contact_id').in('contact_id', ids).gte('computed_at', `${today}T00:00:00.000Z`);
+  const alreadySnapshotted = new Set((existingToday ?? []).map((row: any) => row.contact_id));
+  const newPersonSnapshots = personSnapshotRows.filter((row) => !alreadySnapshotted.has(row.contact_id));
+  for (let i = 0; i < newPersonSnapshots.length; i += 200) {
+    await supabase.from('person_relationship_score_snapshots').insert(newPersonSnapshots.slice(i, i + 200));
   }
 
   const npsByOrgDate = new Map<string, { org: string; date: string; scores: number[] }>();
@@ -185,6 +209,5 @@ Deno.serve(async (req) => {
     await supabase.from('nps_snapshots').upsert(npsRows.slice(i, i + 200), { onConflict: 'organization_id,snapshot_date' });
   }
 
-  return jsonResponse({ success: true, scored, history_points: histRows.length, nps_points: npsRows.length, mode: isCron ? 'cron' : 'user' });
+  return jsonResponse({ success: true, scored, history_points: histRows.length, relationship_snapshots: relationshipRows.length, person_snapshots: newPersonSnapshots.length, nps_points: npsRows.length, mode: isCron ? 'cron' : 'user' });
 });
-

@@ -25,8 +25,8 @@ Deno.serve(async (request) => {
     if (!message?.trim() || message.length > 4000) return json({ error: 'Question invalide.' }, 400)
 
     const [companies, contacts, companySignals, behavioralSignals] = await Promise.all([
-      supabase.from('companies').select('id,name,domain,industry,account_type,public_context,updated_at').order('updated_at', { ascending: false }).limit(50),
-      supabase.from('contacts').select('id,company_id,full_name,email,role_title,location,web_bio,updated_at').is('merged_into_contact_id', null).order('updated_at', { ascending: false }).limit(50),
+      supabase.from('companies').select('id,name,domain,industry,account_type,public_context,updated_at').eq('is_tracked', true).order('updated_at', { ascending: false }).limit(50),
+      supabase.from('contacts').select('id,company_id,full_name,email,role_title,location,web_bio,updated_at').eq('is_tracked', true).is('merged_into_contact_id', null).order('updated_at', { ascending: false }).limit(50),
       supabase.from('company_signals').select('company_id,family,title,summary,source,confidence,observed_at').order('observed_at', { ascending: false }).limit(50),
       supabase.from('behavioral_signals').select('contact_id,signal_type,text,inference,inference_level,confidence,source_type,observed_at').order('observed_at', { ascending: false }).limit(50),
     ])

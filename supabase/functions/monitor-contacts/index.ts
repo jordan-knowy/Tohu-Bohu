@@ -23,9 +23,12 @@ const COMPANY_FRESH_MS = 60 * 24 * 60 * 60 * 1000; // 60 jours
 
 // ── Classification de domaine (portée de enrich-contact) ─────────────────────
 const PERSONAL_DOMAINS = new Set([
-  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
+  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.fr',
+  'hotmail.com', 'hotmail.fr', 'live.com', 'live.fr', 'msn.com',
   'icloud.com', 'me.com', 'yahoo.com', 'yahoo.fr', 'proton.me', 'protonmail.com',
-  'orange.fr', 'wanadoo.fr', 'free.fr', 'laposte.net', 'gmx.fr', 'sfr.fr',
+  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
+  'gmx.com', 'gmx.fr', 'aol.com', 'mac.com',
+  'avocat.com', 'avocat.fr',
 ]);
 const MEGACORP_DOMAINS = new Set(['linkedin.com', 'google.com', 'microsoft.com', 'apple.com', 'amazon.com', 'meta.com', 'facebook.com', 'twitter.com', 'x.com']);
 const EDU_PATTERNS = ['lycee', 'ecole', 'univ', 'iut', 'ens', 'sup', 'college', 'academie', 'institut', 'school', 'edu', 'campus', 'formation'];
@@ -68,7 +71,8 @@ function classifyTier(isTracked: boolean, hasOwner: boolean, interactionCount: n
 
 type Contact = {
   id: string; full_name: string | null; email: string | null; organization_id: string;
-  enrichment_data: any; owner_user_id: string | null;
+  enrichment_data: any; owner_user_id: string | null; role_title?: string | null;
+  linkedin_url?: string | null; location?: string | null;
   companies: { id?: string; name: string; domain: string | null; is_tracked?: boolean; enrichment_data?: any; enriched_at?: string | null } | null;
 };
 
@@ -87,8 +91,8 @@ Deno.serve(async (req) => {
   }
 
   let q = supabase.from('contacts')
-    .select('id, full_name, email, organization_id, enrichment_data, owner_user_id, companies(id, name, domain, is_tracked, enrichment_data, enriched_at)')
-    .not('email', 'is', null).is('merged_into_contact_id', null);
+    .select('id, full_name, email, organization_id, enrichment_data, owner_user_id, role_title, linkedin_url, location, companies(id, name, domain, is_tracked, enrichment_data, enriched_at)')
+    .eq('is_tracked', true).not('email', 'is', null).is('merged_into_contact_id', null);
 
   if (!isCron) {
     const auth = req.headers.get('Authorization');
@@ -98,8 +102,12 @@ Deno.serve(async (req) => {
     if (!body.organizationId) return jsonResponse({ error: 'organizationId required' }, 400);
     q = q.eq('organization_id', body.organizationId);
   } else {
-    const cutoff = new Date(Date.now() - STALE_MS).toISOString();
-    q = q.or(`last_monitored_at.is.null,last_monitored_at.lt.${cutoff}`);
+    if (body.organizationId) {
+      q = q.eq('organization_id', body.organizationId);
+    } else {
+      const cutoff = new Date(Date.now() - STALE_MS).toISOString();
+      q = q.or(`last_monitored_at.is.null,last_monitored_at.lt.${cutoff}`);
+    }
   }
 
   const { data: contacts } = await q.order('last_monitored_at', { ascending: true, nullsFirst: true }).limit(MAX_PER_RUN);
@@ -151,6 +159,9 @@ Deno.serve(async (req) => {
 
   let totalSignals = 0;
   let totalNotified = 0;
+  let totalEnriched = 0;
+  let totalFailed = 0;
+  const errors: Array<{ contactId: string; message: string }> = [];
   let tierCounts = { A: 0, B: 0, C: 0 };
 
   const processContact = async (c: Contact) => {
@@ -189,7 +200,15 @@ Deno.serve(async (req) => {
     } catch { /* ignore */ }
 
     await supabase.from('contacts').update({ last_monitored_at: new Date().toISOString() }).eq('id', c.id);
-    if (!enr) return;
+    if (!enr) {
+      const { error: failedUpdateError } = await supabase.from('contacts').update({
+        enrichment_status: 'failed',
+        enrichment_error: 'Aucune donnée fiable retournée par le moteur d’enrichissement',
+      }).eq('id', c.id);
+      totalFailed++;
+      if (failedUpdateError) errors.push({ contactId: c.id, message: failedUpdateError.message });
+      return;
+    }
 
     const candidates: Array<{ signal_type: string; text: string; important: boolean; url?: string | null; date?: string | null }> = [];
     const prevRole = previous?.currentRole, prevCo = previous?.currentCompany;
@@ -207,10 +226,75 @@ Deno.serve(async (req) => {
       }
     }
 
-    await supabase.from('contacts').update({ enrichment_data: enr, web_bio: enr.summary ?? null }).eq('id', c.id);
+    const enrichedAt = new Date().toISOString();
+    // Le contenu enrichi et son statut sont écrits séparément. Ainsi une ancienne
+    // contrainte de statut ne peut plus empêcher la mise à jour de toute la fiche.
+    const { error: enrichmentUpdateError } = await supabase.from('contacts').update({
+      enrichment_data: enr,
+      web_bio: enr.summary ?? null,
+      role_title: enr.currentRole ?? c.role_title ?? null,
+      linkedin_url: enr.linkedinUrl ?? c.linkedin_url ?? null,
+      location: enr.location ?? c.location ?? null,
+      last_enriched_at: enrichedAt,
+      enrichment_error: null,
+    }).eq('id', c.id);
+    if (enrichmentUpdateError) {
+      totalFailed++;
+      errors.push({ contactId: c.id, message: enrichmentUpdateError.message });
+      return;
+    }
+    totalEnriched++;
+    const { error: statusUpdateError } = await supabase.from('contacts')
+      .update({ enrichment_status: 'completed' }).eq('id', c.id);
+    if (statusUpdateError) errors.push({ contactId: c.id, message: statusUpdateError.message });
     await supabase.from('enrichment_cache').upsert({
       entity_key: entityKey, entity_type: 'person', data: enr, sources: enr.sources ?? null, refreshed_at: new Date().toISOString(),
     }, { onConflict: 'entity_key' });
+
+    // Alimente le CV vivant sans écraser l'historique : un changement détecté
+    // clôt l'expérience précédente et crée une nouvelle étape à confirmer.
+    if (enr.currentRole && enr.currentCompany) {
+      const { data: currentCareer } = await supabase.from('person_career_entries')
+        .select('id,title,organization_name').eq('organization_id', c.organization_id)
+        .eq('contact_id', c.id).eq('is_current', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const roleChanged = !currentCareer
+        || String(currentCareer.title).toLowerCase() !== String(enr.currentRole).toLowerCase()
+        || String(currentCareer.organization_name).toLowerCase() !== String(enr.currentCompany).toLowerCase();
+      if (currentCareer && roleChanged) {
+        await supabase.from('person_career_entries').update({
+          is_current: false,
+          ended_at: new Date().toISOString().slice(0, 10),
+          updated_at: enrichedAt,
+        }).eq('id', currentCareer.id);
+      }
+      if (roleChanged) {
+        await supabase.from('person_career_entries').insert({
+          organization_id: c.organization_id,
+          contact_id: c.id,
+          company_id: c.companies?.id ?? null,
+          entry_type: currentCareer ? 'detected_change' : 'experience',
+          title: String(enr.currentRole).slice(0, 200),
+          organization_name: String(enr.currentCompany).slice(0, 200),
+          location: enr.location ?? null,
+          started_at: enr.roleStartedAt ?? new Date().toISOString().slice(0, 10),
+          is_current: true,
+          verification_status: enr.roleConfidence === 'confirmed' ? 'probable' : 'to_confirm',
+          source_type: 'ai_monitoring',
+          source_label: 'Veille Tohu',
+          source_url: enr.linkedinUrl ?? null,
+          observed_at: enrichedAt,
+          last_verified_at: enrichedAt,
+          confidence: enr.roleConfidence === 'confirmed' ? 90 : 65,
+          inference_level: 'observable',
+        });
+      } else if (currentCareer) {
+        await supabase.from('person_career_entries').update({
+          last_verified_at: enrichedAt,
+          updated_at: enrichedAt,
+        }).eq('id', currentCareer.id);
+      }
+    }
 
     if (!candidates.length) return;
 
@@ -242,6 +326,15 @@ Deno.serve(async (req) => {
 
   await Promise.allSettled((contacts as Contact[]).map(processContact));
 
-  return jsonResponse({ success: true, scanned: contacts.length, signals: totalSignals, notified: totalNotified, tiers: tierCounts, mode: isCron ? 'cron' : 'user' });
+  return jsonResponse({
+    success: errors.length === 0,
+    scanned: contacts.length,
+    enriched: totalEnriched,
+    failed: totalFailed,
+    signals: totalSignals,
+    notified: totalNotified,
+    tiers: tierCounts,
+    errors: errors.slice(0, 10),
+    mode: isCron ? 'cron' : 'user',
+  });
 });
-

@@ -38,8 +38,8 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     companiesResult, contactsResult, historyResult, settingsResult, prefsResult,
     watchResult, meetingsResult, messagesResult, signalsResult, membershipsResult, profilesResult,
   ] = await Promise.all([
-    client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).limit(500),
-    client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).is('merged_into_contact_id', null).limit(1000),
+    client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
+    client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
     client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('snapshot_date', { ascending: false }).limit(8000),
     client.from('account_settings').select('company_id,relationship_status,relationship_started_at,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('account_user_preferences').select('company_id,favorite').eq('organization_id', workspaceId).eq('user_id', userId),
@@ -181,9 +181,17 @@ export async function detectAccountCandidates(workspaceId: string): Promise<Acco
 }
 
 export async function trackCandidates(workspaceId: string, selection: Array<{ companyId: string | null; name: string; domain: string | null }>): Promise<void> {
-  const { error } = await getSupabase().rpc('set_tracked_companies', {
-    p_organization_id: workspaceId,
-    p_selection: selection.map((item) => ({ company_id: item.companyId, name: item.name, domain: item.domain })),
+  const client = getSupabase()
+  for (const item of selection) {
+    const { error } = await client.rpc('add_tracked_company', {
+      p_organization_id: workspaceId,
+      p_company_id: item.companyId,
+      p_name: item.name,
+      p_domain: item.domain,
+    })
+    if (error) throw error
+  }
+  void client.functions.invoke('monitor-company-news', {
+    body: { organizationId: workspaceId, limit: Math.min(selection.length, 8) },
   })
-  if (error) throw error
 }

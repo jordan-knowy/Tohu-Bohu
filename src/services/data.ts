@@ -178,7 +178,7 @@ export async function getOrganizationId(): Promise<string> {
 }
 
 export async function listAccounts(search = '', status = '', sort = 'updated_at.desc'): Promise<Account[]> {
-  let query = getSupabase().from('companies').select('*').order('updated_at', { ascending: false }).limit(100)
+  let query = getSupabase().from('companies').select('*').eq('is_tracked', true).order('updated_at', { ascending: false }).limit(100)
   if (search.trim()) {
     const term = escapeFilter(search)
     query = query.or(`name.ilike.%${term}%,domain.ilike.%${term}%,industry.ilike.%${term}%`)
@@ -194,7 +194,7 @@ export async function listAccounts(search = '', status = '', sort = 'updated_at.
 }
 
 export async function listPeople(search = '', status = '', sort = 'updated_at.desc'): Promise<Person[]> {
-  let query = getSupabase().from('contacts').select(contactSelect).is('merged_into_contact_id', null).order('updated_at', { ascending: false }).limit(100)
+  let query = getSupabase().from('contacts').select(contactSelect).eq('is_tracked', true).is('merged_into_contact_id', null).order('updated_at', { ascending: false }).limit(100)
   if (search.trim()) {
     const term = escapeFilter(search)
     query = query.or(`full_name.ilike.%${term}%,email.ilike.%${term}%,role_title.ilike.%${term}%`)
@@ -242,6 +242,9 @@ export async function createAccount(values: Partial<Account>): Promise<Account> 
   const companyUpdates: DbRow = {
     name: values.name,
     public_context: publicContext,
+    is_tracked: true,
+    tracked_at: new Date().toISOString(),
+    tracked_by: (await client.auth.getUser()).data.user?.id ?? null,
   }
   if (values.domain?.trim()) companyUpdates.domain = values.domain.trim()
   if (values.industry?.trim()) companyUpdates.industry = values.industry.trim()
@@ -279,8 +282,12 @@ export async function createPerson(values: Partial<Person>): Promise<Person> {
   if (resolveError) throw resolveError
   const resolvedContact = record(resolved)
   if (!resolvedContact.contact_id) throw new Error('Personne non résolue.')
+  const currentUserId = (await client.auth.getUser()).data.user?.id ?? null
   const contactUpdates: DbRow = {
     enrichment_data: { status: values.status ?? 'active' },
+    is_tracked: true,
+    tracked_at: new Date().toISOString(),
+    tracked_by: currentUserId,
   }
   if (values.avatar_url?.trim()) contactUpdates.avatar_url = values.avatar_url.trim()
   if (values.location?.trim()) contactUpdates.location = values.location.trim()
@@ -335,8 +342,8 @@ export async function globalSearch(term: string): Promise<Array<{ id: string; ty
   if (clean.length < 2) return []
   const client = getSupabase()
   const [accounts, people] = await Promise.all([
-    client.from('companies').select('id,name,industry').ilike('name', `%${clean}%`).limit(5),
-    client.from('contacts').select('id,full_name,role_title').ilike('full_name', `%${clean}%`).limit(5),
+    client.from('companies').select('id,name,industry').eq('is_tracked', true).ilike('name', `%${clean}%`).limit(5),
+    client.from('contacts').select('id,full_name,role_title').eq('is_tracked', true).is('merged_into_contact_id', null).ilike('full_name', `%${clean}%`).limit(5),
   ])
   if (accounts.error) throw accounts.error
   if (people.error) throw people.error

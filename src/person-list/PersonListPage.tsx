@@ -10,7 +10,10 @@ import {
   durationLabel, lastContactLabel, logoColor, RELATION_COLORS, scoreColor, tickerDurationSeconds, TIER_COLORS,
   type PersonListRow, type TickerItem,
 } from './mapping'
-import { getPeopleOverview, reassignPeople, setPersonFavorite, setPersonOwner, setPersonWatch, type PeopleOverview } from './service'
+import {
+  detectPersonCandidates, getPeopleOverview, reassignPeople, setPersonFavorite, setPersonOwner,
+  setPersonWatch, trackPersonCandidate, type PeopleOverview, type PersonCandidate,
+} from './service'
 
 type PageContext = { workspaceId: string; userId: string }
 type SortKey = 'nm' | 'job' | 'acc' | 'dur' | 'nps' | 'last'
@@ -35,13 +38,37 @@ function Ticker({ ticker }: { ticker: TickerItem[] }) {
   </div>
 }
 
-function CreatePersonModal({ onClose, refresh }: { onClose: () => void; refresh: () => Promise<void> }) {
+function CreatePersonModal({ workspaceId, onClose, refresh }: { workspaceId: string; onClose: () => void; refresh: () => Promise<void> }) {
   const toast = useToast()
+  const [candidates, setCandidates] = useState<PersonCandidate[] | null>(null)
+  const [candidateError, setCandidateError] = useState<string | null>(null)
+  const [adding, setAdding] = useState<string | null>(null)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [jobTitle, setJobTitle] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let active = true
+    detectPersonCandidates(workspaceId)
+      .then((rows) => { if (active) setCandidates(rows) })
+      .catch((reason) => { if (active) setCandidateError(reason instanceof Error ? reason.message : 'Détection impossible') })
+    return () => { active = false }
+  }, [workspaceId])
+
+  const addCandidate = async (candidate: PersonCandidate) => {
+    setAdding(candidate.contactId)
+    try {
+      await trackPersonCandidate(workspaceId, candidate.contactId)
+      toast(`${candidate.fullName} intégré(e) et ajouté(e) à la veille.`)
+      await refresh()
+      setCandidates((current) => current?.filter((item) => item.contactId !== candidate.contactId) ?? current)
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
+    } finally {
+      setAdding(null)
+    }
+  }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!fullName.trim()) return
@@ -62,6 +89,17 @@ function CreatePersonModal({ onClose, refresh }: { onClose: () => void; refresh:
     <div className="dxp-iov-card">
       <div className="dxp-iov-head">Intégrer des personnes<button type="button" className="dxp-iov-x" aria-label="Fermer" onClick={onClose}>✕</button></div>
       <div className="dxp-iov-sub">Ajoute explicitement une personne suivie par ton équipe, y compris une adresse générique ou une newsletter volontairement suivie.</div>
+      {candidateError && <div className="dxa-empty">{candidateError}</div>}
+      {!candidateError && candidates === null && <div className="dxa-empty">Détection des personnes dans tes échanges…</div>}
+      {candidates !== null && <div className="dxp-iov-res">
+        {candidates.slice(0, 40).map((candidate) => <div className="dxp-iov-cand" key={candidate.contactId}>
+          <span className="dxp-iov-iav">{initials(candidate.fullName)}</span>
+          <div><div className="dxp-iov-cnm">{candidate.fullName}</div><div className="dxp-iov-csub">{[candidate.roleTitle, candidate.companyName, candidate.email, `${candidate.interactions} échange${candidate.interactions > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div></div>
+          <button type="button" className="dxp-iov-add" disabled={adding !== null} onClick={() => void addCandidate(candidate)}>{adding === candidate.contactId ? '…' : '+ Ajouter'}</button>
+        </div>)}
+        {!candidates.length && <div className="dxa-empty">Aucune autre personne détectée.</div>}
+      </div>}
+      <div className="dxp-iov-sep"><span>ou créer manuellement</span></div>
       <form onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 10, marginTop: 6 }}>
         <div className="field"><label htmlFor="pl-name">Nom complet</label><input className="input" id="pl-name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Prénom Nom" required /></div>
         <div className="field"><label htmlFor="pl-email">Email</label><input className="input" id="pl-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="prenom.nom@exemple.com" /></div>
@@ -230,7 +268,7 @@ function PageBody({ context }: { context: PageContext }) {
       </div>
     </div>
     <div className="pa-note">Scores agrégés depuis les snapshots persistés du moteur relationnel · actualisé {new Date(overview.generatedAt).toLocaleTimeString('fr-FR')}</div>
-    {integrateOpen && <CreatePersonModal onClose={() => setIntegrateOpen(false)} refresh={refresh} />}
+    {integrateOpen && <CreatePersonModal workspaceId={context.workspaceId} onClose={() => setIntegrateOpen(false)} refresh={refresh} />}
     {ownerPopup && <MemberPicker overview={overview} anchor={ownerPopup}
       currentId={overview.people.find((row) => row.id === ownerPopup.personId)?.ownerId ?? null}
       onPick={pickOwner(ownerPopup.personId)} onClose={() => setOwnerPopup(null)} />}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { createAccount } from '../services/data'
 import { initials } from '../lib/auth'
@@ -147,14 +148,49 @@ export function FilterChip({ label, options, selected, onToggle }: { label: stri
 
 function RelationCell({ row, workspaceId, userId, refresh }: { row: AccountListRow; workspaceId: string; userId: string; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 })
   const toast = useToast()
   const rootRef = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
+    }
+    const closeOnViewportChange = () => setOpen(false)
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
     document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
   }, [open])
+  const toggleMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (open) {
+      setOpen(false)
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 246
+    const menuHeight = RELATION_TYPES.length * 40 + 12
+    const gap = 7
+    const viewportPadding = 10
+    const opensUp = window.innerHeight - rect.bottom < menuHeight + gap
+    setMenuPosition({
+      left: Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - menuWidth - viewportPadding)),
+      top: opensUp
+        ? Math.max(viewportPadding, rect.top - menuHeight - gap)
+        : Math.min(window.innerHeight - menuHeight - viewportPadding, rect.bottom + gap),
+    })
+    setOpen(true)
+  }
   const pick = async (value: string) => {
     setOpen(false)
     try {
@@ -166,15 +202,15 @@ function RelationCell({ row, workspaceId, userId, refresh }: { row: AccountListR
     }
   }
   return <span ref={rootRef} style={{ position: 'relative' }}>
-    <button type="button" className="dxa-rel" aria-haspopup="menu" aria-expanded={open} onClick={(event) => { event.stopPropagation(); setOpen((value) => !value) }}>
+    <button type="button" className="dxa-rel" aria-haspopup="menu" aria-expanded={open} onClick={toggleMenu}>
       <span className="dxa-rel-dot" style={{ background: row.relationType ? RELATION_COLORS[row.relationType] ?? '#8C86A8' : '#C4BCD8' }} />
       {row.relationType ?? 'À qualifier'}
     </button>
-    {open && <div className="dxp-rf-menu on" role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0 }} onClick={(event) => event.stopPropagation()}>
-      {RELATION_TYPES.map((value) => <button key={value} type="button" role="menuitem" className="dxp-ms" onClick={() => void pick(value)}>
+    {open && createPortal(<div ref={menuRef} className="pa-relmenu" role="menu" style={menuPosition} onClick={(event) => event.stopPropagation()}>
+      {RELATION_TYPES.map((value) => <button key={value} type="button" role="menuitem" className="pa-relmenu-option" onClick={() => void pick(value)}>
         <span className="dxp-rf-o-dot" style={{ background: RELATION_COLORS[value] }} />{value}
       </button>)}
-    </div>}
+    </div>, document.body)}
   </span>
 }
 

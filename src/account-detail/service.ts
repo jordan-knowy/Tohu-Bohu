@@ -53,8 +53,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
     memoryResult, factsResult, connectorsResult, feedbackResult,
   ] = await Promise.all([
-    client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).maybeSingle(),
-    client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).is('merged_into_contact_id', null).limit(500),
+    client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
+    client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
     client.from('company_signals').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(30),
     client.from('meetings').select('id,platform,starts_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('starts_at', { ascending: false }).limit(500),
     client.from('account_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),

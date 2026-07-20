@@ -37,7 +37,7 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
     contactsResult, historyResult, settingsResult, userSettingsResult,
     messagesResult, meetingsResult, signalsResult, membershipsResult, profilesResult,
   ] = await Promise.all([
-    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).is('merged_into_contact_id', null).limit(1000),
+    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
     client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('snapshot_date', { ascending: false }).limit(8000),
     client.from('person_settings').select('contact_id,relationship_type,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('person_user_settings').select('contact_id,favorite,watch_enabled').eq('organization_id', workspaceId).eq('user_id', userId),
@@ -77,6 +77,48 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
     ticker: buildPersonTickerItems(signals),
     team,
   }
+}
+
+export type PersonCandidate = {
+  contactId: string
+  fullName: string
+  email: string | null
+  roleTitle: string | null
+  companyName: string | null
+  interactions: number
+  lastInteractionAt: string | null
+  source: string
+}
+
+export async function detectPersonCandidates(workspaceId: string): Promise<PersonCandidate[]> {
+  const { data, error } = await getSupabase().rpc('detect_person_candidates', {
+    p_organization_id: workspaceId,
+    p_limit: 100,
+  })
+  if (error) throw error
+  return rows(object(data).candidates).map((candidate) => ({
+    contactId: String(candidate.contact_id),
+    fullName: text(candidate.full_name) ?? 'Personne détectée',
+    email: text(candidate.email),
+    roleTitle: text(candidate.role_title),
+    companyName: text(candidate.company_name),
+    interactions: Number(candidate.interactions ?? 0),
+    lastInteractionAt: text(candidate.last_interaction_at),
+    source: text(candidate.source) ?? 'Connecteur',
+  }))
+}
+
+export async function trackPersonCandidate(workspaceId: string, contactId: string): Promise<void> {
+  const client = getSupabase()
+  const { error } = await client.rpc('add_tracked_contact', {
+    p_organization_id: workspaceId,
+    p_contact_id: contactId,
+  })
+  if (error) throw error
+  void Promise.allSettled([
+    client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
+    client.functions.invoke('monitor-contacts', { body: { organizationId: workspaceId } }),
+  ])
 }
 
 export async function setPersonFavorite(workspaceId: string, contactId: string, userId: string, favorite: boolean): Promise<void> {

@@ -341,8 +341,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   startOfToday.setHours(0, 0, 0, 0)
 
   const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, behaviorProfileData, actionStatesData, jobsData, insightFeedbackData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday] = await Promise.all([
-    safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
-    safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
+    safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
+    safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
     safeQuery<DbRow>(client.from('subscriptions').select('*').eq('organization_id', organizationId).maybeSingle(), 'table subscriptions', degradedReasons),
     safeQuery<DbRow[]>(client.from('company_signals').select('*,companies(id,name)').eq('organization_id', organizationId).order('observed_at', { ascending: false }).limit(30), 'table company_signals', degradedReasons),
