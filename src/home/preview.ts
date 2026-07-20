@@ -16,7 +16,7 @@ import type { ProfileRow } from '../services/data'
 import type { HomeDashboardData } from './types'
 
 if (!import.meta.env.DEV) {
-  window.location.replace('/tohu-app.html')
+  window.location.replace('/app/home')
 }
 
 let errorCount = 0

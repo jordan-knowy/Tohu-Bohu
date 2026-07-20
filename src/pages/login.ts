@@ -4,7 +4,9 @@ import '../styles/tokens.css'
 import '../styles/public.css'
 import { tohuLogo } from '../components/logo'
 import { getSupabase, isSupabaseConfigured, absoluteUrl } from '../lib/supabase'
+import { LOGIN_PATH, ONBOARDING_PATH, replaceLegacyPublicPath } from '../lib/routes'
 
+replaceLegacyPublicPath('/login.html', LOGIN_PATH)
 const brand = document.querySelector<HTMLElement>('#brand')
 const errorBox = document.querySelector<HTMLElement>('#auth-error')
 if (brand) brand.innerHTML = tohuLogo()
@@ -18,7 +20,7 @@ async function routeExistingSession(): Promise<void> {
   const { data } = await getSupabase().auth.getSession()
   if (!data.session) return
   const { data: profile } = await getSupabase().from('profiles').select('onboarding_completed').eq('id', data.session.user.id).maybeSingle()
-  window.location.replace(profile?.onboarding_completed ? '/app/home' : '/onboarding.html')
+  window.location.replace(profile?.onboarding_completed ? '/app/home' : ONBOARDING_PATH)
 }
 
 async function login(provider: Provider): Promise<void> {
@@ -33,7 +35,7 @@ async function login(provider: Provider): Promise<void> {
     const { error } = await getSupabase().auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: absoluteUrl('/onboarding.html'),
+        redirectTo: absoluteUrl(ONBOARDING_PATH),
         scopes: provider === 'azure' ? 'email openid profile offline_access' : undefined,
       },
     })

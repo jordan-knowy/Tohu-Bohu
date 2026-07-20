@@ -53,3 +53,12 @@ verify_jwt = true
 
 [functions.score-batch]
 verify_jwt = true
+
+[functions.billing-account]
+verify_jwt = true
+
+[functions.invite-team-member]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false

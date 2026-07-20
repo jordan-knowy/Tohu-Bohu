@@ -226,6 +226,7 @@ function ArchiveIconButton({ data, userId, refresh }: { data: PersonDetailData; 
     if (!archived && !window.confirm(`Supprimer ${data.person.fullName} de Tohu ? La fiche sera masquée des listes mais l’historique réel (emails, réunions, signaux) reste conservé — tu pourras la restaurer à tout moment.`)) return
     void run('archive', async () => {
       await setPersonArchived(data, userId, !archived)
+      window.dispatchEvent(new Event('tohu:workspace-updated'))
       toast(archived ? `${data.person.fullName} restaurée.` : `${data.person.fullName} supprimée des listes.`)
       await refresh()
     })

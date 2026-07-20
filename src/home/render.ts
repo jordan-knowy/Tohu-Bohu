@@ -330,7 +330,7 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
       <h2 class="sync-t" style="font-size:17px">${candidates.length} compte${candidates.length > 1 ? 's' : ''} détecté${candidates.length > 1 ? 's' : ''}</h2>
       ${capLabel}
     </div>
-    <p class="sync-s" style="text-align:left;margin-top:3px">Sélectionne les comptes à suivre — les plus actifs sont pré-cochés.</p>
+    <div class="sel-intro"><p class="sync-s">Sélectionne les comptes à suivre — les plus actifs sont pré-cochés.</p><button type="button" class="btn-secondary" data-home="rescan-accounts">↻ Relancer la détection complète</button></div>
     <div class="sel-list" id="sel-list" role="group" aria-label="Comptes détectés"></div>
     ${upsell}
     <button class="sync-cta" data-home="analyze" aria-live="polite">Analyser ma sélection (<span id="sel-btn-n">0</span>)</button>
@@ -338,6 +338,7 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
   </div>`
 
   const list = ctx.container.querySelector('#sel-list')
+  ctx.container.querySelector('[data-home="rescan-accounts"]')?.addEventListener('click', () => void startDetection(ctx, data))
   const render = (): void => {
     if (!list) return
     list.innerHTML = candidates.map((candidate, index) => {

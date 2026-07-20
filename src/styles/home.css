@@ -37,6 +37,7 @@
 .stp-row.active .stp-lbl{font-weight:700}
 /* Sélection des comptes détectés (S2) */
 .sel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sel-intro{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:3px}.sel-intro .sync-s{margin:0;text-align:left}.sel-intro .btn-secondary{min-height:32px;padding-inline:11px;font-size:8px;white-space:nowrap}
 .sel-cap{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--violet-d)}
 .sel-cap b{color:var(--violet)}
 .sel-list{background:var(--white);border:1px solid var(--border);border-radius:var(--r-xl);box-shadow:var(--sh-sm);overflow:hidden;margin:11px 0;text-align:left;max-height:52vh;overflow-y:auto}
@@ -296,6 +297,7 @@
   .fb-txt{white-space:normal}
   .free-banner{position:static;flex-wrap:wrap}
   .sel-row{padding:11px 12px}
+  .sel-intro{align-items:flex-start;flex-direction:column}
   .sel-nps{display:none}
   .krs-crow{flex-wrap:wrap}
   .krs-at{white-space:normal}

@@ -1,13 +1,36 @@
-# Déploiement Netlify — app Vite multi-pages.
-# Toutes les routes /app/* sont servies par le shell React unifié (app.html).
-# /tohu-app.html reste un fichier statique servi tel quel : c'est le redirecteur
-# legacy (anciens favoris + redirectTo OAuth whitelistés chez Supabase).
+# Déploiement Netlify — app Vite multi-pages avec slugs publics propres.
+# Les fichiers HTML restent uniquement des entrées de build internes.
 
 [build]
   command = "npm run build"
   publish = "dist"
 
 [[redirects]]
+  from = "/connexion"
+  to = "/login.html"
+  status = 200
+
+[[redirects]]
+  from = "/bienvenue"
+  to = "/onboarding.html"
+  status = 200
+
+[[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
+[[redirects]]
   from = "/app/*"
+  to = "/app.html"
+  status = 200
+
+[[redirects]]
+  from = "/super-admin"
+  to = "/app.html"
+  status = 200
+
+[[redirects]]
+  from = "/super-admin/*"
   to = "/app.html"
   status = 200

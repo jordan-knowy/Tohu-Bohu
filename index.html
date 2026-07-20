@@ -4,12 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Tohu transforme les signaux dispersés de votre équipe en mémoire relationnelle actionnable." />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#6E50C8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tohu" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:title" content="Tohu — Le cerveau relationnel de ton équipe" />
+    <meta property="og:description" content="Tohu transforme les signaux dispersés de votre équipe en mémoire relationnelle actionnable." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Tohu — Le cerveau relationnel de ton équipe" />
+    <meta name="twitter:description" content="Tohu transforme les signaux dispersés de votre équipe en mémoire relationnelle actionnable." />
     <title>Tohu — Le cerveau relationnel de ton équipe</title>
   </head>
   <body>
     <header class="landing-nav">
       <div id="brand"></div>
-      <span class="landing-badge">Cerveau relationnel</span>
+      <nav class="landing-links" aria-label="Navigation principale">
+        <a href="#pourquoi-tohu">Pourquoi Tohu</a>
+        <a href="#tarifs">Tarifs</a>
+        <a class="landing-login" href="/connexion">Se connecter</a>
+      </nav>
     </header>
     <main>
       <section class="hero">
@@ -17,13 +32,97 @@
         <span class="hero-kicker">Comprendre · décider · agir</span>
         <h1>Le cerveau relationnel<br />de ton équipe.</h1>
         <p>Tohu relie les personnes, les comptes et les signaux qui comptent pour transformer chaque échange en intelligence collective.</p>
-        <a class="btn-view hero-cta" href="/login.html">Commencer <span>→</span></a>
+        <a class="btn-view hero-cta" href="/connexion">Commencer <span>→</span></a>
         <div class="hero-network" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><span></span><span></span><span></span></div>
       </section>
-      <section class="value-grid" aria-label="Ce que Tohu apporte">
+      <section class="value-grid" id="pourquoi-tohu" aria-label="Ce que Tohu apporte">
         <article class="panel value-card"><div class="panel-ic">◎</div><h2>Une mémoire commune</h2><p>Les interactions utiles deviennent un contexte partagé, structuré et durable.</p></article>
         <article class="panel value-card"><div class="panel-ic sage">↗</div><h2>Les bons signaux</h2><p>Les mouvements, risques et opportunités remontent au moment où ils deviennent actionnables.</p></article>
         <article class="panel value-card"><div class="panel-ic teal">✦</div><h2>Des relations plus justes</h2><p>Chacun arrive préparé, avec la bonne lecture et le bon geste relationnel.</p></article>
+      </section>
+      <section class="pricing" id="tarifs" aria-labelledby="pricing-title">
+        <div class="pricing-head">
+          <div>
+            <span class="section-kicker">Des droits clairs, au bon rythme</span>
+            <h2 id="pricing-title">Commence simplement.<br />Fais grandir la mémoire.</h2>
+          </div>
+          <p>Chaque plan ouvre une nouvelle boucle de valeur : préparer, mémoriser, puis piloter. Les limites et fonctionnalités sont gérées par ton abonnement.</p>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card">
+            <div class="plan-top">
+              <span class="plan-index">01</span>
+              <h3>Free</h3>
+              <p>Découvrir la valeur de Tohu.</p>
+            </div>
+            <div class="plan-price"><strong>0 €</strong><span>pour toujours</span></div>
+            <a class="btn-secondary plan-cta" href="/connexion?plan=free">Découvrir Tohu</a>
+            <ul>
+              <li><b>5</b> comptes suivis</li>
+              <li><b>25</b> personnes suivies</li>
+              <li><b>5</b> briefs comportementaux / mois</li>
+              <li>Ask Tohu avec quota</li>
+              <li>Radar comportemental simplifié</li>
+            </ul>
+            <p class="plan-limit">Sans mémoire relationnelle avancée ni automatisation CRM.</p>
+          </article>
+          <article class="pricing-card">
+            <div class="plan-top">
+              <span class="plan-index">02</span>
+              <h3>Solo</h3>
+              <p>La boucle Prepare, pour mieux arriver à chaque échange.</p>
+            </div>
+            <div class="plan-price"><strong>29 €</strong><span>/ siège / mois</span></div>
+            <a class="btn-secondary plan-cta" href="/connexion?plan=solo">Choisir Solo</a>
+            <ul>
+              <li>Tout Free</li>
+              <li>Briefs comportementaux illimités</li>
+              <li>Radar complet sur 4 axes</li>
+              <li>Réunions multi-participants</li>
+              <li>Préparation calendrier et relances</li>
+            </ul>
+            <p class="plan-limit">1 siège · jusqu’à 25 comptes et 500 personnes.</p>
+          </article>
+          <article class="pricing-card featured">
+            <span class="popular-pill">Le plus choisi</span>
+            <div class="plan-top">
+              <span class="plan-index">03</span>
+              <h3>Pro</h3>
+              <p>La boucle se ferme. Chaque interaction enrichit la suivante.</p>
+            </div>
+            <div class="plan-price"><strong>49 €</strong><span>/ siège / mois</span></div>
+            <a class="btn-view plan-cta" href="/connexion?plan=pro">Passer à Pro <span>→</span></a>
+            <ul>
+              <li>Tout Solo</li>
+              <li>Mémoire relationnelle persistante</li>
+              <li>Ingestion des transcripts</li>
+              <li>Push et création de fiches CRM</li>
+              <li>Activity Feed et briefs adaptatifs</li>
+            </ul>
+            <p class="plan-limit">Jusqu’à 10 sièges · historique relationnel complet.</p>
+          </article>
+          <article class="pricing-card business">
+            <div class="plan-top">
+              <span class="plan-index">04</span>
+              <h3>Business</h3>
+              <p>Vision admin, signaux proactifs et pilotage d’équipe.</p>
+            </div>
+            <div class="plan-price"><strong>89 €</strong><span>/ siège / mois</span></div>
+            <a class="btn-secondary plan-cta" href="/connexion?plan=business">Choisir Business</a>
+            <ul>
+              <li>Tout Pro</li>
+              <li>Gestion d’équipe et des sièges</li>
+              <li>Analytics manager et portefeuille</li>
+              <li>Turnover et mouvements détectés</li>
+              <li>Passation et mémoire d’équipe</li>
+            </ul>
+            <p class="plan-limit">Pour les équipes · limites adaptées au workspace.</p>
+          </article>
+        </div>
+        <div class="pricing-note">
+          <span>Programme Beta</span>
+          <p>Les bêta-testeurs disposent des droits Business gratuitement pendant leur accès, sans facturation fictive.</p>
+        </div>
       </section>
     </main>
     <footer><span>© 2026 Tohu</span><span>La relation devient une intelligence collective.</span></footer>

@@ -3,11 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
     <title>Bienvenue — Tohu</title>
   </head>
   <body class="onboarding-page">
     <header class="onboarding-nav"><div id="brand"></div><button id="logout" class="text-link">Se déconnecter</button></header>
-    <main class="onboarding-main">
+    <div class="onboarding-loading" id="onboarding-loading"><span class="spinner"></span></div>
+    <main class="onboarding-main" id="onboarding-main" hidden>
       <div class="onboarding-progress" aria-label="Progression"><i class="active"></i><i></i></div>
       <section class="onboarding-card panel" id="step-identity">
         <span class="auth-eyebrow">Étape 1 sur 2</span>

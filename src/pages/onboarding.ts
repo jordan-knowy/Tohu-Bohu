@@ -5,6 +5,7 @@ import '../styles/public.css'
 import { tohuLogo } from '../components/logo'
 import { displayName, initials, requireSession, signOut } from '../lib/auth'
 import { absoluteUrl, getSupabase } from '../lib/supabase'
+import { ONBOARDING_PATH, replaceLegacyPublicPath } from '../lib/routes'
 
 type Connector = { provider: Provider; databaseProvider: 'google' | 'microsoft' | 'linkedin'; label: string; detail: string; icon: string; identity: string; scopes: string }
 
@@ -22,12 +23,21 @@ const connectors: Connector[] = [
 let session: Session
 let currentStep = 1
 
+replaceLegacyPublicPath('/onboarding.html', ONBOARDING_PATH)
 const brand = document.querySelector<HTMLElement>('#brand')
 if (brand) brand.innerHTML = tohuLogo()
 
-function text(selector: string, value: string): void {
+function setText(selector: string, value: string): void {
   const node = document.querySelector<HTMLElement>(selector)
   if (node) node.textContent = value
+}
+
+function feedback(selector: string, value: string, kind: 'error' | 'success' = 'error'): void {
+  const node = document.querySelector<HTMLElement>(selector)
+  if (!node) return
+  node.textContent = value
+  node.classList.toggle('success-text', kind === 'success')
+  node.classList.toggle('error-text', kind !== 'success')
 }
 
 function setStep(step: number): void {
@@ -54,19 +64,19 @@ async function renderConnectors(): Promise<void> {
 }
 
 async function linkProvider(databaseProvider: string): Promise<void> {
-  text('#connector-error', '')
+  feedback('#connector-error', '')
   const connector = connectors.find((item) => item.databaseProvider === databaseProvider)
   if (!connector) return
   const alreadyLinked = connectedIdentities().has(connector.identity)
   const options = {
-    redirectTo: absoluteUrl(`/onboarding.html?step=2&connector=${connector.databaseProvider}`),
+    redirectTo: absoluteUrl(`${ONBOARDING_PATH}?step=2&connector=${connector.databaseProvider}`),
     scopes: connector.scopes,
     queryParams: databaseProvider === 'google' ? { access_type: 'offline', prompt: 'consent' } : undefined,
   }
   const { error } = alreadyLinked
     ? await getSupabase().auth.signInWithOAuth({ provider: connector.provider, options })
     : await getSupabase().auth.linkIdentity({ provider: connector.provider, options })
-  if (error) text('#connector-error', error.message)
+  if (error) feedback('#connector-error', error.message)
 }
 
 async function persistEmailConnection(provider: string): Promise<void> {
@@ -80,17 +90,17 @@ async function persistEmailConnection(provider: string): Promise<void> {
   const { data, error } = await getSupabase().functions.invoke('connect-email-provider', { body: { organizationId: membership.organization_id, provider, accessToken: session.provider_token, refreshToken: session.provider_refresh_token ?? null, expiresIn: 3600, scopes: connector?.scopes.split(' ') ?? [] } })
   if (error || data?.error) throw error ?? new Error(data.error)
   await renderConnectors()
-  text('#connector-error', 'Compte connecté. L’analyse des emails démarre en arrière-plan…')
+  feedback('#connector-error', 'Compte connecté. L’analyse des emails démarre en arrière-plan…', 'success')
   void getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId: membership.organization_id, provider } }).then(({ data: syncData, error: syncError }) => {
-    if (syncError || syncData?.error) text('#connector-error', syncError?.message ?? syncData.error)
-    else text('#connector-error', `${syncData.messages ?? 0} emails synchronisés et ${syncData.peopleAnalyzed ?? 0} profil(s) personne analysé(s).`)
+    if (syncError || syncData?.error) feedback('#connector-error', syncError?.message ?? syncData.error)
+    else feedback('#connector-error', `${syncData.messages ?? 0} emails synchronisés et ${syncData.peopleAnalyzed ?? 0} profil(s) personne analysé(s).`, 'success')
   })
 }
 
 async function saveIdentity(): Promise<boolean> {
   const role = document.querySelector<HTMLSelectElement>('#role')?.value ?? ''
   if (!role) {
-    text('#onboarding-error', 'Choisis ton rôle pour continuer.')
+    feedback('#onboarding-error', 'Choisis ton rôle pour continuer.')
     return false
   }
   const userName = displayName(session.user)
@@ -101,7 +111,7 @@ async function saveIdentity(): Promise<boolean> {
     role_title: role,
   })
   if (error) {
-    text('#onboarding-error', error.message)
+    feedback('#onboarding-error', error.message)
     return false
   }
   return true
@@ -112,7 +122,7 @@ async function finish(): Promise<void> {
   if (button) { button.disabled = true; button.innerHTML = '<span class="spinner"></span> Préparation…' }
   const { error } = await getSupabase().from('profiles').update({ onboarding_completed: true }).eq('id', session.user.id)
   if (error) {
-    text('#connector-error', error.message)
+    feedback('#connector-error', error.message)
     if (button) { button.disabled = false; button.textContent = 'Voir mon cerveau relationnel →' }
     return
   }
@@ -121,15 +131,17 @@ async function finish(): Promise<void> {
 
 async function boot(): Promise<void> {
   session = await requireSession()
-  const name = displayName(session.user)
-  text('#welcome', `Bienvenue, ${name.split(' ')[0] ?? name}`)
-  text('#identity-email', session.user.email ?? '')
-  text('#avatar', initials(name))
   const { data: profile } = await getSupabase().from('profiles').select('role_title,onboarding_completed').eq('id', session.user.id).maybeSingle()
   if (profile?.onboarding_completed) {
     window.location.replace('/app/home')
     return
   }
+  document.querySelector<HTMLElement>('#onboarding-loading')!.hidden = true
+  document.querySelector<HTMLElement>('#onboarding-main')!.hidden = false
+  const name = displayName(session.user)
+  setText('#welcome', `Bienvenue, ${name.split(' ')[0] ?? name}`)
+  setText('#identity-email', session.user.email ?? '')
+  setText('#avatar', initials(name))
   const role = document.querySelector<HTMLSelectElement>('#role')
   if (role && profile?.role_title) role.value = profile.role_title
   setStep(new URLSearchParams(window.location.search).get('step') === '2' ? 2 : 1)
@@ -144,4 +156,4 @@ document.querySelector('#finish')?.addEventListener('click', finish)
 document.querySelector('#skip')?.addEventListener('click', finish)
 document.querySelector('#logout')?.addEventListener('click', signOut)
 
-boot().catch((error) => text(currentStep === 1 ? '#onboarding-error' : '#connector-error', error instanceof Error ? error.message : 'Impossible de charger l’onboarding.'))
+boot().catch((error) => feedback(currentStep === 1 ? '#onboarding-error' : '#connector-error', error instanceof Error ? error.message : 'Impossible de charger l’onboarding.'))

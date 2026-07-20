@@ -20,6 +20,7 @@ import '../styles/person-detail.css'
 import '../styles/account-list.css'
 import '../styles/person-list.css'
 import '../styles/super-admin.css'
+import '../styles/account-center.css'
 import { tohuLogo } from '../components/logo'
 import { displayName, initials, requireSession } from '../lib/auth'
 import { getOrganizationId, getProfile, listAccounts, listPeople } from '../services/data'
@@ -53,7 +54,7 @@ const PAGE_TITLES: Array<{ test: (path: string) => boolean; title: string; subti
   { test: (path) => path.startsWith('/app/people/'), title: 'Fiche Personne', subtitle: 'Cockpit relationnel sourcé' },
   { test: (path) => path === '/app/connectors', title: 'Connecteurs', subtitle: 'Sources connectées et précision du graphe' },
   { test: (path) => path === '/app/profile', title: 'Mon profil', subtitle: 'Ta lecture relationnelle dans Tohu' },
-  { test: (path) => path === '/app/account', title: 'Mon compte', subtitle: 'Informations, préférences et abonnement' },
+  { test: (path) => path === '/app/account', title: 'Mon compte', subtitle: 'Abonnement, équipe, canaux et facturation' },
 ]
 
 // Vues portées depuis le shell historique : elles gardent leur conteneur .content
@@ -161,6 +162,12 @@ function PlaceholderPage() {
 
 async function boot() {
   const session = await requireSession()
+  // Une invitation devient un siège actif uniquement au premier accès authentifié.
+  try {
+    await getSupabase().rpc('accept_my_organization_invitations')
+  } catch {
+    // Compatibilité pendant le déploiement progressif de la migration.
+  }
   const workspaceId = await getOrganizationId()
   const context = { session, workspaceId }
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>

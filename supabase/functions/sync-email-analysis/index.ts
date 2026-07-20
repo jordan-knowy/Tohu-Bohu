@@ -18,7 +18,11 @@ type Mail = {
   body: string
   direction: 'inbound' | 'outbound'
   headers?: Record<string, string>
+  /** Les messages anciens servent à découvrir le correspondant sans lancer
+   * les traitements lourds de stockage et d'analyse comportementale. */
+  discoveryOnly?: boolean
 }
+type MailScan = { messages: Mail[]; truncated: boolean }
 type Analysis = {
   executive_summary?: string
   cognitive_mode?: string
@@ -68,6 +72,15 @@ function parseAddress(value: string): Address {
   return { email, name: cleanName(rawName, email) }
 }
 
+function parseAddressList(value: string): Address[] {
+  const matches = [...String(value ?? '').matchAll(/(?:"?([^"<,]*)"?\s*)?<([^>]+)>|([^\s,<>]+@[^\s,<>]+)/g)]
+  if (!matches.length) return value.split(',').map(parseAddress).filter((item) => item.email)
+  return matches.map((match) => {
+    const email = cleanEmail(match[2] ?? match[3])
+    return { email, name: cleanName(match[1], email) }
+  }).filter((item) => item.email)
+}
+
 function stripHtml(value: string): string {
   return value.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>|<\/div>/gi, '\n').replace(/<[^>]+>/g, ' ')
@@ -114,6 +127,15 @@ function automationHeaders(headers: Array<{ name: string; value: string }>): Rec
     .map((item) => [item.name.toLowerCase(), item.value]))
 }
 
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number(Deno.env.get(name))
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
+}
+
+const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 2500)
+const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 120)
+const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
+
 async function refreshAccessToken(provider: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
   const isGoogle = provider === 'google'
   const clientId = Deno.env.get(isGoogle ? 'GOOGLE_CLIENT_ID' : 'MICROSOFT_CLIENT_ID')
@@ -129,32 +151,69 @@ async function refreshAccessToken(provider: string, refreshToken: string): Promi
   return { accessToken: data.access_token, refreshToken: data.refresh_token ?? refreshToken, expiresIn: Number(data.expires_in ?? 3600) }
 }
 
-async function gmailMessages(token: string, ownEmail: string): Promise<Mail[]> {
-  const listResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q=newer_than:180d%20-category%3Apromotions&maxResults=80', { headers: { Authorization: `Bearer ${token}` } })
-  if (!listResponse.ok) throw new Error(`Gmail ${listResponse.status}`)
-  const ids = ((await listResponse.json()).messages ?? []) as Array<{ id: string; threadId: string }>
+async function gmailMessages(token: string, ownEmail: string): Promise<MailScan> {
+  const ids: Array<{ id: string; threadId: string }> = []
+  let pageToken: string | null = null
+  let hasMore = false
+  do {
+    const params = new URLSearchParams({
+      q: `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions`,
+      maxResults: String(Math.min(500, DISCOVERY_MAX_MESSAGES - ids.length)),
+    })
+    if (pageToken) params.set('pageToken', pageToken)
+    const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!listResponse.ok) throw new Error(`Gmail ${listResponse.status}`)
+    const page = await listResponse.json()
+    ids.push(...((page.messages ?? []) as Array<{ id: string; threadId: string }>))
+    pageToken = page.nextPageToken ?? null
+    hasMore = Boolean(pageToken)
+  } while (pageToken && ids.length < DISCOVERY_MAX_MESSAGES)
+
   const output: Mail[] = []
-  for (let index = 0; index < ids.length; index += 10) {
-    const batch = await Promise.all(ids.slice(index, index + 10).map(async ({ id, threadId }) => {
-      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
+  for (let index = 0; index < ids.length; index += 20) {
+    const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }, offset) => {
+      const absoluteIndex = index + offset
+      const discoveryOnly = absoluteIndex >= ANALYSIS_MAX_MESSAGES
+      const detailParams = discoveryOnly
+        ? 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
+        : 'format=full'
+      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${detailParams}`, { headers: { Authorization: `Bearer ${token}` } })
       if (!response.ok) return null
       const message = await response.json()
       const headers = message.payload?.headers ?? []
       const from = parseAddress(header(headers, 'From'))
-      const to = header(headers, 'To').split(',').map(parseAddress).filter((item) => item.email)
+      const to = parseAddressList(header(headers, 'To'))
       const direction = from.email === ownEmail ? 'outbound' as const : 'inbound' as const
-      return { id, threadId, subject: header(headers, 'Subject'), from, to, sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(), body: sanitizeBody(gmailBody(message.payload)), direction, headers: automationHeaders(headers) }
+      return {
+        id,
+        threadId,
+        subject: header(headers, 'Subject'),
+        from,
+        to,
+        sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(),
+        body: discoveryOnly ? '' : sanitizeBody(gmailBody(message.payload)),
+        direction,
+        headers: automationHeaders(headers),
+        discoveryOnly,
+      }
     }))
-    output.push(...batch.filter((item): item is Mail => Boolean(item?.body)))
+    output.push(...batch.filter((item): item is Mail => Boolean(item)))
   }
-  return output
+  return { messages: output, truncated: hasMore }
 }
 
-async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string): Promise<Mail[]> {
-  const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,body'
-  const response = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=50&$orderby=receivedDateTime%20desc&$select=${select}`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) throw new Error(`Microsoft Graph ${response.status}`)
-  return ((await response.json()).value ?? []).map((message: any) => {
+async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, maximum: number): Promise<MailScan> {
+  const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview'
+  let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$orderby=receivedDateTime%20desc&$select=${select}`
+  const raw: any[] = []
+  while (nextUrl && raw.length < maximum) {
+    const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) throw new Error(`Microsoft Graph ${response.status}`)
+    const page = await response.json()
+    raw.push(...(page.value ?? []))
+    nextUrl = page['@odata.nextLink'] ?? null
+  }
+  const messages = raw.slice(0, maximum).map((message: any, index) => {
     const fromEmail = cleanEmail(message.from?.emailAddress?.address)
     const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
     const to = (message.toRecipients ?? []).map((recipient: any) => {
@@ -168,15 +227,21 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
       from,
       to,
       sentAt: message.sentDateTime ?? message.receivedDateTime ?? new Date().toISOString(),
-      body: sanitizeBody(message.body?.content ?? ''),
+      body: index < Math.ceil(ANALYSIS_MAX_MESSAGES / 2) ? sanitizeBody(message.bodyPreview ?? '') : '',
       direction: folder === 'SentItems' || from.email === ownEmail ? 'outbound' as const : 'inbound' as const,
+      discoveryOnly: index >= Math.ceil(ANALYSIS_MAX_MESSAGES / 2),
     }
-  }).filter((message: Mail) => message.body)
+  })
+  return { messages, truncated: Boolean(nextUrl) }
 }
 
-async function microsoftMessages(token: string, ownEmail: string): Promise<Mail[]> {
-  const [inbox, sent] = await Promise.all([graphFolder(token, 'Inbox', ownEmail), graphFolder(token, 'SentItems', ownEmail)])
-  return [...inbox, ...sent]
+async function microsoftMessages(token: string, ownEmail: string): Promise<MailScan> {
+  const perFolder = Math.ceil(DISCOVERY_MAX_MESSAGES / 2)
+  const [inbox, sent] = await Promise.all([
+    graphFolder(token, 'Inbox', ownEmail, perFolder),
+    graphFolder(token, 'SentItems', ownEmail, perFolder),
+  ])
+  return { messages: [...inbox.messages, ...sent.messages], truncated: inbox.truncated || sent.truncated }
 }
 
 /** Confiance en pourcentage entier 0-100 : le modèle renvoie parfois un ratio 0-1
@@ -260,7 +325,8 @@ Deno.serve(async (request) => {
     if (!accessToken) throw new Error('Jeton OAuth indisponible')
 
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? user.email)
-    const messages = provider === 'google' ? await gmailMessages(accessToken, ownEmail) : await microsoftMessages(accessToken, ownEmail)
+    const scan = provider === 'google' ? await gmailMessages(accessToken, ownEmail) : await microsoftMessages(accessToken, ownEmail)
+    const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
     const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary').eq('organization_id', organizationId).is('merged_into_contact_id', null)
     const contactByEmail = new Map<string, any>()
@@ -277,60 +343,71 @@ Deno.serve(async (request) => {
     const skippedReasons: Record<string, number> = {}
 
     for (const message of messages) {
-      const external = message.direction === 'inbound' ? message.from : message.to.find((item) => item.email !== ownEmail)
-      if (!external?.email || external.email === ownEmail) continue
-      let contact = contactByEmail.get(external.email)
-      const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
-      const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
-        sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
-      ))
-      const classification = classifyEmailAutomation({
-        email: external.email,
-        name: external.name,
-        subject: message.subject,
-        body: message.body,
-        headers: message.headers,
-      })
-      if (classification.automated && !manuallyIntegrated) {
-        skippedAutomated++
-        for (const reason of classification.reasons) skippedReasons[reason] = (skippedReasons[reason] ?? 0) + 1
-        continue
-      }
-      if (!contact) {
-        let companyId: string | null = null
-        const domain = corporateDomain(external.email)
-        if (domain) {
-          const { data: company } = await supabase.rpc('resolve_company_identity', {
-            p_organization_id: organizationId,
-            p_name: companyNameFromDomain(domain),
-            p_domain: domain,
-            p_industry: null,
-            p_create_if_missing: true,
-          }).maybeSingle()
-          companyId = company?.company_id ?? null
+      const externalByEmail = new Map(
+        (message.direction === 'inbound' ? [message.from] : message.to)
+          .filter((item) => item.email && item.email !== ownEmail)
+          .map((item) => [item.email, item]),
+      )
+      const messageContacts: any[] = []
+
+      for (const external of externalByEmail.values()) {
+        let contact = contactByEmail.get(external.email)
+        const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
+        const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
+          sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
+        ))
+        const classification = classifyEmailAutomation({
+          email: external.email,
+          name: external.name,
+          subject: message.subject,
+          body: message.body,
+          headers: message.headers,
+        })
+        if (classification.automated && !manuallyIntegrated) {
+          skippedAutomated++
+          for (const reason of classification.reasons) skippedReasons[reason] = (skippedReasons[reason] ?? 0) + 1
+          continue
         }
-        const { data: resolved, error } = await supabase.rpc('resolve_contact_identity', {
-          p_organization_id: organizationId,
-          p_email: external.email,
-          p_full_name: cleanName(external.name, external.email),
-          p_company_id: companyId,
-          p_owner_user_id: user.id,
-          p_role_title: null,
-          p_source: `email_${provider}`,
-        }).maybeSingle()
-        if (error || !resolved?.contact_id) continue
-        contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: user.id }
-        contactByEmail.set(external.email, contact)
-      } else if (!contact.owner_user_id) {
-        await supabase.from('contacts').update({ owner_user_id: user.id }).eq('id', contact.id)
+        if (!contact) {
+          let companyId: string | null = null
+          const domain = corporateDomain(external.email)
+          if (domain) {
+            const { data: company } = await supabase.rpc('resolve_company_identity', {
+              p_organization_id: organizationId,
+              p_name: companyNameFromDomain(domain),
+              p_domain: domain,
+              p_industry: null,
+              p_create_if_missing: true,
+            }).maybeSingle()
+            companyId = company?.company_id ?? null
+          }
+          const { data: resolved, error } = await supabase.rpc('resolve_contact_identity', {
+            p_organization_id: organizationId,
+            p_email: external.email,
+            p_full_name: cleanName(external.name, external.email),
+            p_company_id: companyId,
+            p_owner_user_id: user.id,
+            p_role_title: null,
+            p_source: `email_${provider}`,
+          }).maybeSingle()
+          if (error || !resolved?.contact_id) continue
+          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: user.id }
+          contactByEmail.set(external.email, contact)
+        } else if (!contact.owner_user_id) {
+          await supabase.from('contacts').update({ owner_user_id: user.id }).eq('id', contact.id)
+          contact.owner_user_id = user.id
+        }
+        messageContacts.push(contact)
       }
 
+      const primaryContact = messageContacts[0]
+      if (!primaryContact || message.discoveryOnly) continue
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) continue
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: contact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
-      if (message.direction === 'outbound') responsibleCorpus.push(message.body)
-      else contactCorpus.set(contact.id, [...(contactCorpus.get(contact.id) ?? []), message.body])
+      if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
+      else if (message.body) contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), message.body])
     }
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Détection des personnes et organisations', progress: 60 }).eq('id', syncJobId)
@@ -365,7 +442,19 @@ Deno.serve(async (request) => {
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Mise à jour des profils comportementaux', progress: 90 }).eq('id', syncJobId)
 
-    const syncSummary = { messages: storedMessages, people_analyzed: peopleAnalyzed, responsible_analyzed: responsibleAnalyzed, automated_messages_ignored: skippedAutomated, ignored_reasons: skippedReasons }
+    const discoveredDomains = new Set(
+      [...contactByEmail.keys()].map(corporateDomain).filter((domain): domain is string => Boolean(domain)),
+    ).size
+    const syncSummary = {
+      messages: storedMessages,
+      messages_scanned: messages.length,
+      discovery_truncated: scan.truncated,
+      organizations_detected: discoveredDomains,
+      people_analyzed: peopleAnalyzed,
+      responsible_analyzed: responsibleAnalyzed,
+      automated_messages_ignored: skippedAutomated,
+      ignored_reasons: skippedReasons,
+    }
     await supabase.from('connectors').update({ status: 'connected', last_synced_at: new Date().toISOString(), metadata: { ...(connector.metadata ?? {}), last_sync: syncSummary }, updated_at: new Date().toISOString() }).eq('id', connector.id)
     if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
     return json({ success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5) })

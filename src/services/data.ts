@@ -171,7 +171,7 @@ export async function getOrganizationId(): Promise<string> {
   const { data: userData, error: userError } = await getSupabase().auth.getUser()
   if (userError) throw userError
   if (!userData.user) throw new Error('Aucune session active.')
-  const { data, error } = await getSupabase().from('memberships').select('organization_id').eq('user_id', userData.user.id).limit(1).maybeSingle()
+  const { data, error } = await getSupabase().from('memberships').select('organization_id').eq('user_id', userData.user.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (error) throw error
   if (!data?.organization_id) throw new Error('Aucune organisation n’est associée à ce compte.')
   return data.organization_id

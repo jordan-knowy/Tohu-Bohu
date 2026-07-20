@@ -235,6 +235,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const toggleArchived = async () => {
     if (!archived && !window.confirm(`Supprimer ${account.name} de Tohu ? Le compte sera masqué des listes mais l’historique réel (contacts, signaux, échanges) reste conservé — tu pourras le restaurer à tout moment.`)) return
     await setAccountArchived(data, context.session.user.id, !archived)
+    window.dispatchEvent(new Event('tohu:workspace-updated'))
     await refresh()
   }
   return <>

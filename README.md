@@ -30,6 +30,7 @@ La `service_role` et les secrets OAuth ne doivent jamais être placés dans `.en
 - connecteurs Google, Microsoft, LinkedIn, HubSpot et Salesforce ;
 - ingestion Gmail/Outlook et analyses comportementales du responsable et des personnes ;
 - profil, préférences de notification et abonnement ;
+- centre Account avec plans, canaux, équipe, sièges et facturation Stripe ;
 - Ask Bohu via une Edge Function authentifiée.
 
 ## Supabase
@@ -77,6 +78,38 @@ Les fonctions [connect-email-provider](supabase/functions/connect-email-provider
 6. profil des personnes depuis les messages qu’elles ont rédigés.
 
 Une personne doit disposer d’au moins trois messages exploitables pour lancer son analyse. Les sorties IA sont des synthèses prudentes : aucune pathologie ni donnée sensible ne doit être inférée.
+
+## Abonnements et Stripe
+
+La page `/app/account` lit les plans, l’abonnement, les membres, les sièges et
+les connecteurs depuis Supabase. Les actions sensibles passent par trois Edge
+Functions :
+
+- `billing-account` crée Checkout ou un parcours ciblé du portail Stripe ;
+- `invite-team-member` vérifie le plan et les sièges avant l’invitation ;
+- `stripe-webhook` valide la signature Stripe et synchronise l’abonnement.
+
+Secrets serveur à configurer avant d’ouvrir les paiements :
+
+```bash
+supabase secrets set STRIPE_SECRET_KEY=<sk_...>
+supabase secrets set STRIPE_WEBHOOK_SECRET=<whsec_...>
+supabase secrets set APP_URL=https://votre-domaine.fr
+```
+
+Les identifiants `price_...` mensuels et annuels doivent être renseignés dans
+`subscription_plans.stripe_price_monthly_id` et
+`subscription_plans.stripe_price_yearly_id` pour `solo`, `pro` et `business`.
+Le webhook public est :
+
+```text
+https://bgmtzwfafcgjklgygvtx.supabase.co/functions/v1/stripe-webhook
+```
+
+Événements Stripe utiles : `checkout.session.completed`,
+`customer.subscription.created`, `customer.subscription.updated`,
+`customer.subscription.deleted`, `invoice.paid` et `invoice.payment_failed`.
+Le retour navigateur ne modifie jamais le plan : seul le webhook signé le fait.
 
 ## Ask Bohu
 

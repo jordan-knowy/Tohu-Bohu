@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /app.html
+Disallow: /tohu-app.html
+Disallow: /connexion
+Disallow: /bienvenue
+Disallow: /login.html
+Disallow: /onboarding.html

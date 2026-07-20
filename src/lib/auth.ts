@@ -1,5 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js'
 import { getSupabase } from './supabase'
+import { LOGIN_PATH } from './routes'
 
 export async function currentSession(): Promise<Session | null> {
   const { data, error } = await getSupabase().auth.getSession()
@@ -10,7 +11,7 @@ export async function currentSession(): Promise<Session | null> {
 export async function requireSession(): Promise<Session> {
   const session = await currentSession()
   if (!session) {
-    window.location.replace(`/login.html?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+    window.location.replace(`${LOGIN_PATH}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
     throw new Error('Session requise')
   }
   return session
@@ -27,5 +28,5 @@ export function initials(name: string): string {
 
 export async function signOut(): Promise<void> {
   await getSupabase().auth.signOut()
-  window.location.replace('/login.html')
+  window.location.replace(LOGIN_PATH)
 }

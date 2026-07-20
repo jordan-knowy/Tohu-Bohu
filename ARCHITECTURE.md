@@ -6,16 +6,20 @@ authentifiée vit dans un seul shell React** (`app.html` → `src/shell/`) :
 la navigation entre les pages est du routing client (React Router), sans
 rechargement navigateur.
 
-## Points d'entrée (racine)
+## Routes publiques et points d'entrée
 
-| Fichier | Rôle |
-|---|---|
-| `index.html` | Landing publique (`src/pages/landing.ts`) |
-| `login.html` | Connexion SSO (`src/pages/login.ts`) → redirige vers `/app/home` |
-| `onboarding.html` | Onboarding protégé (`src/pages/onboarding.ts`) → `/app/ask` |
-| `app.html` | **Shell React unifié** (`src/shell/main.tsx`) — toutes les routes `/app/*` |
-| `tohu-app.html` | Redirecteur legacy (`src/pages/legacy-redirect.ts`) : traduit les anciennes URLs `?view=`/`?start=` vers `/app/*`. Conservé car les `redirectTo` OAuth whitelistés chez Supabase pointent dessus. |
-| `home-preview.html` | Harnais dev (jamais buildé) : prévisualise la Home sans session (`src/home/preview.ts`) |
+Les visiteurs utilisent uniquement les slugs propres. Les fichiers `.html`
+restent des entrées internes nécessaires au build Vite et ne sont jamais
+présentés comme URLs produit.
+
+| Route visible | Entrée interne | Rôle |
+|---|---|---|
+| `/` | `index.html` | Landing publique (`src/pages/landing.ts`) |
+| `/connexion` | `login.html` | Connexion SSO |
+| `/bienvenue` | `onboarding.html` | Onboarding protégé |
+| `/app/*` | `app.html` | **Shell React unifié** |
+| — | `tohu-app.html` | Compatibilité avec les anciens liens uniquement |
+| — | `home-preview.html` | Harnais dev, absent de la production |
 
 ## Arborescence `src/`
 
@@ -81,8 +85,8 @@ src/
 ## Routage
 
 Netlify (`netlify.toml`) et le middleware dev (`vite.config.ts`) appliquent
-la même règle unique : `/app/*` → `app.html`. Les fichiers statiques
-(`tohu-app.html`, `login.html`, …) sont servis avant les redirects.
+les mêmes réécritures internes : `/connexion`, `/bienvenue`, `/app` et
+`/app/*`. Le navigateur conserve toujours le slug propre.
 
 ## Backend
 
