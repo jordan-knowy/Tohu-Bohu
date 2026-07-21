@@ -124,6 +124,31 @@ export async function verifySuperAdmin(): Promise<boolean> {
   return data === true
 }
 
+export type ManualEnrichmentResult = {
+  success: boolean
+  scanned: number
+  enriched: number
+  failed: number
+  signals: number
+  notified: number
+}
+
+/** invokeError : FunctionsHttpError.message est générique, le vrai détail est dans error.context. */
+async function invokeError(error: unknown, fallback: string): Promise<Error> {
+  const detail = await (error as { context?: Response })?.context?.clone?.().json?.().catch(() => null)
+  if (detail?.error) return new Error(String(detail.error))
+  return error instanceof Error && !error.message.includes('non-2xx') ? error : new Error(fallback)
+}
+
+/** Mode enrichissement manuel global : réservé aux super admins (vérifié côté edge function,
+ *  pas seulement côté UI). N'envoie pas organizationId → balaie tous les workspaces. */
+export async function triggerManualEnrichment(): Promise<ManualEnrichmentResult> {
+  const { data, error } = await getSupabase().functions.invoke('monitor-contacts', { body: {} })
+  if (error) throw await invokeError(error, 'Déclenchement de l’enrichissement impossible.')
+  if (data?.error) throw new Error(String(data.error))
+  return data as ManualEnrichmentResult
+}
+
 export async function getSuperAdminData(): Promise<{ kpis: SuperAdminKpis; console: SuperAdminConsole; deletionRequests: AccountDeletionRequestAdmin[] }> {
   const client = getSupabase()
   const [kpiResult, consoleResult, deletionResult] = await Promise.all([

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
-import { getPersonDetail, setPersonArchived, setPersonFavorite, setPersonRoles, setPersonWatch } from './service'
+import { verifySuperAdmin } from '../super-admin/service'
+import { getPersonDetail, setPersonArchived, setPersonFavorite, setPersonRoles, setPersonWatch, triggerPersonEnrichment } from './service'
 import { BehaviorSection, RecommendationsSection, RelationSection } from './sections'
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonDetailData } from './types'
@@ -236,11 +237,33 @@ function ArchiveIconButton({ data, userId, refresh }: { data: PersonDetailData; 
   </button>
 }
 
-function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+function EnrichPersonButton({ data }: { data: PersonDetailData }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const run = () => void (async () => {
+    setBusy(true)
+    try {
+      const result = await triggerPersonEnrichment(data.person.id)
+      toast(result.enriched > 0 ? `${data.person.fullName} enrichie via l’agent IA.` : 'Aucune donnée fiable retournée par le moteur d’enrichissement.')
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Enrichissement impossible.')
+    } finally {
+      setBusy(false)
+    }
+  })()
+  return <button type="button" className="kfav-star" disabled={busy} title="Enrichir maintenant (super admin)" aria-label="Enrichir maintenant" onClick={run}>
+    <span style={{ fontSize: 14 }}>{busy ? '…' : '✨'}</span>
+  </button>
+}
+
+function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
   return <>
     <div className="pp-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Link to="/app/people">← Personnes</Link>
-      <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {isSuperAdmin && <EnrichPersonButton data={data} />}
+        <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
+      </div>
     </div>
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
@@ -272,6 +295,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   const { personId = '' } = useParams()
   const [data, setData] = useState<PersonDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const refresh = useCallback(async () => {
     try {
       setError(null)
@@ -281,6 +305,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
     }
   }, [context.workspaceId, personId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
+  useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
 
   if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><Link to="/app/people">Retour aux personnes</Link></div>
@@ -289,7 +314,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
 
   return <ToastProvider>
     <div className="pp">
-      <PageBody data={data} userId={context.userId} refresh={refresh} />
+      <PageBody data={data} userId={context.userId} refresh={refresh} isSuperAdmin={isSuperAdmin} />
     </div>
   </ToastProvider>
 }

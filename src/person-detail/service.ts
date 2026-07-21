@@ -147,6 +147,25 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
   if (error) throw error
 }
 
+export type PersonEnrichmentResult = { scanned: number; enriched: number; failed: number }
+
+/** invokeError : FunctionsHttpError.message est générique, le vrai détail est dans error.context. */
+async function invokeError(error: unknown, fallback: string): Promise<Error> {
+  const detail = await (error as { context?: Response })?.context?.clone?.().json?.().catch(() => null)
+  if (detail?.error) return new Error(String(detail.error))
+  return error instanceof Error && !error.message.includes('non-2xx') ? error : new Error(fallback)
+}
+
+/** Bouton « Enrichir maintenant » de la fiche personne : réservé aux super admins
+ *  (vérifié côté edge function, pas seulement côté UI). Force une recherche IA immédiate
+ *  pour ce seul contact, sans attendre le prochain cycle planifié. */
+export async function triggerPersonEnrichment(contactId: string): Promise<PersonEnrichmentResult> {
+  const { data, error } = await getSupabase().functions.invoke('monitor-contacts', { body: { contactId } })
+  if (error) throw await invokeError(error, 'Déclenchement de l’enrichissement impossible.')
+  if (data?.error) throw new Error(String(data.error))
+  return data as PersonEnrichmentResult
+}
+
 /** Supprime une personne de Tohu : archivage (réversible), pas de suppression
  *  physique — préserve l'historique réel (emails, réunions, signaux). */
 export async function setPersonArchived(data: PersonDetailData, userId: string, archived: boolean): Promise<void> {

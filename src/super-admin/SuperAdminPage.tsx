@@ -3,7 +3,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
 import { initials } from '../lib/auth'
 import {
-  getSuperAdminData, setSuperAdminRole, setUserAccess, updateAccountDeletionRequest, verifySuperAdmin,
+  getSuperAdminData, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
   type AccountDeletionRequestAdmin, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
@@ -366,6 +366,36 @@ function ProductView({ kpis, timeseries }: { kpis: SuperAdminKpis; timeseries: S
   </>
 }
 
+function ManualEnrichmentTrigger() {
+  const [running, setRunning] = useState(false)
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+
+  const run = async () => {
+    setRunning(true)
+    setFeedback(null)
+    try {
+      const result = await triggerManualEnrichment()
+      setFeedback({
+        tone: 'success',
+        text: `${result.scanned} contact${result.scanned > 1 ? 's' : ''} analysé${result.scanned > 1 ? 's' : ''} · ${result.enriched} enrichi${result.enriched > 1 ? 's' : ''} · ${result.failed} échec${result.failed > 1 ? 's' : ''}.`,
+      })
+    } catch (reason) {
+      setFeedback({ tone: 'error', text: reason instanceof Error ? reason.message : 'Déclenchement impossible.' })
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return <article className="sa-manual-trigger">
+    <div>
+      <h3>Enrichissement manuel</h3>
+      <p>Force un passage immédiat de la veille IA (parcours, poste, actualité) sur les contacts trackés les plus anciens, tous workspaces confondus, sans attendre le prochain cycle planifié. Réservé aux Super Admin.</p>
+      {feedback && <p className={feedback.tone === 'error' ? 'sa-trigger-error' : 'sa-trigger-success'}>{feedback.text}</p>}
+    </div>
+    <button type="button" className="sa-primary-action" onClick={() => void run()} disabled={running}>{running ? 'Enrichissement en cours…' : 'Déclencher maintenant'}</button>
+  </article>
+}
+
 function OperationsView({ kpis, timeseries }: { kpis: SuperAdminKpis; timeseries: SuperAdminTimeseriesPoint[] }) {
   const values: Array<[string, number | null | undefined, MetricFormat?]> = [
     ['Jobs · 24 h', kpis.operations.sync_jobs_24h], ['Jobs réussis', kpis.operations.sync_succeeded_24h],
@@ -377,6 +407,7 @@ function OperationsView({ kpis, timeseries }: { kpis: SuperAdminKpis; timeseries
     <div className="sa-view-heading"><div><p>Fiabilité</p><h1>Opérations</h1><span>Synchronisations et santé technique</span></div></div>
     <LineChart data={timeseries} title="Santé des synchronisations" subtitle="Jobs réussis et échoués par jour" series={[{ key: 'sync_succeeded', label: 'Réussis', color: '#58d6a5' }, { key: 'sync_failed', label: 'Échoués', color: '#f27891' }]} />
     <div className="sa-metric-wall">{values.map(([label, value, format]) => <MetricCard key={label} label={label} value={value} format={format} tone={label.includes('échoué') || label.includes('erreur') ? 'pink' : 'violet'} />)}</div>
+    <ManualEnrichmentTrigger />
   </>
 }
 

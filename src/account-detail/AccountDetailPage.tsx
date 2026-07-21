@@ -3,12 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { initials } from '../lib/auth'
 import { saveSignalFeedback } from '../services/data'
+import { verifySuperAdmin } from '../super-admin/service'
 import {
   addAccountNote,
   getAccountDetail,
   setAccountArchived,
   setAccountFavorite,
   setAccountWatch,
+  triggerAccountEnrichment,
   updateRecommendationStatus,
 } from './service'
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
@@ -213,17 +215,42 @@ function Signals({ data, userId, refresh }: { data: AccountDetailData; userId: s
   </section>
 }
 
+function EnrichAccountButton({ companyId, accountName }: { companyId: string; accountName: string }) {
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const run = async () => {
+    setBusy(true)
+    setFeedback(null)
+    try {
+      const result = await triggerAccountEnrichment(companyId)
+      setFeedback(result.scanned > 0
+        ? `${result.scanned} contact${result.scanned > 1 ? 's' : ''} analysé${result.scanned > 1 ? 's' : ''} · ${result.enriched} enrichi${result.enriched > 1 ? 's' : ''}.`
+        : `Aucun contact tracké à enrichir pour ${accountName}.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Enrichissement impossible.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <button onClick={() => void run()} disabled={busy} title="Réservé aux super admins">{busy ? 'Enrichissement…' : '✨ Enrichir maintenant'}</button>
+    {feedback && <small style={{ opacity: .75 }}>{feedback}</small>}
+  </span>
+}
+
 export default function AccountDetailPage({ context }: { context: PageContext }) {
   const { accountId = '' } = useParams()
   const navigate = useNavigate()
   const [data, setData] = useState<AccountDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [watchOpen, setWatchOpen] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const refresh = useCallback(async () => {
     try { setError(null); setData(await getAccountDetail(context.workspaceId, accountId)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
   }, [accountId, context.workspaceId])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
   if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <div className="ra-skeleton" aria-label="Chargement de la fiche compte"><i /><i /><i /></div>
@@ -239,7 +266,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     await refresh()
   }
   return <>
-    <div className="ra-page-actions"><Link to="/app/accounts">← Comptes</Link><div><button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link><button onClick={() => void toggleArchived()} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}>{archived ? 'Restaurer ce compte' : 'Supprimer ce compte'}</button></div></div>
+    <div className="ra-page-actions"><Link to="/app/accounts">← Comptes</Link><div>{isSuperAdmin && <EnrichAccountButton companyId={account.id} accountName={account.name} />}<button onClick={() => void toggleFavorite()} aria-pressed={account.favorite}>{account.favorite ? '★ Favori' : '☆ Ajouter aux favoris'}</button><Link to={`/app/ask?accountId=${account.id}`}>Demander à Tohu</Link><button onClick={() => void toggleArchived()} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}>{archived ? 'Restaurer ce compte' : 'Supprimer ce compte'}</button></div></div>
     <section className={`ra-hero ${account.archivedAt ? 'archived' : ''}`}>
       <div className="ra-account-avatar">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}</div>
       <div className="ra-account-identity"><div className="ra-eyebrow">{account.strategic ? 'Compte stratégique' : account.relationshipStatus ?? 'Statut à confirmer'}</div><h1>{account.name}</h1>
