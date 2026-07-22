@@ -3,7 +3,7 @@ import { classifyEmailAutomation } from './email-classification.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -18,11 +18,12 @@ type Mail = {
   body: string
   direction: 'inbound' | 'outbound'
   headers?: Record<string, string>
-  /** Les messages anciens servent à découvrir le correspondant sans lancer
+  /** Décidé par `selectMessagesByRelevance` (pas par position/date) : les
+   * messages non retenus servent à découvrir le correspondant sans lancer
    * les traitements lourds de stockage et d'analyse comportementale. */
   discoveryOnly?: boolean
 }
-type MailScan = { messages: Mail[]; truncated: boolean }
+type MailScan = { messages: Mail[]; truncated: boolean; oldestSentAt: string | null }
 type Analysis = {
   executive_summary?: string
   cognitive_mode?: string
@@ -157,7 +158,19 @@ const MESSAGE_PROCESSING_CONCURRENCY = positiveIntegerEnv('EMAIL_MESSAGE_CONCURR
 
 const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 5000)
 const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 600)
+/** Plafond de messages « traitement complet » par relation, pour que le budget
+ *  global se répartisse sur plusieurs relations prioritaires plutôt que d'être
+ *  monopolisé par une seule (ex. une boîte qui reçoit beaucoup d'un seul tiers). */
+const PER_CONTACT_MAX_MESSAGES = positiveIntegerEnv('EMAIL_PER_CONTACT_MAX_MESSAGES', 150)
 const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
+/** Nombre de connecteurs traités par tick du cron de reprise du backfill —
+ *  reste faible pour que le temps d'exécution total du tick reste borné,
+ *  quitte à répartir sur plusieurs ticks (toutes les 6h) pour couvrir tout le monde. */
+const BACKFILL_MAX_CONNECTORS_PER_RUN = positiveIntegerEnv('EMAIL_BACKFILL_MAX_CONNECTORS_PER_RUN', 2)
+/** Les ticks incrémentaux (Partie C) sont beaucoup moins coûteux qu'un
+ *  backfill (History API / delta = uniquement les nouveautés) — plus de
+ *  connecteurs peuvent être traités par tick, plus fréquemment. */
+const INCREMENTAL_MAX_CONNECTORS_PER_RUN = positiveIntegerEnv('EMAIL_INCREMENTAL_MAX_CONNECTORS_PER_RUN', 15)
 
 async function refreshAccessToken(provider: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
   const isGoogle = provider === 'google'
@@ -174,13 +187,28 @@ async function refreshAccessToken(provider: string, refreshToken: string): Promi
   return { accessToken: data.access_token, refreshToken: data.refresh_token ?? refreshToken, expiresIn: Number(data.expires_in ?? 3600) }
 }
 
-async function gmailMessages(token: string, ownEmail: string): Promise<MailScan> {
+/** Convertit un ISO8601 en date Gmail `before:` (YYYY/MM/DD, granularité jour) —
+ *  utilisé pour reprendre la découverte plus loin dans le passé lors du tick
+ *  de reprise du backfill, sans avoir à rejouer tout le scan depuis le début. */
+function toGmailDateOnly(iso: string): string {
+  const date = new Date(iso)
+  return `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+/** Découverte Gmail — toujours en mode léger (métadonnées seulement, jamais le
+ *  corps) sur toute la fenêtre de découverte : qui a droit au traitement complet
+ *  (corps + stockage) se décide ensuite par pertinence, pas par position dans
+ *  cette liste triée par date (voir `selectMessagesByRelevance` + `hydrateGmailBodies`).
+ *  `beforeDate` (format Gmail YYYY/MM/DD) reprend une passe de backfill précédente
+ *  plus loin dans le passé, sans rejouer ce qui a déjà été scanné. */
+async function gmailMessages(token: string, ownEmail: string, beforeDate?: string | null): Promise<MailScan> {
   const ids: Array<{ id: string; threadId: string }> = []
   let pageToken: string | null = null
   let hasMore = false
   do {
+    const query = `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions${beforeDate ? ` before:${beforeDate}` : ''}`
     const params = new URLSearchParams({
-      q: `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions`,
+      q: query,
       maxResults: String(Math.min(500, DISCOVERY_MAX_MESSAGES - ids.length)),
     })
     if (pageToken) params.set('pageToken', pageToken)
@@ -192,14 +220,10 @@ async function gmailMessages(token: string, ownEmail: string): Promise<MailScan>
     hasMore = Boolean(pageToken)
   } while (pageToken && ids.length < DISCOVERY_MAX_MESSAGES)
 
+  const detailParams = 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
   const output: Mail[] = []
   for (let index = 0; index < ids.length; index += 20) {
-    const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }, offset) => {
-      const absoluteIndex = index + offset
-      const discoveryOnly = absoluteIndex >= ANALYSIS_MAX_MESSAGES
-      const detailParams = discoveryOnly
-        ? 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
-        : 'format=full'
+    const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }) => {
       const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${detailParams}`, { headers: { Authorization: `Bearer ${token}` } })
       if (!response.ok) return null
       const message = await response.json()
@@ -214,20 +238,35 @@ async function gmailMessages(token: string, ownEmail: string): Promise<MailScan>
         from,
         to,
         sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(),
-        body: discoveryOnly ? '' : sanitizeBody(gmailBody(message.payload)),
+        body: '',
         direction,
         headers: automationHeaders(headers),
-        discoveryOnly,
       }
     }))
     output.push(...batch.filter((item): item is Mail => Boolean(item)))
   }
-  return { messages: output, truncated: hasMore }
+  const oldestSentAt = output.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
+  return { messages: output, truncated: hasMore, oldestSentAt }
 }
 
-async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, maximum: number): Promise<MailScan> {
+/** Seconde passe Gmail, ciblée : récupère le corps complet uniquement pour les
+ *  messages retenus par le calcul de pertinence (voir `selectMessagesByRelevance`). */
+async function hydrateGmailBodies(token: string, mails: Mail[], selected: Set<string>): Promise<void> {
+  const targets = mails.filter((mail) => selected.has(mail.id))
+  for (let index = 0; index < targets.length; index += 20) {
+    await Promise.all(targets.slice(index, index + 20).map(async (mail) => {
+      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!response.ok) return
+      const message = await response.json()
+      mail.body = sanitizeBody(gmailBody(message.payload))
+    }))
+  }
+}
+
+async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, maximum: number, beforeIso?: string | null): Promise<MailScan> {
   const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview'
-  let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$orderby=receivedDateTime%20desc&$select=${select}`
+  const filterParam = beforeIso ? `&$filter=${encodeURIComponent(`receivedDateTime lt ${beforeIso}`)}` : ''
+  let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$orderby=receivedDateTime%20desc&$select=${select}${filterParam}`
   const raw: any[] = []
   while (nextUrl && raw.length < maximum) {
     const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
@@ -236,7 +275,7 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
     raw.push(...(page.value ?? []))
     nextUrl = page['@odata.nextLink'] ?? null
   }
-  const messages = raw.slice(0, maximum).map((message: any, index) => {
+  const messages = raw.slice(0, maximum).map((message: any) => {
     const fromEmail = cleanEmail(message.from?.emailAddress?.address)
     const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
     const to = (message.toRecipients ?? []).map((recipient: any) => {
@@ -250,21 +289,139 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
       from,
       to,
       sentAt: message.sentDateTime ?? message.receivedDateTime ?? new Date().toISOString(),
-      body: index < Math.ceil(ANALYSIS_MAX_MESSAGES / 2) ? sanitizeBody(message.bodyPreview ?? '') : '',
+      // bodyPreview est déjà inclus dans l'appel de liste ci-dessus (aucun coût
+      // réseau supplémentaire) — qui a droit au traitement complet se décide par
+      // pertinence dans le handler, pas ici (voir `selectMessagesByRelevance`).
+      body: sanitizeBody(message.bodyPreview ?? ''),
       direction: folder === 'SentItems' || from.email === ownEmail ? 'outbound' as const : 'inbound' as const,
-      discoveryOnly: index >= Math.ceil(ANALYSIS_MAX_MESSAGES / 2),
     }
   })
-  return { messages, truncated: Boolean(nextUrl) }
+  const oldestSentAt = messages.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
+  return { messages, truncated: Boolean(nextUrl), oldestSentAt }
 }
 
-async function microsoftMessages(token: string, ownEmail: string): Promise<MailScan> {
+async function microsoftMessages(token: string, ownEmail: string, beforeIso?: string | null): Promise<MailScan> {
   const perFolder = Math.ceil(DISCOVERY_MAX_MESSAGES / 2)
   const [inbox, sent] = await Promise.all([
-    graphFolder(token, 'Inbox', ownEmail, perFolder),
-    graphFolder(token, 'SentItems', ownEmail, perFolder),
+    graphFolder(token, 'Inbox', ownEmail, perFolder, beforeIso),
+    graphFolder(token, 'SentItems', ownEmail, perFolder, beforeIso),
   ])
-  return { messages: [...inbox.messages, ...sent.messages], truncated: inbox.truncated || sent.truncated }
+  const oldestSentAt = [inbox.oldestSentAt, sent.oldestSentAt].filter((value): value is string => value !== null).sort()[0] ?? null
+  return { messages: [...inbox.messages, ...sent.messages], truncated: inbox.truncated || sent.truncated, oldestSentAt }
+}
+
+/** Capture le historyId Gmail courant juste après un backfill complet — point
+ *  de départ pour l'ingestion incrémentale (Partie C), sans avoir à rejouer
+ *  tout l'historique pour savoir où « maintenant » se situe. */
+async function bootstrapGmailHistoryId(token: string): Promise<string | null> {
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: `Bearer ${token}` } })
+  if (!response.ok) return null
+  const data = await response.json()
+  return data.historyId ? String(data.historyId) : null
+}
+
+/** Ingestion incrémentale Gmail : ne renvoie que les messages ajoutés depuis
+ *  `historyId` (History API), traitement complet direct vu le faible volume
+ *  attendu par tick — pas besoin du budget de pertinence du backfill complet.
+ *  `expired: true` signale un historyId trop ancien (inactivité prolongée,
+ *  Gmail ne garantit sa rétention qu'environ 7 jours) : l'appelant doit alors
+ *  retomber en mode backfill plutôt que de traiter ceci comme une erreur. */
+async function gmailIncrementalMessages(token: string, ownEmail: string, historyId: string): Promise<{ messages: Mail[]; newHistoryId: string | null; expired: boolean }> {
+  const addedIds = new Set<string>()
+  let pageToken: string | null = null
+  let newHistoryId: string | null = null
+  do {
+    const params = new URLSearchParams({ startHistoryId: historyId, historyTypes: 'messageAdded' })
+    if (pageToken) params.set('pageToken', pageToken)
+    const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (response.status === 404) return { messages: [], newHistoryId: null, expired: true }
+    if (!response.ok) throw new Error(`Gmail history ${response.status}`)
+    const page = await response.json()
+    for (const entry of page.history ?? []) {
+      for (const added of entry.messagesAdded ?? []) {
+        if (added.message?.id) addedIds.add(added.message.id)
+      }
+    }
+    if (page.historyId) newHistoryId = String(page.historyId)
+    pageToken = page.nextPageToken ?? null
+  } while (pageToken)
+
+  const output: Mail[] = []
+  const ids = [...addedIds]
+  for (let index = 0; index < ids.length; index += 20) {
+    const batch = await Promise.all(ids.slice(index, index + 20).map(async (id) => {
+      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!response.ok) return null
+      const message = await response.json()
+      const headers = message.payload?.headers ?? []
+      const from = parseAddress(header(headers, 'From'))
+      const to = parseAddressList(header(headers, 'To'))
+      const direction = from.email === ownEmail ? 'outbound' as const : 'inbound' as const
+      return {
+        id,
+        threadId: message.threadId ?? id,
+        subject: header(headers, 'Subject'),
+        from,
+        to,
+        sentAt: new Date(Number(message.internalDate ?? Date.now())).toISOString(),
+        body: sanitizeBody(gmailBody(message.payload)),
+        direction,
+        headers: automationHeaders(headers),
+      }
+    }))
+    output.push(...batch.filter((item): item is Mail => Boolean(item)))
+  }
+  return { messages: output, newHistoryId, expired: false }
+}
+
+const MS_DELTA_SELECT = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,body'
+
+/** Capture un deltaLink Microsoft Graph « à partir de maintenant » sans
+ *  énumérer l'historique existant — `$deltatoken=latest` est le mécanisme
+ *  documenté par Graph pour ça, bien moins coûteux qu'un premier parcours
+ *  complet de la boîte. */
+async function bootstrapMicrosoftDeltaLink(token: string, folder: 'Inbox' | 'SentItems'): Promise<string | null> {
+  const response = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages/delta?$deltatoken=latest&$select=${MS_DELTA_SELECT}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!response.ok) return null
+  const data = await response.json()
+  return data['@odata.deltaLink'] ?? null
+}
+
+/** Ingestion incrémentale Microsoft : ne renvoie que les changements depuis
+ *  `deltaLink`. `expired: true` (Graph renvoie 410 Gone) signale un lien trop
+ *  ancien : l'appelant doit retomber en mode backfill. */
+async function graphDeltaMessages(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, deltaLink: string): Promise<{ messages: Mail[]; newDeltaLink: string | null; expired: boolean }> {
+  let url: string | null = deltaLink
+  const raw: any[] = []
+  let newDeltaLink: string | null = null
+  while (url) {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (response.status === 410) return { messages: [], newDeltaLink: null, expired: true }
+    if (!response.ok) throw new Error(`Microsoft Graph delta ${response.status}`)
+    const page = await response.json()
+    raw.push(...(page.value ?? []))
+    if (page['@odata.deltaLink']) newDeltaLink = page['@odata.deltaLink']
+    url = page['@odata.nextLink'] ?? null
+  }
+  const messages = raw.filter((message: any) => !message['@removed']).map((message: any) => {
+    const fromEmail = cleanEmail(message.from?.emailAddress?.address)
+    const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
+    const to = (message.toRecipients ?? []).map((recipient: any) => {
+      const email = cleanEmail(recipient.emailAddress?.address)
+      return { email, name: cleanName(recipient.emailAddress?.name, email) }
+    }).filter((item: Address) => item.email)
+    return {
+      id: message.id,
+      threadId: message.conversationId ?? message.id,
+      subject: message.subject ?? '',
+      from,
+      to,
+      sentAt: message.sentDateTime ?? message.receivedDateTime ?? new Date().toISOString(),
+      body: sanitizeBody(message.body?.content ?? ''),
+      direction: folder === 'SentItems' || from.email === ownEmail ? 'outbound' as const : 'inbound' as const,
+    }
+  })
+  return { messages, newDeltaLink, expired: false }
 }
 
 /** Confiance en pourcentage entier 0-100 : le modèle renvoie parfois un ratio 0-1
@@ -310,43 +467,110 @@ Messages :\n${corpus}`
   return extractJson(String(data.choices?.[0]?.message?.content ?? ''))
 }
 
-Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+/** Priorité garantie à toute relation déjà suivie (personne OU entreprise) —
+ *  dépasse largement tout score organique pour ne jamais être évincée par le
+ *  volume d'un tiers non suivi, même très actif. */
+const TRACKED_RELEVANCE_BOOST = 100_000
+
+type RelevanceStat = { inbound: number; outbound: number; lastSentAt: string; messages: Mail[] }
+
+/** Décide, sur toute la fenêtre découverte (pas seulement les plus récents),
+ *  quels messages ont droit au traitement complet (corps + stockage) — par
+ *  pertinence de la relation (suivi, fréquence, réciprocité, récence) plutôt
+ *  que par simple position chronologique dans une boîte parfois très bruitée. */
+function selectMessagesByRelevance(
+  messages: Mail[],
+  ownEmail: string,
+  contactByEmail: Map<string, any>,
+  trackedDomains: Set<string>,
+  budget: number,
+): { selectedIds: Set<string>; contactsPrioritized: number } {
+  const statsByEmail = new Map<string, RelevanceStat>()
+  for (const message of messages) {
+    const externals = (message.direction === 'inbound' ? [message.from] : message.to)
+      .filter((item) => item.email && item.email !== ownEmail)
+    for (const external of externals) {
+      const contact = contactByEmail.get(external.email)
+      const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
+      const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
+        sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
+      ))
+      const classification = classifyEmailAutomation({
+        email: external.email, name: external.name, subject: message.subject, body: message.body, headers: message.headers,
+      })
+      if (classification.automated && !manuallyIntegrated) continue
+      const stat = statsByEmail.get(external.email) ?? { inbound: 0, outbound: 0, lastSentAt: message.sentAt, messages: [] }
+      if (message.direction === 'inbound') stat.inbound++
+      else stat.outbound++
+      if (message.sentAt > stat.lastSentAt) stat.lastSentAt = message.sentAt
+      stat.messages.push(message)
+      statsByEmail.set(external.email, stat)
+    }
+  }
+
+  const now = Date.now()
+  const ranked = [...statsByEmail.entries()].map(([email, stat]) => {
+    const contact = contactByEmail.get(email)
+    const domain = corporateDomain(email)
+    const tracked = contact?.is_tracked === true || (domain !== null && trackedDomains.has(domain))
+    const total = stat.inbound + stat.outbound
+    const reciprocityBonus = stat.inbound > 0 && stat.outbound > 0 ? total * 0.5 : 0
+    const recencyDays = (now - new Date(stat.lastSentAt).getTime()) / 86_400_000
+    const recencyBonus = Math.max(0, 60 - recencyDays)
+    const score = (tracked ? TRACKED_RELEVANCE_BOOST : 0) + total + reciprocityBonus + recencyBonus
+    return { email, score, stat }
+  }).sort((a, b) => b.score - a.score)
+
+  const selectedIds = new Set<string>()
+  let remaining = budget
+  let contactsPrioritized = 0
+  for (const entry of ranked) {
+    if (remaining <= 0) break
+    const topMessages = [...entry.stat.messages].sort((a, b) => b.sentAt.localeCompare(a.sentAt)).slice(0, PER_CONTACT_MAX_MESSAGES)
+    let addedForThisContact = false
+    for (const message of topMessages) {
+      if (remaining <= 0) break
+      if (selectedIds.has(message.id)) continue
+      selectedIds.add(message.id)
+      remaining--
+      addedForThisContact = true
+    }
+    if (addedForThisContact) contactsPrioritized++
+  }
+  return { selectedIds, contactsPrioritized }
+}
+
+type SyncParams = {
+  supabase: ReturnType<typeof createClient>
+  organizationId: string
+  provider: 'google' | 'microsoft'
+  actingUserId: string
+  actingUserEmail: string | null
+  connector: { id: string; metadata: any }
+  jobId: string | null
+}
+
+/** Cœur de la synchronisation, extrait pour être appelable soit une fois
+ *  (déclenchement interactif, JWT utilisateur) soit en boucle sur plusieurs
+ *  connecteurs (tick cron de reprise du backfill, multi-tenant). Ne lève
+ *  jamais — retourne { success:false, error } pour que l'appelant en boucle
+ *  puisse continuer sur les connecteurs suivants sans s'interrompre. */
+async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>> {
+  const { supabase, organizationId, provider, actingUserId, actingUserEmail, connector } = params
+  let syncJobId: string | null = params.jobId
   const startedAt = new Date().toISOString()
-  let syncJobId: string | null = null
   try {
-    const authorization = request.headers.get('Authorization')
-    if (!authorization) return json({ error: 'Authentification requise' }, 401)
-    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
-    const { data: { user }, error: userError } = await supabase.auth.getUser(authorization.replace('Bearer ', ''))
-    if (userError || !user) return json({ error: 'Session invalide' }, 401)
-    const { organizationId, provider, jobId } = await request.json().catch(() => ({}))
-    if (!organizationId || !['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
-    const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
-    if (!membership) return json({ error: 'Accès refusé' }, 403)
-    const { data: connector } = await supabase.from('connectors').select('id,metadata').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', provider).maybeSingle()
-    if (!connector) return json({ error: 'Connecteur introuvable' }, 404)
     const { data: tokenRows, error: tokenError } = await supabase.rpc('get_oauth_tokens_server', { p_connector_id: connector.id })
     const oauth = tokenRows?.[0]
-    if (tokenError || !oauth) return json({ error: 'Jetons OAuth absents. Reconnecte le fournisseur.' }, 401)
+    if (tokenError || !oauth) throw new Error('Jetons OAuth absents. Reconnecte le fournisseur.')
 
-    // jobId : le client peut pré-créer la ligne sync_jobs pour pouvoir la
-    // sonder pendant que cet appel est encore en vol (sinon aucun accès au
-    // progress avant la résolution complète de la requête).
-    let reusedJobId: string | null = null
-    if (typeof jobId === 'string') {
-      const { data: existingJob } = await supabase.from('sync_jobs').select('id').eq('id', jobId).eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
-      reusedJobId = existingJob?.id ?? null
-    }
-    if (reusedJobId) {
-      await supabase.from('sync_jobs').update({ connector_id: connector.id, provider, status: 'running', current_step: 'Connexion au fournisseur', progress: 10, started_at: startedAt, payload: { provider } }).eq('id', reusedJobId)
-      syncJobId = reusedJobId
+    if (syncJobId) {
+      await supabase.from('sync_jobs').update({ connector_id: connector.id, provider, status: 'running', current_step: 'Connexion au fournisseur', progress: 10, started_at: startedAt, payload: { provider } }).eq('id', syncJobId)
     } else {
       const { data: job } = await supabase.from('sync_jobs').insert({
         organization_id: organizationId,
         connector_id: connector.id,
-        user_id: user.id,
+        user_id: actingUserId,
         provider,
         job_type: 'email_behavior_analysis',
         status: 'running',
@@ -369,8 +593,14 @@ Deno.serve(async (request) => {
     }
     if (!accessToken) throw new Error('Jeton OAuth indisponible')
 
-    const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? user.email)
-    const scan = provider === 'google' ? await gmailMessages(accessToken, ownEmail) : await microsoftMessages(accessToken, ownEmail)
+    const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
+    // Reprise de backfill : si une passe précédente s'est arrêtée avant la fin
+    // de la fenêtre de 2 ans (discovery_truncated), on continue plus loin dans
+    // le passé plutôt que de tout rescanner depuis le début.
+    const backfillBefore: string | null = (connector.metadata as any)?.backfill_before ?? null
+    const scan = provider === 'google'
+      ? await gmailMessages(accessToken, ownEmail, backfillBefore)
+      : await microsoftMessages(accessToken, ownEmail, backfillBefore)
     const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
     const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
@@ -381,6 +611,17 @@ Deno.serve(async (request) => {
         if (normalized) contactByEmail.set(normalized, item)
       }
     }
+
+    // Qui a droit au traitement complet (corps + stockage) se décide par
+    // pertinence de la relation sur toute la fenêtre découverte, pas par
+    // simple position chronologique — une boîte très bruitée noierait sinon
+    // les vraies relations derrière du volume automatisé récent.
+    const { data: trackedCompanyRows } = await supabase.from('companies').select('domain').eq('organization_id', organizationId).eq('is_tracked', true)
+    const trackedDomains = new Set((trackedCompanyRows ?? []).map((row: any) => String(row.domain ?? '').toLowerCase().trim()).filter(Boolean))
+    const relevance = selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, ANALYSIS_MAX_MESSAGES)
+    for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
+    if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
+
     const contactCorpus = new Map<string, string[]>()
     const responsibleCorpus: string[] = []
     let storedMessages = 0
@@ -391,7 +632,7 @@ Deno.serve(async (request) => {
     await runWithConcurrency(messages, MESSAGE_PROCESSING_CONCURRENCY, async (message) => {
       processedMessages++
       if (syncJobId && messages.length > 20 && processedMessages % 20 === 0) {
-        void supabase.from('sync_jobs').update({ current_step: `Traitement des messages (${processedMessages}/${messages.length})`, progress: 35 + Math.round((processedMessages / messages.length) * 25) }).eq('id', syncJobId)
+        void supabase.from('sync_jobs').update({ current_step: `Traitement des messages (${processedMessages}/${messages.length})`, progress: 35 + Math.round((processedMessages / messages.length) * 25) }).eq('id', syncJobId as string)
       }
       const externalByEmail = new Map(
         (message.direction === 'inbound' ? [message.from] : message.to)
@@ -436,16 +677,16 @@ Deno.serve(async (request) => {
             p_email: external.email,
             p_full_name: cleanName(external.name, external.email),
             p_company_id: companyId,
-            p_owner_user_id: user.id,
+            p_owner_user_id: actingUserId,
             p_role_title: null,
             p_source: `email_${provider}`,
           }).maybeSingle()
           if (error || !resolved?.contact_id) continue
-          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: user.id, is_tracked: false }
+          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: actingUserId, is_tracked: false }
           contactByEmail.set(external.email, contact)
         } else if (!contact.owner_user_id) {
-          await supabase.from('contacts').update({ owner_user_id: user.id }).eq('id', contact.id)
-          contact.owner_user_id = user.id
+          await supabase.from('contacts').update({ owner_user_id: actingUserId }).eq('id', contact.id)
+          contact.owner_user_id = actingUserId
         }
         messageContacts.push(contact)
       }
@@ -466,8 +707,8 @@ Deno.serve(async (request) => {
     let responsibleAnalyzed = false
     if (responsibleCorpus.length >= 3) {
       try {
-        const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', user.id).single()).data?.full_name ?? user.email ?? 'Responsable', 'responsable', responsibleCorpus)
-        await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: user.id, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
+        const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', actingUserId).single()).data?.full_name ?? actingUserEmail ?? 'Responsable', 'responsable', responsibleCorpus)
+        await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: actingUserId, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
         responsibleAnalyzed = true
       } catch (error) {
         analysisErrors.push(`responsable: ${errorMessage(error)}`)
@@ -500,6 +741,36 @@ Deno.serve(async (request) => {
     const discoveredDomains = new Set(
       [...contactByEmail.keys()].map(corporateDomain).filter((domain): domain is string => Boolean(domain)),
     ).size
+
+    // Curseur de reprise : tant que la fenêtre découverte n'est pas
+    // entièrement couverte (discovery_truncated), on avance le point de
+    // reprise plus loin dans le passé pour la prochaine passe (manuelle ou
+    // via le cron de continuation) plutôt que de repartir de zéro.
+    const backfillComplete = !scan.truncated
+    const nextBackfillBefore = backfillComplete
+      ? null
+      : provider === 'google'
+        ? (scan.oldestSentAt ? toGmailDateOnly(scan.oldestSentAt) : backfillBefore)
+        : (scan.oldestSentAt ?? backfillBefore)
+
+    // Le backfill vient de se terminer : on capture le curseur incrémental
+    // (Partie C) juste après cette passe, pour qu'il n'y ait aucun trou entre
+    // ce que le backfill a couvert et le point de départ de l'ingestion continue.
+    const incrementalCursorPatch: Record<string, unknown> = {}
+    if (backfillComplete) {
+      if (provider === 'google') {
+        const historyId = await bootstrapGmailHistoryId(accessToken)
+        if (historyId) incrementalCursorPatch.gmail_history_id = historyId
+      } else {
+        const [deltaInbox, deltaSent] = await Promise.all([
+          bootstrapMicrosoftDeltaLink(accessToken, 'Inbox'),
+          bootstrapMicrosoftDeltaLink(accessToken, 'SentItems'),
+        ])
+        if (deltaInbox) incrementalCursorPatch.ms_delta_link_inbox = deltaInbox
+        if (deltaSent) incrementalCursorPatch.ms_delta_link_sent = deltaSent
+      }
+    }
+
     const syncSummary = {
       messages: storedMessages,
       messages_scanned: messages.length,
@@ -509,16 +780,242 @@ Deno.serve(async (request) => {
       responsible_analyzed: responsibleAnalyzed,
       automated_messages_ignored: skippedAutomated,
       ignored_reasons: skippedReasons,
+      relationships_prioritized: relevance.contactsPrioritized,
+      backfill_complete: backfillComplete,
     }
-    await supabase.from('connectors').update({ status: 'connected', last_synced_at: new Date().toISOString(), metadata: { ...(connector.metadata ?? {}), last_sync: syncSummary }, updated_at: new Date().toISOString() }).eq('id', connector.id)
+    await supabase.from('connectors').update({
+      status: 'connected',
+      last_synced_at: new Date().toISOString(),
+      metadata: { ...(connector.metadata ?? {}), last_sync: syncSummary, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch },
+      updated_at: new Date().toISOString(),
+    }).eq('id', connector.id)
     if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
-    return json({ success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5) })
+    return { success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5), backfillComplete }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Synchronisation impossible'
     if (syncJobId) {
-      const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
       await supabase.from('sync_jobs').update({ status: 'failed', current_step: 'Échec de la synchronisation', error_code: 'EMAIL_SYNC_FAILED', error_message: message, completed_at: new Date().toISOString() }).eq('id', syncJobId)
     }
-    return json({ error: message }, 500)
+    return { success: false, error: message }
   }
+}
+
+/** Ingestion quasi temps réel (Partie C) pour un connecteur déjà entièrement
+ *  backfillé : ne va chercher que ce qui est arrivé depuis le dernier tick
+ *  (History API Gmail / delta Microsoft), sans rejouer le budget de
+ *  pertinence du backfill complet — le volume attendu par tick est faible,
+ *  chaque nouveau message reçoit directement le traitement complet. Ne fait
+ *  pas de ré-analyse comportementale (coûteuse en LLM) à chaque tick : ça
+ *  reste porté par le cycle habituel (score-batch / prochain backfill). */
+async function runIncrementalSync(params: SyncParams): Promise<Record<string, unknown>> {
+  const { supabase, organizationId, provider, actingUserId, actingUserEmail, connector } = params
+  try {
+    const { data: tokenRows, error: tokenError } = await supabase.rpc('get_oauth_tokens_server', { p_connector_id: connector.id })
+    const oauth = tokenRows?.[0]
+    if (tokenError || !oauth) throw new Error('Jetons OAuth absents.')
+
+    let accessToken = oauth.access_token as string | null
+    let refreshToken = oauth.refresh_token as string | null
+    const expiresSoon = !oauth.expires_at || new Date(oauth.expires_at).getTime() < Date.now() + 90_000
+    if ((!accessToken || expiresSoon) && refreshToken) {
+      const refreshed = await refreshAccessToken(provider, refreshToken)
+      accessToken = refreshed.accessToken
+      refreshToken = refreshed.refreshToken
+      await supabase.rpc('store_oauth_tokens_server', { p_organization_id: organizationId, p_connector_id: connector.id, p_provider_account_id: oauth.provider_account_id, p_access_token: accessToken, p_refresh_token: refreshToken, p_expires_at: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString() })
+    }
+    if (!accessToken) throw new Error('Jeton OAuth indisponible')
+
+    const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
+    let messages: Mail[] = []
+    let expired = false
+    const cursorPatch: Record<string, unknown> = {}
+
+    if (provider === 'google') {
+      const historyId = (connector.metadata as any)?.gmail_history_id ?? null
+      if (!historyId) throw new Error('Curseur Gmail manquant — attend le prochain backfill complet.')
+      const result = await gmailIncrementalMessages(accessToken, ownEmail, historyId)
+      expired = result.expired
+      messages = result.messages
+      if (!expired && result.newHistoryId) cursorPatch.gmail_history_id = result.newHistoryId
+    } else {
+      const deltaInbox = (connector.metadata as any)?.ms_delta_link_inbox ?? null
+      const deltaSent = (connector.metadata as any)?.ms_delta_link_sent ?? null
+      if (!deltaInbox || !deltaSent) throw new Error('Curseur Microsoft manquant — attend le prochain backfill complet.')
+      const [inbox, sent] = await Promise.all([
+        graphDeltaMessages(accessToken, 'Inbox', ownEmail, deltaInbox),
+        graphDeltaMessages(accessToken, 'SentItems', ownEmail, deltaSent),
+      ])
+      expired = inbox.expired || sent.expired
+      messages = [...inbox.messages, ...sent.messages]
+      if (!expired) {
+        if (inbox.newDeltaLink) cursorPatch.ms_delta_link_inbox = inbox.newDeltaLink
+        if (sent.newDeltaLink) cursorPatch.ms_delta_link_sent = sent.newDeltaLink
+      }
+    }
+
+    if (expired) {
+      // Curseur trop ancien (inactivité prolongée) : on retombe en mode
+      // backfill plutôt que de laisser l'ingestion continue en échec silencieux —
+      // un futur tick de backfill regénérera un curseur frais une fois complet.
+      await supabase.from('connectors').update({
+        metadata: { ...(connector.metadata ?? {}), backfill_complete: false, backfill_before: null, gmail_history_id: null, ms_delta_link_inbox: null, ms_delta_link_sent: null },
+        updated_at: new Date().toISOString(),
+      }).eq('id', connector.id)
+      return { success: true, expired: true, messages: 0 }
+    }
+
+    if (!messages.length) {
+      if (Object.keys(cursorPatch).length) {
+        await supabase.from('connectors').update({ metadata: { ...(connector.metadata ?? {}), ...cursorPatch }, updated_at: new Date().toISOString() }).eq('id', connector.id)
+      }
+      return { success: true, messages: 0 }
+    }
+
+    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
+    const contactByEmail = new Map<string, any>()
+    for (const item of existingContacts ?? []) {
+      for (const email of [item.email, ...(item.secondary_emails ?? [])]) {
+        const normalized = cleanEmail(email)
+        if (normalized) contactByEmail.set(normalized, item)
+      }
+    }
+
+    let storedMessages = 0
+    await runWithConcurrency(messages, MESSAGE_PROCESSING_CONCURRENCY, async (message) => {
+      const externalByEmail = new Map(
+        (message.direction === 'inbound' ? [message.from] : message.to)
+          .filter((item) => item.email && item.email !== ownEmail)
+          .map((item) => [item.email, item]),
+      )
+      const messageContacts: any[] = []
+      for (const external of externalByEmail.values()) {
+        let contact = contactByEmail.get(external.email)
+        const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
+        const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
+          sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
+        ))
+        const classification = classifyEmailAutomation({ email: external.email, name: external.name, subject: message.subject, body: message.body, headers: message.headers })
+        if (classification.automated && !manuallyIntegrated) continue
+        if (!contact) {
+          let companyId: string | null = null
+          const domain = corporateDomain(external.email)
+          if (domain) {
+            const { data: company } = await supabase.rpc('resolve_company_identity', { p_organization_id: organizationId, p_name: companyNameFromDomain(domain), p_domain: domain, p_industry: null, p_create_if_missing: true }).maybeSingle()
+            companyId = company?.company_id ?? null
+          }
+          const { data: resolved, error } = await supabase.rpc('resolve_contact_identity', { p_organization_id: organizationId, p_email: external.email, p_full_name: cleanName(external.name, external.email), p_company_id: companyId, p_owner_user_id: actingUserId, p_role_title: null, p_source: `email_${provider}` }).maybeSingle()
+          if (error || !resolved?.contact_id) continue
+          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: actingUserId, is_tracked: false }
+          contactByEmail.set(external.email, contact)
+        } else if (!contact.owner_user_id) {
+          await supabase.from('contacts').update({ owner_user_id: actingUserId }).eq('id', contact.id)
+          contact.owner_user_id = actingUserId
+        }
+        messageContacts.push(contact)
+      }
+      const primaryContact = messageContacts.find((item) => item.is_tracked === true) ?? messageContacts[0]
+      if (!primaryContact) return
+      const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
+      if (!thread) return
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      if (!messageError) storedMessages++
+    })
+
+    await supabase.from('connectors').update({
+      metadata: { ...(connector.metadata ?? {}), ...cursorPatch },
+      last_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', connector.id)
+    return { success: true, messages: storedMessages }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Ingestion incrémentale impossible' }
+  }
+}
+
+Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+  const body = await request.json().catch(() => ({} as any))
+
+  // Mode cron : reprise automatique du backfill pour les connecteurs pas
+  // encore complets, tous organismes confondus (même mécanisme d'authentification
+  // que monitor-contacts/monitor-company-news — x-cron-secret contre app_secrets).
+  const cronHeader = request.headers.get('x-cron-secret')
+  let isCron = false
+  if (cronHeader) {
+    const { data: secret } = await supabase.from('app_secrets').select('value').eq('name', 'monitor_cron').maybeSingle()
+    if (secret?.value && secret.value === cronHeader) isCron = true
+  }
+
+  if (isCron) {
+    // Deux cadences distinctes appellent cette même fonction : le tick de
+    // reprise du backfill (6h, body par défaut '{}') et le tick d'ingestion
+    // incrémentale (fréquent, body `{"mode":"incremental"}`) — voir les crons
+    // tohu-bohu-email-backfill / tohu-bohu-email-incremental.
+    const incremental = body.mode === 'incremental'
+    const { data: candidates } = await supabase.from('connectors')
+      .select('id, organization_id, user_id, provider, metadata, last_synced_at')
+      .in('provider', ['google', 'microsoft'])
+      .eq('status', 'connected')
+      .order('last_synced_at', { ascending: true, nullsFirst: true })
+    let pool = incremental
+      ? (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete === true)
+      : (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete !== true)
+    if (body.organizationId) pool = pool.filter((row: any) => row.organization_id === body.organizationId)
+    const selected = pool.slice(0, incremental ? INCREMENTAL_MAX_CONNECTORS_PER_RUN : BACKFILL_MAX_CONNECTORS_PER_RUN)
+
+    const results: Record<string, unknown>[] = []
+    for (const row of selected) {
+      const result = incremental
+        ? await runIncrementalSync({
+            supabase,
+            organizationId: row.organization_id,
+            provider: row.provider as 'google' | 'microsoft',
+            actingUserId: row.user_id,
+            actingUserEmail: null,
+            connector: { id: row.id, metadata: row.metadata },
+            jobId: null,
+          })
+        : await runEmailSync({
+            supabase,
+            organizationId: row.organization_id,
+            provider: row.provider as 'google' | 'microsoft',
+            actingUserId: row.user_id,
+            actingUserEmail: null,
+            connector: { id: row.id, metadata: row.metadata },
+            jobId: null,
+          })
+      results.push({ connectorId: row.id, organizationId: row.organization_id, ...result })
+    }
+    return json({ mode: incremental ? 'cron_incremental' : 'cron_backfill', candidates: pool.length, processed: results.length, results })
+  }
+
+  const authorization = request.headers.get('Authorization')
+  if (!authorization) return json({ error: 'Authentification requise' }, 401)
+  const { data: { user }, error: userError } = await supabase.auth.getUser(authorization.replace('Bearer ', ''))
+  if (userError || !user) return json({ error: 'Session invalide' }, 401)
+  const { organizationId, provider, jobId } = body
+  if (!organizationId || !['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
+  const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
+  if (!membership) return json({ error: 'Accès refusé' }, 403)
+  const { data: connector } = await supabase.from('connectors').select('id,metadata').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', provider).maybeSingle()
+  if (!connector) return json({ error: 'Connecteur introuvable' }, 404)
+
+  let reusedJobId: string | null = null
+  if (typeof jobId === 'string') {
+    const { data: existingJob } = await supabase.from('sync_jobs').select('id').eq('id', jobId).eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
+    reusedJobId = existingJob?.id ?? null
+  }
+
+  const result = await runEmailSync({
+    supabase,
+    organizationId,
+    provider,
+    actingUserId: user.id,
+    actingUserEmail: user.email ?? null,
+    connector,
+    jobId: reusedJobId,
+  })
+  return json(result, result.success ? 200 : 500)
 })
