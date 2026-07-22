@@ -22,7 +22,6 @@ import {
 } from './priority'
 import type {
   HomeAccountCandidate,
-  HomeCoachingData,
   HomeDashboardData,
   HomeSignal,
   HomeSourceStatus,
@@ -340,7 +339,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
 
-  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, behaviorProfileData, actionStatesData, jobsData, insightFeedbackData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday] = await Promise.all([
+  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday] = await Promise.all([
     safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
     safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
@@ -349,10 +348,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeQuery<DbRow[]>(client.from('behavioral_signals').select('*,contacts(id,full_name,company_id)').eq('organization_id', organizationId).order('observed_at', { ascending: false }).limit(30), 'table behavioral_signals', degradedReasons),
     safeQuery<DbRow>(client.from('profiles').select('*').eq('id', userId).single(), 'table profiles', degradedReasons),
     safeQuery<DbRow[]>(client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', organizationId).eq('user_id', userId).limit(500), 'table signal_feedback', degradedReasons),
-    safeQuery<DbRow>(client.from('user_behavioral_profiles').select('*').eq('user_id', userId).eq('organization_id', organizationId).maybeSingle(), 'table user_behavioral_profiles', degradedReasons),
     safeQuery<DbRow[]>(client.from('home_action_states').select('*').eq('user_id', userId).eq('organization_id', organizationId).limit(500), 'table home_action_states (migration 202607150009)', degradedReasons),
     safeQuery<DbRow[]>(client.from('sync_jobs').select('*').eq('organization_id', organizationId).eq('user_id', userId).in('job_type', ['account_detection', 'account_analysis']).order('started_at', { ascending: false }).limit(5), 'lecture sync_jobs (migration 202607150009)', degradedReasons),
-    safeQuery<DbRow[]>(client.from('insight_feedback').select('insight_id,feedback_type').eq('organization_id', organizationId).eq('user_id', userId).limit(100), 'table insight_feedback (migration 202607150009)', degradedReasons),
     safeQuery<DbRow[]>(client.from('memberships').select('user_id').eq('organization_id', organizationId).limit(100), 'table memberships', degradedReasons),
     safeCount(client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId), 'comptage communication_messages', degradedReasons),
     safeCount(client.from('company_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage company_signals', degradedReasons),
@@ -440,32 +437,6 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const snapshotDates = contacts.flatMap((contact) => rows(contact.relationship_snapshots).map((snapshot) => str(snapshot.snapshot_date) ?? '')).filter(Boolean).sort()
   const accountDeltas = tracked.map((account) => account.delta30d).filter((value): value is number => value !== null)
 
-  const behaviorProfile = record(behaviorProfileData)
-  const insightFeedback = new Map(rows(insightFeedbackData).map((row) => [String(row.insight_id), String(row.feedback_type)]))
-  let coaching: HomeCoachingData | null = null
-  if (behaviorProfileData) {
-    const insightId = `ubp:${userId}:${str(behaviorProfile.updated_at) ?? 'initial'}`
-    const rawFeedback = insightFeedback.get(insightId)
-    coaching = {
-      level: null,
-      calibrating: true,
-      executiveSummary: str(behaviorProfile.executive_summary),
-      cognitiveMode: str(behaviorProfile.cognitive_mode),
-      traits: rows(behaviorProfile.behavioral_analysis_data).map((item) => ({
-        trait: str(item.trait) ?? 'Signal comportemental',
-        observation: str(item.observation) ?? '',
-        confidence: num(item.confidence),
-      })).filter((item) => item.observation),
-      communicationStyle: record(behaviorProfile.communication_style_data),
-      sourceMessageCount: num(behaviorProfile.source_message_count) ?? 0,
-      updatedFrom: Array.isArray(behaviorProfile.updated_from) ? behaviorProfile.updated_from.map(String) : [],
-      updatedAt: str(behaviorProfile.updated_at),
-      confidence: num(behaviorProfile.global_confidence),
-      insightId,
-      userFeedback: rawFeedback === 'useful' || rawFeedback === 'inaccurate' ? rawFeedback : null,
-    }
-  }
-
   const jobs = rows(jobsData).map(mapJob)
   const activeJob = jobs.find((job) => job.status === 'running' || job.status === 'queued') ?? null
   const lastDetectionJob = jobs.find((job) => job.jobType === 'account_detection') ?? null
@@ -532,7 +503,6 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
       atRisk: atRiskAccounts(scoredAccounts, now),
     },
     teamMembers,
-    coaching,
     priorityActions,
     latestSignals: signals,
   }
@@ -572,19 +542,6 @@ export async function saveActionState(input: {
   if (error) {
     if (isMissingSchemaError(error)) throw new Error('La persistance des actions nécessite la migration 202607150009_home_foundation.sql.')
     throw new Error(String(record(error).message ?? 'Action non enregistrée'))
-  }
-}
-
-export async function saveInsightFeedback(input: { organizationId: string; userId: string; insightId: string; feedbackType: 'useful' | 'inaccurate' }): Promise<void> {
-  const { error } = await getSupabase().from('insight_feedback').upsert({
-    organization_id: input.organizationId,
-    user_id: input.userId,
-    insight_id: input.insightId,
-    feedback_type: input.feedbackType,
-  }, { onConflict: 'user_id,insight_id' })
-  if (error) {
-    if (isMissingSchemaError(error)) throw new Error('Le feedback coaching nécessite la migration 202607150009_home_foundation.sql.')
-    throw new Error(String(record(error).message ?? 'Feedback non enregistré'))
   }
 }
 
@@ -649,4 +606,23 @@ export async function getJob(jobId: string): Promise<HomeSyncJob | null> {
     throw new Error(String(record(error).message ?? 'Job introuvable'))
   }
   return data ? mapJob(record(data)) : null
+}
+
+/**
+ * Pré-crée la ligne sync_jobs d'une synchronisation email avant d'invoquer
+ * l'edge function `sync-email-analysis`, pour pouvoir sonder sa progression
+ * pendant que l'appel est encore en vol (migration 20260722090000).
+ */
+export async function createEmailSyncJob(organizationId: string, userId: string): Promise<string | null> {
+  const { data, error } = await getSupabase().from('sync_jobs').insert({
+    organization_id: organizationId,
+    user_id: userId,
+    job_type: 'email_behavior_analysis',
+    status: 'queued',
+  }).select('id').single()
+  if (error) {
+    if (isMissingSchemaError(error)) return null
+    throw new Error(String(record(error).message ?? 'Job non initialisé'))
+  }
+  return data ? String(data.id) : null
 }

@@ -138,7 +138,7 @@ function positiveIntegerEnv(name: string, fallback: number): number {
 }
 
 const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 2500)
-const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 120)
+const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 600)
 const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
 
 async function refreshAccessToken(provider: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
@@ -303,7 +303,7 @@ Deno.serve(async (request) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
     const { data: { user }, error: userError } = await supabase.auth.getUser(authorization.replace('Bearer ', ''))
     if (userError || !user) return json({ error: 'Session invalide' }, 401)
-    const { organizationId, provider } = await request.json().catch(() => ({}))
+    const { organizationId, provider, jobId } = await request.json().catch(() => ({}))
     if (!organizationId || !['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
     const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
     if (!membership) return json({ error: 'Accès refusé' }, 403)
@@ -313,19 +313,32 @@ Deno.serve(async (request) => {
     const oauth = tokenRows?.[0]
     if (tokenError || !oauth) return json({ error: 'Jetons OAuth absents. Reconnecte le fournisseur.' }, 401)
 
-    const { data: job } = await supabase.from('sync_jobs').insert({
-      organization_id: organizationId,
-      connector_id: connector.id,
-      user_id: user.id,
-      provider,
-      job_type: 'email_behavior_analysis',
-      status: 'running',
-      current_step: 'Connexion au fournisseur',
-      progress: 10,
-      started_at: startedAt,
-      payload: { provider },
-    }).select('id').single()
-    syncJobId = job?.id ?? null
+    // jobId : le client peut pré-créer la ligne sync_jobs pour pouvoir la
+    // sonder pendant que cet appel est encore en vol (sinon aucun accès au
+    // progress avant la résolution complète de la requête).
+    let reusedJobId: string | null = null
+    if (typeof jobId === 'string') {
+      const { data: existingJob } = await supabase.from('sync_jobs').select('id').eq('id', jobId).eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
+      reusedJobId = existingJob?.id ?? null
+    }
+    if (reusedJobId) {
+      await supabase.from('sync_jobs').update({ connector_id: connector.id, provider, status: 'running', current_step: 'Connexion au fournisseur', progress: 10, started_at: startedAt, payload: { provider } }).eq('id', reusedJobId)
+      syncJobId = reusedJobId
+    } else {
+      const { data: job } = await supabase.from('sync_jobs').insert({
+        organization_id: organizationId,
+        connector_id: connector.id,
+        user_id: user.id,
+        provider,
+        job_type: 'email_behavior_analysis',
+        status: 'running',
+        current_step: 'Connexion au fournisseur',
+        progress: 10,
+        started_at: startedAt,
+        payload: { provider },
+      }).select('id').single()
+      syncJobId = job?.id ?? null
+    }
 
     let accessToken = oauth.access_token as string | null
     let refreshToken = oauth.refresh_token as string | null
@@ -440,7 +453,8 @@ Deno.serve(async (request) => {
 
     let peopleAnalyzed = 0
     const candidates = [...contactCorpus.entries()].filter(([, excerpts]) => excerpts.length >= 3).sort((a, b) => b[1].length - a[1].length).slice(0, 12)
-    for (const [contactId, excerpts] of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const [contactId, excerpts] = candidates[i]
       try {
         const contact = [...contactByEmail.values()].find((item) => item.id === contactId)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts)
@@ -455,6 +469,7 @@ Deno.serve(async (request) => {
       } catch (error) {
         analysisErrors.push(`contact ${contactId}: ${errorMessage(error)}`)
       }
+      if (syncJobId) await supabase.from('sync_jobs').update({ current_step: `Analyse comportementale (${i + 1}/${candidates.length})`, progress: 60 + Math.round(((i + 1) / candidates.length) * 30) }).eq('id', syncJobId)
     }
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Mise à jour des profils comportementaux', progress: 90 }).eq('id', syncJobId)

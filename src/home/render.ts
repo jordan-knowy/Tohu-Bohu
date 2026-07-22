@@ -5,7 +5,7 @@
  *   A. première synchronisation (S0 invitation → S1 détection → S2 sélection
  *      → S3 activation), pilotée par des jobs réels persistés dans sync_jobs ;
  *   B. cockpit quotidien (forfait, digest, score global, sources, compteurs,
- *      Top 5, coaching, actions du jour, signaux).
+ *      Top 5, actions du jour, signaux).
  *
  * Toutes les données viennent de getHomeDashboard() (service unique, RLS).
  * Aucune valeur n'est simulée : ce qui n'existe pas en base est affiché
@@ -15,12 +15,12 @@
 import type { Session } from '@supabase/supabase-js'
 import { getSupabase } from '../lib/supabase'
 import {
+  createEmailSyncJob,
   detectAccountCandidates,
   getHomeDashboard,
   getJob,
   markHomeSeen,
   saveActionState,
-  saveInsightFeedback,
   setTrackedCompanies,
 } from './service'
 import { saveSignalFeedback, type ProfileRow } from '../services/data'
@@ -248,6 +248,7 @@ function renderStepper(ctx: HomeContext, title: string, subtitle: string, steps:
     <div class="lo-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg></div>
     <h2 class="lo-t">${esc(title)}</h2>
     <p class="lo-sub">${esc(subtitle)}</p>
+    <div class="stp-prog"><div class="stp-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"><i id="stp-bar-fill" style="width:0%"></i></div><span class="stp-pct" id="stp-pct" aria-live="polite">0%</span></div>
     <div class="stp" aria-live="polite">${rows}</div>
     <div class="sync-error" id="sync-error" role="alert"></div>
   </div></div>`
@@ -258,6 +259,22 @@ function setStep(ctx: HomeContext, index: number): void {
     const step = Number(row.dataset.step)
     row.className = `stp-row ${step < index ? 'done' : step === index ? 'active' : 'pending'}`
   })
+}
+
+/** Pourcentage réel affiché pendant le stepper — reflète une progression backend
+ * effectivement committée (sync_jobs.progress), pas une animation simulée. */
+function setProgress(ctx: HomeContext, pct: number, label?: string | null): void {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)))
+  const fill = ctx.container.querySelector<HTMLElement>('#stp-bar-fill')
+  const text = ctx.container.querySelector<HTMLElement>('#stp-pct')
+  const bar = ctx.container.querySelector<HTMLElement>('.stp-bar')
+  if (fill) fill.style.width = `${clamped}%`
+  if (text) text.textContent = `${clamped}%`
+  if (bar) bar.setAttribute('aria-valuenow', String(clamped))
+  if (label) {
+    const active = ctx.container.querySelector<HTMLElement>('.stp-row.active .stp-lbl')
+    if (active) active.textContent = label
+  }
 }
 
 function stepError(ctx: HomeContext, message: string, retry: () => void): void {
@@ -272,15 +289,33 @@ function stepError(ctx: HomeContext, message: string, retry: () => void): void {
 async function startDetection(ctx: HomeContext, data: HomeDashboardData): Promise<void> {
   const provider = data.onboarding.compatibleConnector?.provider ?? null
   renderStepper(ctx, 'Connexion de ton portefeuille', `Tohu se connecte à ${data.onboarding.compatibleConnector?.label ?? 'ta messagerie'} et détecte tes comptes.`, DETECTION_STEPS, 0)
+  setProgress(ctx, 5)
   try {
     if (provider === 'google' || provider === 'microsoft') {
       setStep(ctx, 1)
-      const { data: syncResult, error } = await getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId: ctx.organizationId, provider } })
+      // Le job est pré-créé côté client pour pouvoir le sonder pendant que
+      // l'invoke ci-dessous est encore en vol (sinon aucune lecture possible
+      // avant sa résolution complète — voir sync-email-analysis/index.ts).
+      const jobId = await createEmailSyncJob(ctx.organizationId, ctx.session.user.id).catch(() => null)
+      let polling = jobId !== null
+      const pollLoop = (async () => {
+        while (polling) {
+          const job = jobId ? await getJob(jobId).catch(() => null) : null
+          if (job && job.progress !== null) setProgress(ctx, 10 + Math.round((job.progress / 100) * 80), job.currentStep)
+          if (!polling) return
+          await new Promise((resolve) => setTimeout(resolve, 1200))
+        }
+      })()
+      const { data: syncResult, error } = await getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId: ctx.organizationId, provider, jobId } })
+      polling = false
+      await pollLoop
       if (error || syncResult?.error) throw error ?? new Error(String(syncResult.error))
     }
     setStep(ctx, 2)
+    setProgress(ctx, 92)
     const detection = await detectAccountCandidates(ctx.organizationId)
     setStep(ctx, 4)
+    setProgress(ctx, 100)
     if (!detection.candidates.length) {
       ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-card">${emptyState('▦', 'Aucune organisation détectée', 'Tohu n’a pas trouvé d’organisation dans les échanges synchronisés. Ajoute une source ou crée un compte manuellement.', '<div style="display:flex;gap:8px;justify-content:center;margin-top:6px"><button class="btn-secondary" data-home="go-connectors">Gérer les connecteurs</button><button class="btn-view" data-home="go-accounts">Créer un compte</button></div>')}</div></div>`
       ctx.container.querySelector('[data-home="go-connectors"]')?.addEventListener('click', () => ctx.goView('connecteurs'))
@@ -331,6 +366,15 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
       ${capLabel}
     </div>
     <div class="sel-intro"><p class="sync-s">Sélectionne les comptes à suivre — les plus actifs sont pré-cochés.</p><button type="button" class="btn-secondary" data-home="rescan-accounts">↻ Relancer la détection complète</button></div>
+    <div class="sel-tools">
+      <input type="search" class="sel-search" id="sel-search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte détecté">
+      <select class="sel-sort" id="sel-sort" aria-label="Trier les comptes détectés">
+        <option value="interactions-desc">Interactions (+ → -)</option>
+        <option value="name-asc">Nom (A → Z)</option>
+        <option value="recent-desc">Dernière interaction (récent → ancien)</option>
+        <option value="tracked-first">Déjà suivis d'abord</option>
+      </select>
+    </div>
     <div class="sel-list" id="sel-list" role="group" aria-label="Comptes détectés"></div>
     ${upsell}
     <button class="sync-cta" data-home="analyze" aria-live="polite">Analyser ma sélection (<span id="sel-btn-n">0</span>)</button>
@@ -338,10 +382,29 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
   </div>`
 
   const list = ctx.container.querySelector('#sel-list')
+  const searchInput = ctx.container.querySelector<HTMLInputElement>('#sel-search')
+  const sortSelect = ctx.container.querySelector<HTMLSelectElement>('#sel-sort')
   ctx.container.querySelector('[data-home="rescan-accounts"]')?.addEventListener('click', () => void startDetection(ctx, data))
   const render = (): void => {
     if (!list) return
-    list.innerHTML = candidates.map((candidate, index) => {
+    const query = (searchInput?.value ?? '').trim().toLowerCase()
+    const sortMode = sortSelect?.value ?? 'interactions-desc'
+    const indexed = candidates.map((candidate, index) => ({ candidate, index }))
+    const visible = indexed
+      .filter(({ candidate }) => !query || candidate.name.toLowerCase().includes(query) || (candidate.domain ?? '').toLowerCase().includes(query))
+      .sort((a, b) => {
+        switch (sortMode) {
+          case 'name-asc':
+            return a.candidate.name.localeCompare(b.candidate.name)
+          case 'recent-desc':
+            return (b.candidate.lastInteractionAt ?? '').localeCompare(a.candidate.lastInteractionAt ?? '')
+          case 'tracked-first':
+            return Number(b.candidate.alreadyTracked) - Number(a.candidate.alreadyTracked) || b.candidate.interactions - a.candidate.interactions
+          default:
+            return b.candidate.interactions - a.candidate.interactions
+        }
+      })
+    list.innerHTML = visible.length ? visible.map(({ candidate, index }) => {
       const meta = [candidate.industry, candidate.location, `${candidate.interactions} échange${candidate.interactions > 1 ? 's' : ''}`, candidate.lastInteractionAt ? `vu ${relativeTime(candidate.lastInteractionAt)}` : null].filter(Boolean).join(' · ')
       return `<button type="button" class="sel-row ${candidate.selected ? 'on' : 'off'}" data-index="${index}" aria-pressed="${candidate.selected}">
         <span class="sel-cb" aria-hidden="true">${candidate.selected ? '✓' : ''}</span>
@@ -349,7 +412,7 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
         <span class="sel-nps">à analyser</span>
         <span class="sel-src">${esc(candidate.source)}</span>
       </button>`
-    }).join('')
+    }).join('') : `<p class="sync-s" style="text-align:center;padding:16px 0">Aucun compte ne correspond à « ${esc(query)} ».</p>`
     const count = candidates.filter((candidate) => candidate.selected).length
     const countNode = ctx.container.querySelector('#sel-count')
     const buttonCount = ctx.container.querySelector('#sel-btn-n')
@@ -359,6 +422,8 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
     if (button) button.disabled = count < 1
   }
   render()
+  searchInput?.addEventListener('input', render)
+  sortSelect?.addEventListener('change', render)
 
   list?.addEventListener('click', (event) => {
     const row = (event.target as Element).closest<HTMLElement>('.sel-row')
@@ -388,9 +453,11 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
 /** S3 — activation réelle (RPC set_tracked_companies) puis révélation du cockpit. */
 async function runAnalysis(ctx: HomeContext, chosen: HomeAccountCandidate[]): Promise<void> {
   renderStepper(ctx, 'Analyse relationnelle', `Tohu initialise ton portefeuille de ${chosen.length} compte${chosen.length > 1 ? 's' : ''}.`, ANALYSIS_STEPS, 0)
+  setProgress(ctx, 15)
   try {
     const result = await setTrackedCompanies(ctx.organizationId, chosen.map((candidate) => ({ companyId: candidate.companyId, name: candidate.name, domain: candidate.domain })))
     setStep(ctx, 2)
+    setProgress(ctx, 100)
     ctx.toast(`${result.tracked} compte${result.tracked > 1 ? 's' : ''} activé${result.tracked > 1 ? 's' : ''} · ${result.linkedContacts} personne${result.linkedContacts > 1 ? 's' : ''} rattachée${result.linkedContacts > 1 ? 's' : ''}.`)
     await renderHome(ctx)
   } catch (error) {
@@ -423,7 +490,6 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
           </div>
           <div class="krs-stack" id="home-actions">${actionsMarkup(data.priorityActions)}</div>
         </section>
-        ${coachingMarkup(data)}
       </div>
       <aside class="home-cockpit-rail">
         ${topMarkup(data)}
@@ -612,50 +678,6 @@ function topMarkup(data: HomeDashboardData): string {
   </section>`
 }
 
-/* Bloc 8 — coaching relationnel */
-function coachingMarkup(data: HomeDashboardData): string {
-  const coaching = data.coaching
-  const head = `<div class="krs-head">
-    <span class="krs-cic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg></span>
-    <span class="krs-type">Coaching</span>
-    <span class="krs-sub">posture · comment mieux communiquer</span>
-  </div>`
-  if (!coaching) {
-    return `<section class="hcoach2" aria-label="Coaching relationnel">${head}${emptyState('◎', 'Pas encore d’analyse de posture', 'Connecte ta messagerie puis lance une synchronisation : Tohu analysera ta façon de communiquer à partir de tes messages envoyés.', '<button class="btn-secondary" data-home="go-connectors">Gérer les connecteurs</button>')}</section>`
-  }
-  const nodes = ['Éclaireur', 'Connecteur', 'Référent', 'Stratège', 'Légende'].map((label) => `<div class="krs-node lock"><span class="kn-dot" aria-hidden="true">·</span><b>${label}</b></div>`).join('')
-  const traits = coaching.traits.length
-    ? `<div class="krs-socle-h">Socle observé <span class="krs-sub2">· ${coaching.sourceMessageCount} message${coaching.sourceMessageCount > 1 ? 's' : ''} analysé${coaching.sourceMessageCount > 1 ? 's' : ''}</span></div>
-       ${coaching.executiveSummary ? `<div class="krs-arch">${esc(coaching.executiveSummary)}</div>` : ''}
-       <div class="krs-grid" style="grid-template-columns:1fr"><div class="krs-col ok">
-         ${coaching.traits.slice(0, 4).map((trait) => `<div class="krs-li"><b>${esc(trait.trait)}</b> — ${esc(trait.observation)}${trait.confidence !== null ? ` <span class="krs-sub2">(confiance ${trait.confidence}%)</span>` : ''}</div>`).join('')}
-       </div></div>`
-    : `<div class="krs-arch">${esc(coaching.executiveSummary ?? 'Analyse disponible, sans observation détaillée pour le moment.')}</div>`
-  return `<section class="hcoach2" aria-label="Coaching relationnel">
-    ${head}
-    <div class="krs-live">
-      <span class="krs-live-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14-4.5L3 9M3 4v5h5"/><path d="M4 13a8 8 0 0 0 14 4.5L21 15M21 20v-5h-5"/></svg></span>
-      <span>Analyse mise à jour ${esc(relativeTime(coaching.updatedAt))}${coaching.confidence !== null ? ` · confiance ${coaching.confidence}%` : ''}${coaching.updatedFrom.length ? ` · source ${esc(coaching.updatedFrom.join(', '))}` : ''}</span>
-    </div>
-    <div class="krs-lvl">
-      <div class="krs-lvl-head">
-        <span class="krs-lvl-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
-        <div class="krs-lvl-id"><div class="krs-lvl-n">Niveau relationnel</div><div class="krs-lvl-sub">progression évaluée sur la profondeur de tes relations</div></div>
-        <span class="krs-lvl-xp">en calibration</span>
-      </div>
-      <div class="krs-lvl-path"><div class="krs-lvl-track" aria-hidden="true"></div><div class="krs-lvl-nodes">${nodes}</div></div>
-      <div class="krs-calib"><span aria-hidden="true">🧭</span><span>Analyse en cours de calibration — les règles d’accès aux niveaux seront calculées côté serveur avant l’activation de cette progression. Aucun niveau n’est affiché tant qu’il n’est pas mesuré.</span></div>
-    </div>
-    ${traits}
-    <div class="krs-foot">
-      <button class="krs-simu" data-home="simulate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5L3 9M3 4v5h5"/><path d="M4 13a8 8 0 0 0 14 4.5L21 15M21 20v-5h-5"/></svg> Simuler un échange</button>
-      <span class="krs-foot-q">Lecture juste ?</span>
-      <button class="krs-b ${coaching.userFeedback === 'useful' ? 'on' : ''}" data-home="coach-feedback" data-feedback-type="useful" aria-pressed="${coaching.userFeedback === 'useful'}">👍 Utile</button>
-      <button class="krs-b ${coaching.userFeedback === 'inaccurate' ? 'on' : ''}" data-home="coach-feedback" data-feedback-type="inaccurate" aria-pressed="${coaching.userFeedback === 'inaccurate'}">👎 Pas juste</button>
-    </div>
-  </section>`
-}
-
 /* Bloc 9 — actions du jour */
 function actionsMarkup(actions: HomePriorityAction[]): string {
   if (!actions.length) {
@@ -754,23 +776,6 @@ function bindCockpit(ctx: HomeContext, data: HomeDashboardData): void {
     root.querySelectorAll<HTMLElement>('[data-sig-extra]').forEach((node) => { node.hidden = false })
     ;(event.currentTarget as HTMLElement).closest('.sig-foot')?.remove()
   })
-  root.querySelector('[data-home="simulate"]')?.addEventListener('click', () => {
-    const target = data.topAccounts.atRisk[0] ?? data.topAccounts.best[0]
-    ctx.askSimulation(`Mode simulation — je veux préparer un échange${target ? ` avec ${target.name}` : ''}. Situation : `)
-  })
-  root.querySelectorAll<HTMLButtonElement>('[data-home="coach-feedback"]').forEach((button) => button.addEventListener('click', () => {
-    const coaching = data.coaching
-    const type = button.dataset.feedbackType
-    if (!coaching || (type !== 'useful' && type !== 'inaccurate')) return
-    void saveInsightFeedback({ organizationId: ctx.organizationId, userId: ctx.session.user.id, insightId: coaching.insightId, feedbackType: type })
-      .then(() => {
-        root.querySelectorAll('[data-home="coach-feedback"]').forEach((node) => { node.classList.remove('on'); node.setAttribute('aria-pressed', 'false') })
-        button.classList.add('on')
-        button.setAttribute('aria-pressed', 'true')
-        ctx.toast('Merci — ton retour affine l’analyse.')
-      })
-      .catch((error) => ctx.toast(error instanceof Error ? error.message : 'Feedback non enregistré.', 'error'))
-  }))
   bindActions(ctx, data)
   bindSignalDrawer(ctx, data)
 }

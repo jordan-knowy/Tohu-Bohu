@@ -113,23 +113,6 @@ export type HomePriorityAction = {
   recommended: string
 }
 
-export type HomeCoachingData = {
-  /** Niveau gamifié : null tant que les règles ne sont pas définies côté backend (mission §8). */
-  level: null
-  calibrating: true
-  executiveSummary: string | null
-  cognitiveMode: string | null
-  traits: Array<{ trait: string; observation: string; confidence: number | null }>
-  communicationStyle: Record<string, unknown>
-  sourceMessageCount: number
-  updatedFrom: string[]
-  updatedAt: string | null
-  confidence: number | null
-  /** Identifiant de l'analyse, utilisé par insight_feedback. */
-  insightId: string
-  userFeedback: 'useful' | 'inaccurate' | null
-}
-
 export type HomeTeamMember = {
   userId: string
   fullName: string
@@ -221,7 +204,6 @@ export type HomeDashboardData = {
   }
 
   teamMembers: HomeTeamMember[]
-  coaching: HomeCoachingData | null
   priorityActions: HomePriorityAction[]
   latestSignals: HomeSignal[]
 }

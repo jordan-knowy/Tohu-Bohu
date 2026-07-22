@@ -84,23 +84,6 @@ function base(): HomeDashboardData {
       { userId: 'u2', fullName: 'Sam Lee', avatarUrl: null, accounts: 1, contacts: 4, score: 58, delta30d: 2 },
       { userId: 'u3', fullName: 'Camille Robert', avatarUrl: null, accounts: 2, contacts: 4, score: 54, delta30d: -3 },
     ],
-    coaching: {
-      level: null,
-      calibrating: true,
-      executiveSummary: 'Fixture : communication directe et factuelle, appuyée sur des chiffres.',
-      cognitiveMode: 'analytique',
-      traits: [
-        { trait: 'Clarté', observation: 'Va droit au but dans les messages courts (fixture).', confidence: 72 },
-        { trait: 'Structure', observation: 'Synthétise les décisions par écrit (fixture).', confidence: 64 },
-      ],
-      communicationStyle: {},
-      sourceMessageCount: 41,
-      updatedFrom: ['microsoft', 'email'],
-      updatedAt: iso(0.05),
-      confidence: 68,
-      insightId: 'preview-insight',
-      userFeedback: null,
-    },
     priorityActions: [
       { actionId: 'relance:p4', type: 'relance', title: 'Silence prolongé — relancer Fixture Delta', explanation: '41 j sans contact · score 39. Reprends langue avant que la relation ne refroidisse.', priority: 84, accountId: 'p4', accountName: 'Fixture Delta', personId: null, personName: null, source: 'Historique des interactions', observedAt: iso(41), confidence: 90, sourceSignalId: null, recommended: 'Reprendre contact cette semaine' },
       { actionId: 'mouvement:sig1', type: 'mouvement', title: 'Nouveau décideur — à confirmer', explanation: 'Un contact connu apparaît sous un nouveau rôle (fixture, 1 source).', priority: 76, accountId: 'p1', accountName: 'Fixture Alpha', personId: null, personName: null, source: 'LinkedIn', observedAt: iso(3), confidence: 55, sourceSignalId: 'sig1', recommended: 'Confirmer le mouvement' },
@@ -159,7 +142,6 @@ function fixtureFor(state: string): HomeDashboardData {
       data.lastVisitDigest = null
       data.globalRelationship = { score: null, level: 'unavailable', confidence: null, computedAt: null, delta30d: null, includedAccounts: 0, excludedAccounts: 5, distribution: null }
       data.topAccounts = { best: [], atRisk: [] }
-      data.coaching = null
       data.priorityActions = []
       data.latestSignals = []
       data.counters = { accounts: 5, accountsDelta30d: null, people: 0, peopleDelta30d: null, activeRelationships: 0, decliningRelationships: 0 }
