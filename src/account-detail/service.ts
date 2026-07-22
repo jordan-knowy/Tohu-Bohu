@@ -65,7 +65,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     client.from('account_recommendations').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('priority', { ascending: false }).limit(30),
     client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('created_at', { ascending: false }).limit(30),
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
-    client.from('connectors').select('provider,status,last_synced_at,last_error').eq('organization_id', workspaceId),
+    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId),
   ])
 
@@ -246,7 +246,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
         status: text(row.status) ?? 'disconnected',
         lastSyncedAt: text(row.last_synced_at),
         interactionCount: meetingProviders.get(provider) ?? null,
-        error: text(row.last_error),
+        error: text(object(row.metadata).last_error),
       }
     }).filter((source) => source.status === 'connected' || source.status === 'error' || source.interactionCount !== null),
     recommendations,

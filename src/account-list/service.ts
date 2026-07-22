@@ -37,6 +37,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const [
     companiesResult, contactsResult, historyResult, settingsResult, prefsResult,
     watchResult, meetingsResult, messagesResult, signalsResult, membershipsResult, profilesResult,
+    accountScoresResult,
   ] = await Promise.all([
     client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
     client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
@@ -49,6 +50,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     client.from('company_signals').select('id,company_id,family,title,summary,source,observed_at,companies(name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
     client.from('memberships').select('user_id').eq('organization_id', workspaceId),
     client.from('profiles').select('id,full_name,avatar_url'),
+    client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', workspaceId).order('computed_at', { ascending: false }).limit(2000),
   ])
 
   if (companiesResult.error) throw new Error(companiesResult.error.message)
@@ -65,6 +67,15 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const signals = rows(optional(signalsResult, 'Signaux comptes', degradedReasons))
   const memberships = rows(optional(membershipsResult, 'Équipe', degradedReasons))
   const profiles = rows(optional(profilesResult, 'Profils', degradedReasons))
+  const accountScoreRows = rows(optional(accountScoresResult, 'Snapshots du score Compte', degradedReasons))
+  // Trié par computed_at desc : le premier snapshot rencontré par compte est le plus récent.
+  const accountScores = new Map<string, number>()
+  for (const row of accountScoreRows) {
+    const companyId = text(row.company_id)
+    if (!companyId || accountScores.has(companyId)) continue
+    const score = num(row.score)
+    if (score !== null) accountScores.set(companyId, score)
+  }
 
   const profileNames = new Map(profiles.map((profile) => [String(profile.id), text(profile.full_name) ?? 'Membre Tohu']))
   const memberIds = new Set(memberships.map((membership) => String(membership.user_id)))
@@ -76,7 +87,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const accounts = buildAccountRows({
     companies, contacts, scoreHistory, settings, preferences, watch, meetings,
     messageContactIds: new Set(messages.map((message) => String(message.contact_id))),
-    signals, profileNames, now,
+    signals, profileNames, accountScores, now,
   })
 
   const scored = accounts.filter((account) => account.score !== null)

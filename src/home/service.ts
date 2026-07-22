@@ -156,11 +156,12 @@ function contactSnapshots(row: DbRow): SnapshotRow[] {
 }
 
 /**
- * Construit les comptes « scorables » : score persisté du compte
- * (public_context.relationship_score) ou, à défaut, moyenne des derniers
- * engagement_score persistés de ses contacts — jamais de formule nouvelle.
+ * Construit les comptes « scorables » : score de compte persisté par
+ * score-batch (account_relationship_score_snapshots — même source que la
+ * fiche compte) ou, à défaut, moyenne des derniers engagement_score
+ * persistés de ses contacts — jamais de formule nouvelle.
  */
-export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], trackingColumnAvailable: boolean, now: Date): ScoredAccount[] {
+export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], trackingColumnAvailable: boolean, now: Date, accountScores: Map<string, number> = new Map()): ScoredAccount[] {
   const byCompany = new Map<string, DbRow[]>()
   for (const contact of contacts) {
     const companyId = str(contact.company_id)
@@ -189,7 +190,7 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
         previousScores.push(latest.engagement_score - previous.engagement_score)
       }
     }
-    const ownScore = num(context.relationship_score)
+    const ownScore = accountScores.get(String(company.id)) ?? num(context.relationship_score)
     const contactAverage = latestScores.length ? Math.round(latestScores.reduce((sum, value) => sum + value, 0) / latestScores.length) : null
     return {
       id: String(company.id),
@@ -339,7 +340,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
 
-  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday] = await Promise.all([
+  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData] = await Promise.all([
     safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
     safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
@@ -354,6 +355,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeCount(client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId), 'comptage communication_messages', degradedReasons),
     safeCount(client.from('company_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage company_signals', degradedReasons),
     safeCount(client.from('behavioral_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage behavioral_signals', degradedReasons),
+    safeQuery<DbRow[]>(client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', organizationId).order('computed_at', { ascending: false }).limit(2000), 'snapshots du score compte', degradedReasons),
   ])
 
   if (!companiesData || !contactsData || !connectorsData) {
@@ -374,7 +376,16 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const trackingColumnAvailable = companies.length > 0 ? 'is_tracked' in (companies[0] ?? {}) : !degradedReasons.length
   if (companies.length > 0 && !trackingColumnAvailable) degradedReasons.push('colonne companies.is_tracked (migration 202607150009)')
 
-  const scoredAccounts = buildScoredAccounts(companies, contacts, trackingColumnAvailable, now)
+  const accountScoreRows = rows(accountScoresData)
+  // Trié par computed_at desc : le premier snapshot rencontré par compte est le plus récent.
+  const accountScores = new Map<string, number>()
+  for (const row of accountScoreRows) {
+    const companyId = str(row.company_id)
+    if (!companyId || accountScores.has(companyId)) continue
+    const score = num(row.score)
+    if (score !== null) accountScores.set(companyId, score)
+  }
+  const scoredAccounts = buildScoredAccounts(companies, contacts, trackingColumnAvailable, now, accountScores)
   const tracked = scoredAccounts.filter((account) => account.tracked)
 
   // Forfait — la limite vient de subscription_plans.max_tracked_accounts.

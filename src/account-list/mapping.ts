@@ -1,6 +1,8 @@
 // Liste Comptes — mapping pur des lignes Supabase vers le modèle d'affichage.
-// Aucun score n'est calculé ici : on agrège uniquement des scores persistés
-// (moyenne des derniers scores contacts du moteur backend), comme la Home.
+// Aucun score n'est calculé ici : on affiche le score de compte persisté par
+// score-batch (account_relationship_score_snapshots) — la même source que la
+// fiche compte — et on ne retombe sur la moyenne des scores contacts que si
+// aucun snapshot de compte n'existe encore.
 
 export type Row = Record<string, unknown>
 
@@ -110,6 +112,7 @@ export type AccountListRaw = {
   messageContactIds: Set<string>
   signals: Row[]
   profileNames: Map<string, string>
+  accountScores: Map<string, number>
   now: Date
 }
 
@@ -146,7 +149,7 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
     const meetings = meetingsByCompany.get(id) ?? []
 
     const scores = linked.map((contact) => latestContactScore(contact, historyByContact)).filter((value): value is number => value !== null)
-    const score = num(context.relationship_score) ?? (scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null)
+    const score = raw.accountScores.get(id) ?? num(context.relationship_score) ?? (scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null)
 
     // Tendance : dernier point vs point d'il y a ~30 j dans l'historique persisté.
     const deltas: number[] = []

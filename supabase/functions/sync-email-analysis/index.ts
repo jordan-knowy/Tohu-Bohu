@@ -137,6 +137,24 @@ function positiveIntegerEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
 }
 
+/** Traite jusqu'à `limit` messages en parallèle — indispensable dès que le
+ * volume de messages analysés grandit (ANALYSIS_MAX_MESSAGES) : la boucle
+ * séquentielle d'origine (1 message = plusieurs appels RPC/REST attendus l'un
+ * après l'autre) a fini par dépasser le temps d'exécution maximal de la
+ * fonction (crash 546) sur des boîtes actives une fois le plafond relevé. */
+async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let index = 0
+  async function next(): Promise<void> {
+    const current = index++
+    if (current >= items.length) return
+    await worker(items[current])
+    return next()
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => next()))
+}
+
+const MESSAGE_PROCESSING_CONCURRENCY = positiveIntegerEnv('EMAIL_MESSAGE_CONCURRENCY', 8)
+
 const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 2500)
 const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 600)
 const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
@@ -368,8 +386,13 @@ Deno.serve(async (request) => {
     let storedMessages = 0
     let skippedAutomated = 0
     const skippedReasons: Record<string, number> = {}
+    let processedMessages = 0
 
-    for (const message of messages) {
+    await runWithConcurrency(messages, MESSAGE_PROCESSING_CONCURRENCY, async (message) => {
+      processedMessages++
+      if (syncJobId && messages.length > 20 && processedMessages % 20 === 0) {
+        void supabase.from('sync_jobs').update({ current_step: `Traitement des messages (${processedMessages}/${messages.length})`, progress: 35 + Math.round((processedMessages / messages.length) * 25) }).eq('id', syncJobId)
+      }
       const externalByEmail = new Map(
         (message.direction === 'inbound' ? [message.from] : message.to)
           .filter((item) => item.email && item.email !== ownEmail)
@@ -428,14 +451,14 @@ Deno.serve(async (request) => {
       }
 
       const primaryContact = messageContacts.find((item) => item.is_tracked === true) ?? messageContacts[0]
-      if (!primaryContact || message.discoveryOnly) continue
+      if (!primaryContact || message.discoveryOnly) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
-      if (!thread) continue
+      if (!thread) return
       const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
       else if (message.body && primaryContact.is_tracked === true) contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), message.body])
-    }
+    })
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Détection des personnes et organisations', progress: 60 }).eq('id', syncJobId)
 

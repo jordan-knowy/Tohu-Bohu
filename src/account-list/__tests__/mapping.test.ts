@@ -11,7 +11,7 @@ function raw(overrides: Partial<AccountListRaw> = {}): AccountListRaw {
   return {
     companies: [], contacts: [], scoreHistory: [], settings: [], preferences: [],
     watch: [], meetings: [], messageContactIds: new Set(), signals: [],
-    profileNames: new Map(), now: NOW,
+    profileNames: new Map(), accountScores: new Map(), now: NOW,
     ...overrides,
   }
 }
