@@ -230,7 +230,7 @@ function PageBody({ context }: { context: PageContext }) {
         <span className="dxpp-h-job">Poste</span>
         <span className="dxpp-h-acc">Compte</span>
         {sortHeader('dur', 'Relation depuis', 'dxpp-h-dur')}
-        {sortHeader('nps', 'NPS', 'center')}
+        {sortHeader('nps', 'Score', 'center')}
         {sortHeader('last', 'Dernier contact', 'dxpp-h-last')}
         <span className="dxpp-h-ch">Canaux</span>
         <span className="center">Owner</span>

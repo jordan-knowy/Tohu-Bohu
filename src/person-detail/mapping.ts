@@ -3,15 +3,20 @@
 
 import { signalTitle } from '../services/signal-labels'
 import {
+  MIN_COGNITIVE_PROFILE_INTERACTIONS,
   MIN_BEHAVIOR_INTERACTIONS,
   type DataSourceReference,
   type PersonBehavioralInsight,
   type PersonCareerEntry,
+  type PersonCognitiveProfile,
+  type PersonCognitiveTheme,
   type PersonContactDetail,
   type PersonDetailData,
   type PersonEvidence,
   type PersonHistoryEvent,
   type PersonMemoryEntry,
+  type PersonMergeSuggestion,
+  type PersonNameSuggestion,
   type PersonRecommendation,
   type PersonScorePoint,
   type PersonSignal,
@@ -26,6 +31,81 @@ export const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(
 export const text = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value : null
 export const num = (value: unknown): number | null => value === null || value === undefined || value === '' ? null : Number.isFinite(Number(value)) ? Number(value) : null
 export const bool = (value: unknown): boolean => value === true
+
+const COGNITIVE_THEME_DEFINITIONS = {
+  exchangeStyles: [
+    ['tempo', 'Tempo'],
+    ['openness', 'Ouverture'],
+    ['orientation', 'Orientation'],
+    ['certainty', 'Certitude'],
+  ],
+  speechActs: [
+    ['directive', 'Directif'],
+    ['commissive', 'Commissif'],
+    ['assertive', 'Assertif'],
+    ['interrogative', 'Interrogatif'],
+    ['expressive', 'Expressif'],
+  ],
+  observableMarkers: [
+    ['response_time', 'Temps de réponse'],
+    ['dominance_listening_speaking', 'Dominance · écoute ↔ parole'],
+    ['linguistic_synchrony', 'Synchronie linguistique'],
+    ['pronouns_status', 'Pronoms & statut'],
+    ['register_distance', 'Registre & distance'],
+    ['self_disclosure', 'Auto-divulgation'],
+  ],
+} as const
+
+function boundedScore(value: unknown): number | null {
+  const parsed = num(value)
+  return parsed === null ? null : Math.max(0, Math.min(100, Math.round(parsed)))
+}
+
+function cognitiveTheme(id: string, label: string, value: unknown): PersonCognitiveTheme {
+  const row = object(value)
+  const status = row.status === 'observed' || row.status === 'emerging' ? row.status : 'insufficient'
+  const sourceTypes = Array.isArray(row.source_types) ? row.source_types.filter((source): source is string => typeof source === 'string') : []
+  const evolution = ['rising', 'stable', 'declining', 'mixed'].includes(String(row.evolution))
+    ? row.evolution as PersonCognitiveTheme['evolution']
+    : null
+  return {
+    id,
+    status,
+    score: status === 'insufficient' ? null : boundedScore(row.score),
+    label: status === 'insufficient' ? null : text(row.label),
+    observation: status === 'insufficient' ? null : text(row.observation),
+    confidence: status === 'insufficient' ? null : boundedScore(row.confidence),
+    evidenceCount: Math.max(0, Math.round(num(row.evidence_count) ?? 0)),
+    sourceTypes,
+    evolution,
+  }
+}
+
+function themeList(container: Row, definitions: readonly (readonly [string, string])[]): PersonCognitiveTheme[] {
+  return definitions.map(([id, label]) => cognitiveTheme(id, label, container[id]))
+}
+
+export function buildCognitiveProfile(profile: Row, analyzedInteractions: number): PersonCognitiveProfile {
+  const structured = object(profile.cognitive_profile_data)
+  const interpersonal = object(structured.interpersonal)
+  const maturity = analyzedInteractions < MIN_COGNITIVE_PROFILE_INTERACTIONS ? 'none'
+    : analyzedInteractions < MIN_BEHAVIOR_INTERACTIONS ? 'emerging'
+      : analyzedInteractions < 25 ? 'usable'
+        : analyzedInteractions < 50 ? 'consolidated'
+          : 'refined'
+  return {
+    schemaVersion: Math.max(0, Math.round(num(structured.schema_version) ?? 0)),
+    maturity,
+    interpersonal: {
+      assertiveness: cognitiveTheme('assertiveness', 'Assertivité', interpersonal.assertiveness),
+      warmth: cognitiveTheme('warmth', 'Chaleur relationnelle', interpersonal.warmth),
+    },
+    exchangeStyles: themeList(object(structured.exchange_styles), COGNITIVE_THEME_DEFINITIONS.exchangeStyles),
+    speechActs: themeList(object(structured.speech_acts), COGNITIVE_THEME_DEFINITIONS.speechActs),
+    observableMarkers: themeList(object(structured.observable_markers), COGNITIVE_THEME_DEFINITIONS.observableMarkers),
+    posture: cognitiveTheme('posture', 'Posture', structured.posture),
+  }
+}
 
 export function provenance(row: Row, defaults: Partial<DataSourceReference> = {}): DataSourceReference {
   return {
@@ -63,24 +143,44 @@ export function legacyDate(row: Row): string | null {
   return text(row.snapshot_date) ?? text(row.computed_at) ?? text(row.captured_at) ?? text(row.created_at)
 }
 
-/** Agrège les snapshots par mois (dernier snapshot du mois), triés croissant. */
+/** Agrège les snapshots par mois (dernier snapshot du mois), triés croissant.
+ *  Fusionne les deux sources plutôt que de choisir l'une ou l'autre en bloc :
+ *  la table officielle (canonical, `person_relationship_score_snapshots`) est
+ *  prioritaire pour les mois qu'elle couvre, l'historique hérité (legacy,
+ *  `contact_score_history`) comble les mois plus anciens qu'elle ne couvre pas
+ *  encore. Sans ça, dès que canonical avait ne serait-ce qu'une ligne (même
+ *  récente), tout l'historique legacy — parfois plusieurs mois réels — était
+ *  ignoré et la courbe s'effondrait à un seul mois. */
 export function buildScoreHistory(canonical: Row[], legacy: Row[]): PersonScorePoint[] {
-  const source = canonical.length ? canonical : legacy
   const byMonth = new Map<string, PersonScorePoint>()
-  const sorted = [...source]
-    .map((row) => ({ row, date: canonical.length ? text(row.computed_at) : legacyDate(row), score: canonical.length ? num(row.score) : legacyScore(row) }))
-    .filter((item): item is { row: Row; date: string; score: number | null } => item.date !== null && item.score !== null)
+
+  const toPoint = (row: Row, score: number): PersonScorePoint => ({
+    monthKey: '',
+    score,
+    phase: text(row.phase),
+    interactionCount: num(row.total_interactions) ?? num(row.interaction_count),
+    confidence: num(row.confidence),
+  })
+
+  const legacySorted = [...legacy]
+    .map((row) => ({ row, date: legacyDate(row), score: legacyScore(row) }))
+    .filter((item): item is { row: Row; date: string; score: number } => item.date !== null && item.score !== null)
     .sort((a, b) => a.date.localeCompare(b.date))
-  for (const item of sorted) {
-    byMonth.set(monthKey(item.date), {
-      monthKey: monthKey(item.date),
-      score: item.score,
-      phase: text(item.row.phase),
-      interactionCount: num(item.row.total_interactions) ?? num(item.row.interaction_count),
-      confidence: num(item.row.confidence),
-    })
+  for (const item of legacySorted) {
+    const key = monthKey(item.date)
+    byMonth.set(key, { ...toPoint(item.row, item.score), monthKey: key })
   }
-  return [...byMonth.values()]
+
+  const canonicalSorted = [...canonical]
+    .map((row) => ({ row, date: text(row.computed_at), score: num(row.score) }))
+    .filter((item): item is { row: Row; date: string; score: number } => item.date !== null && item.score !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))
+  for (const item of canonicalSorted) {
+    const key = monthKey(item.date)
+    byMonth.set(key, { ...toPoint(item.row, item.score), monthKey: key })
+  }
+
+  return [...byMonth.values()].sort((a, b) => a.monthKey.localeCompare(b.monthKey))
 }
 
 /** Fenêtre continue des n derniers mois se terminant au mois du dernier point (ou au mois courant). */
@@ -318,6 +418,41 @@ export function buildHistory(meetingRows: Row[], messageRows: Row[], signals: Pe
   return events.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 }
 
+export function buildNameSuggestion(row: Row | null): PersonNameSuggestion | null {
+  if (!row || row.id === undefined || row.id === null) return null
+  const suggestedFullName = text(row.suggested_full_name)
+  if (!suggestedFullName) return null
+  return {
+    id: String(row.id),
+    suggestedFullName,
+    source: text(row.source) === 'signature' ? 'signature' : 'enrichment_agent',
+    evidence: text(row.evidence),
+    createdAt: text(row.created_at) ?? '',
+  }
+}
+
+export function buildMergeSuggestions(mergeRows: Row[], personId: string): PersonMergeSuggestion[] {
+  return mergeRows.map((row) => {
+    const isA = String(row.contact_a_id) === personId
+    const evidence = object(row.evidence)
+    const similarity = num(evidence.name_similarity)
+    return {
+      id: String(row.id),
+      otherContactId: String(isA ? row.contact_b_id : row.contact_a_id),
+      otherContactName: text(isA ? evidence.contact_b_name : evidence.contact_a_name) ?? 'Contact',
+      otherContactEmail: text(isA ? evidence.contact_b_email : evidence.contact_a_email),
+      confidence: text(row.confidence) === 'high' ? 'high' : 'medium',
+      evidence: {
+        name_similarity: similarity ?? undefined,
+        linkedin_match: bool(evidence.linkedin_match),
+        same_company: bool(evidence.same_company),
+        shares_surname: bool(evidence.shares_surname),
+      },
+      createdAt: text(row.created_at) ?? '',
+    }
+  })
+}
+
 export type PersonDetailRaw = {
   workspaceId: string
   personId: string
@@ -343,6 +478,9 @@ export type PersonDetailRaw = {
   feedback: Row[]
   profileNames: Map<string, string>
   degradedReasons: string[]
+  lockedBy: string | null
+  nameSuggestion: Row | null
+  mergeSuggestions: Row[]
 }
 
 export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
@@ -364,7 +502,10 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const messageDates = raw.messages.map((row) => text(row.sent_at)).filter((value): value is string => value !== null)
   const allDates = [...meetingDates, ...messageDates].sort()
   const score = num(latestSnapshot.score) ?? num(latestHistory.score) ?? num(relationshipSnapshot.engagement_score) ?? num(cognitiveProfile.engagement_score)
-  const analyzedInteractions = num(cognitiveProfile.source_message_count) ?? raw.behavioralSignals.length
+  // Seules les productions attribuées à la personne comptent pour ouvrir son
+  // profil. Les signaux de veille externes ne sont pas des interactions.
+  const authoredMessages = raw.messages.filter((message) => message.direction === 'inbound').length
+  const analyzedInteractions = num(cognitiveProfile.source_interaction_count) ?? num(cognitiveProfile.source_message_count) ?? authoredMessages
 
   const providerCounts = new Map<string, number>()
   for (const message of raw.messages) {
@@ -395,6 +536,8 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       primaryOwnerName: raw.profileNames.get(String(settings.primary_owner_user_id)) ?? raw.profileNames.get(String(contact.owner_user_id)) ?? null,
       createdAt: text(contact.created_at),
       updatedAt: text(contact.updated_at),
+      locked: raw.lockedBy !== null,
+      lockedByMe: raw.lockedBy !== null && raw.lockedBy === raw.userId,
     },
     summary: summaryText
       ? { text: summaryText, confidence: num(raw.summaryRow.confidence), generatedAt: text(raw.summaryRow.generated_at), provenance: provenance(raw.summaryRow, { sourceType: 'summary', sourceLabel: 'Synthèse Tohu', inferenceLevel: 'inferred' }) }
@@ -427,7 +570,9 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       globalConfidence: num(cognitiveProfile.global_confidence),
       cognitiveMode: text(cognitiveProfile.cognitive_mode),
       analyzedInteractions,
+      profileMinimumInteractions: MIN_COGNITIVE_PROFILE_INTERACTIONS,
       minimumInteractions: MIN_BEHAVIOR_INTERACTIONS,
+      cognitiveProfile: buildCognitiveProfile(cognitiveProfile, analyzedInteractions),
       insights: buildInsights(cognitiveProfile),
       evidences: buildEvidences(raw.behavioralSignals),
       updatedAt: text(cognitiveProfile.updated_at),
@@ -439,6 +584,8 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     careerEntries,
     memoryEntries,
     history: buildHistory(raw.meetings, raw.messages, signals, memoryEntries, careerEntries),
+    nameSuggestion: buildNameSuggestion(raw.nameSuggestion),
+    mergeSuggestions: buildMergeSuggestions(raw.mergeSuggestions, raw.personId),
   }
 }
 

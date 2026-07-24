@@ -31,6 +31,7 @@ type Analysis = {
   global_confidence?: number
   behavioral_analysis_data?: Array<{ trait?: string; observation?: string; confidence?: number }>
   communication_style_data?: Record<string, unknown>
+  cognitive_profile_data?: Record<string, unknown>
 }
 
 function json(body: unknown, status = 200): Response {
@@ -201,12 +202,15 @@ function toGmailDateOnly(iso: string): string {
  *  cette liste triée par date (voir `selectMessagesByRelevance` + `hydrateGmailBodies`).
  *  `beforeDate` (format Gmail YYYY/MM/DD) reprend une passe de backfill précédente
  *  plus loin dans le passé, sans rejouer ce qui a déjà été scanné. */
-async function gmailMessages(token: string, ownEmail: string, beforeDate?: string | null): Promise<MailScan> {
+async function gmailMessages(token: string, ownEmail: string, beforeDate?: string | null, targetEmails: string[] = []): Promise<MailScan> {
   const ids: Array<{ id: string; threadId: string }> = []
   let pageToken: string | null = null
   let hasMore = false
   do {
-    const query = `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions${beforeDate ? ` before:${beforeDate}` : ''}`
+    const targetQuery = targetEmails.length
+      ? ` {${targetEmails.flatMap((email) => [`from:${email}`, `to:${email}`]).join(' ')}}`
+      : ''
+    const query = `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions${beforeDate ? ` before:${beforeDate}` : ''}${targetQuery}`
     const params = new URLSearchParams({
       q: query,
       maxResults: String(Math.min(500, DISCOVERY_MAX_MESSAGES - ids.length)),
@@ -308,6 +312,49 @@ async function microsoftMessages(token: string, ownEmail: string, beforeIso?: st
   ])
   const oldestSentAt = [inbox.oldestSentAt, sent.oldestSentAt].filter((value): value is string => value !== null).sort()[0] ?? null
   return { messages: [...inbox.messages, ...sent.messages], truncated: inbox.truncated || sent.truncated, oldestSentAt }
+}
+
+/** Recherche Microsoft ciblée sur un correspondant. Le mode manuel ne doit
+ * jamais parcourir plusieurs milliers de messages d'une boîte complète : ce
+ * chemin borné évite les interruptions Edge 546 observées sur les grosses
+ * boîtes et ne modifie aucun deltaLink. */
+async function microsoftTargetMessages(token: string, ownEmail: string, targetEmails: string[]): Promise<MailScan> {
+  const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview'
+  const byId = new Map<string, any>()
+  let truncated = false
+  for (const targetEmail of targetEmails) {
+    let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/messages?$top=100&$search=${encodeURIComponent(`"participants:${targetEmail}"`)}&$select=${select}`
+    let fetched = 0
+    while (nextUrl && fetched < PER_CONTACT_MAX_MESSAGES) {
+      const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' } })
+      if (!response.ok) throw new Error(`Microsoft Graph ciblé ${response.status}`)
+      const page = await response.json()
+      for (const message of page.value ?? []) byId.set(String(message.id), message)
+      fetched += (page.value ?? []).length
+      nextUrl = page['@odata.nextLink'] ?? null
+    }
+    if (nextUrl) truncated = true
+  }
+  const messages: Mail[] = [...byId.values()].map((message: any) => {
+    const fromEmail = cleanEmail(message.from?.emailAddress?.address)
+    const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
+    const to = (message.toRecipients ?? []).map((recipient: any) => {
+      const email = cleanEmail(recipient.emailAddress?.address)
+      return { email, name: cleanName(recipient.emailAddress?.name, email) }
+    }).filter((item: Address) => item.email)
+    return {
+      id: String(message.id),
+      threadId: message.conversationId ?? message.id,
+      subject: message.subject ?? '',
+      from,
+      to,
+      sentAt: message.sentDateTime ?? message.receivedDateTime ?? new Date().toISOString(),
+      body: sanitizeBody(message.bodyPreview ?? ''),
+      direction: from.email === ownEmail ? 'outbound' as const : 'inbound' as const,
+    }
+  })
+  const oldestSentAt = messages.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
+  return { messages, truncated, oldestSentAt }
 }
 
 /** Capture le historyId Gmail courant juste après un backfill complet — point
@@ -449,18 +496,106 @@ function errorMessage(error: unknown): string {
   return String(error ?? 'analyse impossible')
 }
 
-async function analyze(name: string, role: 'responsable' | 'contact', excerpts: string[]): Promise<Analysis> {
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function maturityFor(interactionCount: number): 'none' | 'emerging' | 'usable' | 'consolidated' | 'refined' {
+  if (interactionCount < 3) return 'none'
+  if (interactionCount < 10) return 'emerging'
+  if (interactionCount < 25) return 'usable'
+  if (interactionCount < 50) return 'consolidated'
+  return 'refined'
+}
+
+const OBSERVABLE_MARKER_IDS = [
+  'response_time',
+  'dominance_listening_speaking',
+  'linguistic_synchrony',
+  'pronouns_status',
+  'register_distance',
+  'self_disclosure',
+] as const
+
+function structuredBehavioralSignals(profile: Record<string, unknown>): Array<{ trait: string; observation: string; confidence: number }> {
+  const markers = asRecord(profile.observable_markers)
+  return OBSERVABLE_MARKER_IDS.flatMap((trait) => {
+    const marker = asRecord(markers[trait])
+    const observation = typeof marker.observation === 'string' ? marker.observation.trim() : ''
+    if (!observation || marker.status === 'insufficient') return []
+    return [{ trait, observation, confidence: pct(marker.confidence) }]
+  })
+}
+
+async function analyze(
+  name: string,
+  role: 'responsable' | 'contact',
+  excerpts: string[],
+  previousProfile: Record<string, unknown> = {},
+  interactionCount = excerpts.length,
+): Promise<Analysis> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
-  const prompt = `Analyse le style comportemental et communicationnel de ${name}, qui est ${role === 'responsable' ? 'le responsable de compte connecté' : 'une personne suivie'}.
-Base-toi uniquement sur les messages qu'il ou elle a réellement rédigés ci-dessous. Ne diagnostique aucune pathologie, n'infère aucune donnée sensible et ne cite pas les emails mot pour mot. Réponds uniquement en JSON :
-{"executive_summary":"résumé en français","cognitive_mode":"mode dominant","cognitive_mode_confidence":0,"global_confidence":0,"behavioral_analysis_data":[{"trait":"nom","observation":"paraphrase factuelle","confidence":0}],"communication_style_data":{"tone":"","directness":"","decision_style":"","preferred_format":"","response_pattern":""}}
-Messages :\n${corpus}`
+  const previous = Object.keys(previousProfile).length ? JSON.stringify(previousProfile).slice(0, 8000) : '{}'
+  const prompt = `Tu construis le profil comportemental évolutif de ${name}, ${role === 'responsable' ? 'responsable de compte connecté' : 'personne suivie'}.
+Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les nouveaux extraits. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
+
+Règles impératives :
+- aucune pathologie, donnée sensible ou personnalité essentialisée ;
+- aucune citation mot pour mot ni texte d'exemple ;
+- chaque observation doit être une paraphrase propre à cette personne ;
+- les identifiants et thèmes du schéma sont fixes et doivent tous être présents ;
+- status vaut "observed" si plusieurs preuves convergent, "emerging" si la tendance reste fragile, "insufficient" sans preuve ;
+- pour "insufficient", score, label et observation valent null ;
+- score et confidence sont compris entre 0 et 100 ;
+- evidence_count compte les preuves distinctes ; source_types contient "email" pour ces extraits ;
+- evolution vaut "rising", "stable", "declining", "mixed" ou null ;
+- le score des axes va du pôle gauche/bas (0) au pôle droit/haut (100) : assertiveness conciliant→assertif, warmth distant→chaleureux, tempo rapide→analytique, openness innovant→conforme, orientation tâche→relation, certainty nuancé→tranché.
+
+Réponds uniquement avec ce JSON strict :
+{
+  "executive_summary": "synthèse personnalisée ou null",
+  "cognitive_mode": "posture dominante personnalisée ou null",
+  "cognitive_mode_confidence": 0,
+  "global_confidence": 0,
+  "cognitive_profile_data": {
+    "schema_version": 2,
+    "interpersonal": {
+      "assertiveness": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "warmth": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    },
+    "exchange_styles": {
+      "tempo": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "openness": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "orientation": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "certainty": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    },
+    "speech_acts": {
+      "directive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "commissive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "assertive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "interrogative": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "expressive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    },
+    "observable_markers": {
+      "response_time": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "dominance_listening_speaking": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "linguistic_synchrony": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "pronouns_status": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "register_distance": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+      "self_disclosure": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    },
+    "posture": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+  }
+}
+
+Profil précédent : ${previous}
+Nouveaux extraits :\n${corpus}`
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Email Behavior Analysis' },
-    body: JSON.stringify({ model: Deno.env.get('OPENROUTER_MODEL') ?? 'google/gemini-2.5-flash-lite', temperature: 0.15, response_format: { type: 'json_object' }, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model: Deno.env.get('OPENROUTER_MODEL') ?? 'google/gemini-2.5-flash-lite', temperature: 0.1, response_format: { type: 'json_object' }, max_tokens: 3600, messages: [{ role: 'user', content: prompt }] }),
   })
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
@@ -548,6 +683,7 @@ type SyncParams = {
   actingUserEmail: string | null
   connector: { id: string; metadata: any }
   jobId: string | null
+  manualContactId?: string | null
 }
 
 /** Cœur de la synchronisation, extrait pour être appelable soit une fois
@@ -557,6 +693,7 @@ type SyncParams = {
  *  puisse continuer sur les connecteurs suivants sans s'interrompre. */
 async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>> {
   const { supabase, organizationId, provider, actingUserId, actingUserEmail, connector } = params
+  const manualContactId = params.manualContactId ?? null
   let syncJobId: string | null = params.jobId
   const startedAt = new Date().toISOString()
   try {
@@ -577,7 +714,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         current_step: 'Connexion au fournisseur',
         progress: 10,
         started_at: startedAt,
-        payload: { provider },
+        payload: { provider, contact_id: manualContactId },
       }).select('id').single()
       syncJobId = job?.id ?? null
     }
@@ -594,13 +731,37 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     if (!accessToken) throw new Error('Jeton OAuth indisponible')
 
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
+    let targetEmails: string[] = []
+    if (manualContactId) {
+      const { data: target, error: targetError } = await supabase.from('contacts')
+        .select('email,secondary_emails')
+        .eq('organization_id', organizationId)
+        .eq('id', manualContactId)
+        .is('merged_into_contact_id', null)
+        .maybeSingle()
+      if (targetError) throw targetError
+      if (!target) throw new Error('Personne introuvable dans cet espace.')
+      targetEmails = [target.email, ...(target.secondary_emails ?? [])].map(cleanEmail).filter(Boolean)
+      if (!targetEmails.length) throw new Error('Aucune adresse email disponible pour cette personne.')
+    }
     // Reprise de backfill : si une passe précédente s'est arrêtée avant la fin
     // de la fenêtre de 2 ans (discovery_truncated), on continue plus loin dans
     // le passé plutôt que de tout rescanner depuis le début.
-    const backfillBefore: string | null = (connector.metadata as any)?.backfill_before ?? null
-    const scan = provider === 'google'
-      ? await gmailMessages(accessToken, ownEmail, backfillBefore)
-      : await microsoftMessages(accessToken, ownEmail, backfillBefore)
+    const backfillBefore: string | null = manualContactId ? null : (connector.metadata as any)?.backfill_before ?? null
+    const rawScan = provider === 'google'
+      ? await gmailMessages(accessToken, ownEmail, backfillBefore, targetEmails)
+      : manualContactId
+        ? await microsoftTargetMessages(accessToken, ownEmail, targetEmails)
+        : await microsoftMessages(accessToken, ownEmail, backfillBefore)
+    const scan = manualContactId
+      ? {
+          ...rawScan,
+          messages: rawScan.messages.filter((message) =>
+            [message.from.email, ...message.to.map((recipient) => recipient.email)].some((email) => targetEmails.includes(cleanEmail(email))),
+          ),
+          truncated: false,
+        }
+      : rawScan
     const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
     const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
@@ -691,7 +852,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         messageContacts.push(contact)
       }
 
-      const primaryContact = messageContacts.find((item) => item.is_tracked === true) ?? messageContacts[0]
+      const primaryContact = (manualContactId ? messageContacts.find((item) => item.id === manualContactId) : null)
+        ?? messageContacts.find((item) => item.is_tracked === true)
+        ?? messageContacts[0]
       if (!primaryContact || message.discoveryOnly) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
@@ -705,7 +868,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
 
     const analysisErrors: string[] = []
     let responsibleAnalyzed = false
-    if (responsibleCorpus.length >= 3) {
+    if (!manualContactId && responsibleCorpus.length >= 3) {
       try {
         const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', actingUserId).single()).data?.full_name ?? actingUserEmail ?? 'Responsable', 'responsable', responsibleCorpus)
         await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: actingUserId, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
@@ -716,15 +879,51 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     }
 
     let peopleAnalyzed = 0
-    const candidates = [...contactCorpus.entries()].filter(([, excerpts]) => excerpts.length >= 3).sort((a, b) => b[1].length - a[1].length).slice(0, 12)
+    // Toute nouvelle preuve peut affiner un profil existant. Le seuil de trois
+    // porte sur le corpus attribué total, pas sur la seule passe courante.
+    const candidates = [...contactCorpus.entries()]
+      .filter(([contactId, excerpts]) => excerpts.length > 0 && (!manualContactId || contactId === manualContactId))
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, manualContactId ? 1 : 24)
     for (let i = 0; i < candidates.length; i++) {
       const [contactId, excerpts] = candidates[i]
       try {
         const contact = [...contactByEmail.values()].find((item) => item.id === contactId)
-        const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts)
-        const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({ organization_id: organizationId, contact_id: contactId, profile_version: 1, global_confidence: pct(result.global_confidence), summary: result.executive_summary ?? null, executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
+        const [{ count: interactionCountRaw, error: countError }, { data: previousRaw, error: previousError }] = await Promise.all([
+          supabase.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('contact_id', contactId).eq('direction', 'inbound'),
+          supabase.from('cognitive_profiles').select('cognitive_profile_data').eq('organization_id', organizationId).eq('contact_id', contactId).eq('profile_version', 1).maybeSingle(),
+        ])
+        if (countError) throw countError
+        if (previousError) throw previousError
+        const interactionCount = interactionCountRaw ?? 0
+        if (interactionCount < 3) continue
+        const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
+        const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
+        const cognitiveProfileData = asRecord(result.cognitive_profile_data)
+        const structuredSignals = structuredBehavioralSignals(cognitiveProfileData)
+        const now = new Date().toISOString()
+        const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({
+          organization_id: organizationId,
+          contact_id: contactId,
+          profile_version: 1,
+          global_confidence: pct(result.global_confidence),
+          summary: result.executive_summary ?? null,
+          executive_summary: result.executive_summary ?? null,
+          cognitive_mode: result.cognitive_mode ?? null,
+          cognitive_mode_confidence: pct(result.cognitive_mode_confidence),
+          behavioral_analysis_data: structuredSignals,
+          communication_style_data: asRecord(cognitiveProfileData.exchange_styles),
+          cognitive_profile_data: cognitiveProfileData,
+          source_message_count: interactionCount,
+          source_interaction_count: interactionCount,
+          maturity_level: maturityFor(interactionCount),
+          analysis_version: 2,
+          last_analyzed_at: now,
+          updated_from: [provider, 'email'],
+          updated_at: now,
+        }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
         if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')
-        const signals = (result.behavioral_analysis_data ?? []).slice(0, 6).map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait ?? 'communication_style', text: item.observation ?? '', inference: item.trait ?? null, inference_level: 'observable', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${new Date().toISOString()}`, observed_at: new Date().toISOString() })).filter((item) => item.text)
+        const signals = structuredSignals.map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait, text: item.observation, inference: item.trait, inference_level: 'observable', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${now}`, observed_at: now }))
         if (signals.length) {
           const { error: signalsError } = await supabase.from('behavioral_signals').insert(signals)
           if (signalsError) throw signalsError
@@ -746,7 +945,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // entièrement couverte (discovery_truncated), on avance le point de
     // reprise plus loin dans le passé pour la prochaine passe (manuelle ou
     // via le cron de continuation) plutôt que de repartir de zéro.
-    const backfillComplete = !scan.truncated
+    const backfillComplete = manualContactId ? Boolean((connector.metadata as any)?.backfill_complete) : !scan.truncated
     const nextBackfillBefore = backfillComplete
       ? null
       : provider === 'google'
@@ -757,7 +956,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // (Partie C) juste après cette passe, pour qu'il n'y ait aucun trou entre
     // ce que le backfill a couvert et le point de départ de l'ingestion continue.
     const incrementalCursorPatch: Record<string, unknown> = {}
-    if (backfillComplete) {
+    if (backfillComplete && !manualContactId) {
       if (provider === 'google') {
         const historyId = await bootstrapGmailHistoryId(accessToken)
         if (historyId) incrementalCursorPatch.gmail_history_id = historyId
@@ -783,14 +982,17 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       relationships_prioritized: relevance.contactsPrioritized,
       backfill_complete: backfillComplete,
     }
+    const connectorMetadata = manualContactId
+      ? { ...(connector.metadata ?? {}), last_manual_cognitive_sync: { contact_id: manualContactId, at: new Date().toISOString(), ...syncSummary } }
+      : { ...(connector.metadata ?? {}), last_sync: syncSummary, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
     await supabase.from('connectors').update({
       status: 'connected',
       last_synced_at: new Date().toISOString(),
-      metadata: { ...(connector.metadata ?? {}), last_sync: syncSummary, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch },
+      metadata: connectorMetadata,
       updated_at: new Date().toISOString(),
     }).eq('id', connector.id)
-    if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
-    return { success: true, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5), backfillComplete }
+    if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, contact_id: manualContactId, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
+    return { success: true, contactId: manualContactId, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5), backfillComplete }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Synchronisation impossible'
     if (syncJobId) {
@@ -995,10 +1197,16 @@ Deno.serve(async (request) => {
   if (!authorization) return json({ error: 'Authentification requise' }, 401)
   const { data: { user }, error: userError } = await supabase.auth.getUser(authorization.replace('Bearer ', ''))
   if (userError || !user) return json({ error: 'Session invalide' }, 401)
-  const { organizationId, provider, jobId } = body
+  const { organizationId, provider, jobId, contactId } = body
   if (!organizationId || !['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
   const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
   if (!membership) return json({ error: 'Accès refusé' }, 403)
+  if (contactId) {
+    const { data: superAdmin } = await supabase.from('super_admins').select('user_id').eq('user_id', user.id).maybeSingle()
+    if (!superAdmin) return json({ error: 'Synchronisation cognitive manuelle réservée aux super admins' }, 403)
+    const { data: target } = await supabase.from('contacts').select('id').eq('organization_id', organizationId).eq('id', contactId).is('merged_into_contact_id', null).maybeSingle()
+    if (!target) return json({ error: 'Personne introuvable dans cet espace' }, 404)
+  }
   const { data: connector } = await supabase.from('connectors').select('id,metadata').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', provider).maybeSingle()
   if (!connector) return json({ error: 'Connecteur introuvable' }, 404)
 
@@ -1016,6 +1224,7 @@ Deno.serve(async (request) => {
     actingUserEmail: user.email ?? null,
     connector,
     jobId: reusedJobId,
+    manualContactId: typeof contactId === 'string' ? contactId : null,
   })
   return json(result, result.success ? 200 : 500)
 })

@@ -8,7 +8,7 @@ import {
   updatePersonContactDetail, validateContactDetail,
 } from './service'
 import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent } from './types'
-import { Csec, Empty, formatDate, formatMonth, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
+import { Csec, Empty, confidenceLevel, formatDate, formatMonth, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
 
 type SectionProps = { data: PersonDetailData; userId: string; refresh: () => Promise<void> }
 
@@ -72,7 +72,7 @@ export function CareerSection({ data, userId, refresh }: SectionProps) {
 
 const ENTRY_TYPES: Array<[string, string]> = [['note', 'Note'], ['info', 'Information'], ['report', 'Compte rendu'], ['decision', 'Décision'], ['commitment', 'Engagement'], ['preference', 'Préférence'], ['risk', 'Risque']]
 
-export function MemoryCard({ data, userId, refresh }: SectionProps) {
+export function MemoryCard({ data, userId, refresh, embedded = false }: SectionProps & { embedded?: boolean }) {
   const toast = useToast()
   const [content, setContent] = useState('')
   const [entryType, setEntryType] = useState('note')
@@ -149,6 +149,30 @@ export function MemoryCard({ data, userId, refresh }: SectionProps) {
     }
   }
 
+  const form = <form onSubmit={(event) => void saveNote(event)}>
+    {!embedded && <>
+      <label className="sr-only" htmlFor="memory-entry-type">Type d’entrée</label>
+      <select id="memory-entry-type" className="pp-select" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
+        {ENTRY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+    </>}
+    <label className="sr-only" htmlFor="memory-content">Contenu de la note</label>
+    <textarea id="memory-content" className="feed-txt" value={content} onChange={(event) => setContent(event.target.value)} placeholder="Ex : préparer le prochain échange, préciser le contexte ou consigner une décision." />
+    <div className="feed-actions">
+      <label className="feed-btn">
+        <input type="file" hidden onChange={(event) => void pickFile(event.currentTarget)} />
+        {ClipIcon} Fichier
+      </label>
+      <button type="button" className={`feed-btn ${recording ? 'rec' : ''}`} onClick={() => void toggleVoice()} aria-pressed={recording !== null}>
+        {recording ? <><span className="rec-dot" /> Arrêter ({elapsed}s)</> : <>{MicIcon} Note vocale</>}
+      </button>
+      <span style={{ flex: 1 }} />
+      <button className="feed-save" disabled={saving || !content.trim()}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+    </div>
+  </form>
+
+  if (embedded) return <div className="relhist-memory">{form}</div>
+
   return <div className="feed-card">
     <div className="feed-head">
       <span className="feed-ic">{PenIcon}</span>
@@ -157,25 +181,7 @@ export function MemoryCard({ data, userId, refresh }: SectionProps) {
         <div className="feed-sub">Ajoute une note, un contexte ou un fichier — texte ou vocal. Chaque ajout est persisté et sourcé « note d’équipe ».</div>
       </div>
     </div>
-    <form onSubmit={(event) => void saveNote(event)}>
-      <label className="sr-only" htmlFor="memory-entry-type">Type d’entrée</label>
-      <select id="memory-entry-type" className="pp-select" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
-        {ENTRY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-      <label className="sr-only" htmlFor="memory-content">Contenu de la note</label>
-      <textarea id="memory-content" className="feed-txt" value={content} onChange={(event) => setContent(event.target.value)} placeholder="Ex : préfère les points courts le matin — décision à confirmer par écrit." />
-      <div className="feed-actions">
-        <label className="feed-btn">
-          <input type="file" hidden onChange={(event) => void pickFile(event.currentTarget)} />
-          {ClipIcon} Fichier
-        </label>
-        <button type="button" className={`feed-btn ${recording ? 'rec' : ''}`} onClick={() => void toggleVoice()} aria-pressed={recording !== null}>
-          {recording ? <><span className="rec-dot" /> Arrêter ({elapsed}s)</> : <>{MicIcon} Note vocale</>}
-        </button>
-        <span style={{ flex: 1 }} />
-        <button className="feed-save" disabled={saving || !content.trim()}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
-      </div>
-    </form>
+    {form}
     <div className="feed-list">
       {!data.memoryEntries.length
         ? <Empty title="Mémoire en construction">Aucune note d’équipe n’a encore été ajoutée pour cette personne.</Empty>
@@ -199,7 +205,7 @@ const EVENT_TAGS: Record<PersonHistoryEvent['type'], { label: string; tone: stri
   career: { label: 'Parcours', tone: 'mouvement' }, score: { label: 'Score', tone: 'bascule' },
 }
 
-export function HistoryCard({ data }: { data: PersonDetailData }) {
+export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | PersonHistoryEvent['type']>('all')
   const [limit, setLimit] = useState(12)
@@ -229,10 +235,11 @@ export function HistoryCard({ data }: { data: PersonDetailData }) {
     <div className="feed-head">
       <span className="feed-ic">{ClockIcon}</span>
       <div>
-        <div className="feed-ttl">Historique relationnel</div>
-        <div className="feed-sub">Chronologie unifiée — interactions, signaux, notes et parcours, tous sourcés.</div>
+        <div className="feed-ttl">{memory ? 'Historique & mémoire relationnelle' : 'Historique relationnel'}</div>
+        {!memory && <div className="feed-sub">Chronologie unifiée — interactions, signaux, notes et parcours, tous sourcés.</div>}
       </div>
     </div>
+    {memory}
     <div className="rh-synth">
       {monthly.length > 0 && <div className="rh-spark" title="échanges par mois" role="img" aria-label={`Échanges par mois : ${monthly.map(([key, count]) => `${formatMonth(key)} ${count}`).join(', ')}`}>
         {monthly.map(([key, count]) => <i key={key} className={count === max ? 'hi' : count <= max / 4 ? 'lo' : ''} style={{ height: Math.max(4, Math.round(count / max * 44)) }} />)}
@@ -280,6 +287,7 @@ export function HistoryCard({ data }: { data: PersonDetailData }) {
 
 const DETAIL_ICONS: Record<PersonContactDetail['type'], string> = { email: '✉', phone: '📞', linkedin: 'in', website: '🌐', other: '◇' }
 const DETAIL_LABELS: Record<PersonContactDetail['type'], string> = { email: 'Email', phone: 'Téléphone', linkedin: 'LinkedIn', website: 'Site', other: 'Autre' }
+const ContactBookIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.2" /><circle cx="9" cy="11" r="2" /><path d="M6 16a3 3 0 0 1 6 0" /><path d="M15 10.5h3M15 14h3" /></svg>
 
 export function ContactsCard({ data, userId, refresh }: SectionProps) {
   const toast = useToast()
@@ -327,7 +335,7 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
   }
 
   return <div className="rail-contact">
-    <div className="rc-h">Coordonnées{data.contactDetails.some((detail) => detail.verificationStatus === 'verified') && <span className="live-badge"><span className="live-dot" />Vérifié</span>}</div>
+    <div className="rc-h"><span className="rc-h-l"><span className="rc-ic">{ContactBookIcon}</span>Coordonnées</span>{data.contactDetails.some((detail) => detail.verificationStatus === 'verified') && <span className="live-badge"><span className="live-dot" />Vérifié</span>}</div>
     {!data.contactDetails.length && <Empty title="Aucune coordonnée vérifiée">Ajoute un email, un téléphone ou un profil pour cette personne.</Empty>}
     {data.contactDetails.map((detail) => <div className="rc-card" key={detail.id}>
       <div className="contact-ic" aria-hidden="true">{DETAIL_ICONS[detail.type]}</div>
@@ -405,7 +413,7 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
           <div className="sig-it-t">{signal.title}</div>
           {signal.summary && <div className="sig-it-d">{signal.summary}</div>}
           <div className="sig-meta">
-            <span className="sig-conf" style={{ background: confidenceColor(signal.provenance.confidence) }} aria-label={signal.provenance.confidence === null ? 'Confiance à confirmer' : `Confiance ${Math.round(signal.provenance.confidence)}%`} />
+            <span className="sig-conf" style={{ background: confidenceColor(signal.provenance.confidence) }} aria-label={confidenceLevel(signal.provenance.confidence) ? `Confiance ${confidenceLevel(signal.provenance.confidence)}` : 'Confiance à confirmer'} />
             <span className="sig-src">{signal.provenance.sourceLabel}</span>
             <span className="sig-date">{formatDate(signal.provenance.observedAt)}</span>
             <span className="sig-tag">{signal.provenance.inferenceLevel ?? 'observé'}</span>

@@ -18,6 +18,9 @@
 .crm-mvt:hover .crm-mvt-track{animation-play-state:paused}
 @keyframes paMv{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .crm-mv-item{display:inline-flex;align-items:center;gap:9px;padding:9px 24px;position:relative}
+/* Home rend chaque item en <button> (navigable au clic) plutôt qu'en <span> (Comptes/Personnes) :
+   sans ce reset, le chrome natif du bouton (fond, bordure) apparaît par-dessus le style partagé. */
+button.crm-mv-item{border:0;background:none;text-align:left;cursor:pointer;color:inherit;font:inherit;appearance:none}
 .crm-mv-item::after{content:"";position:absolute;right:0;top:50%;transform:translateY(-50%);width:1px;height:16px;background:var(--border)}
 .crm-mv-ic{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:none}
 .crm-mv-item.ext .crm-mv-ic{background:#2896A8}.crm-mv-item.int .crm-mv-ic{background:#6E50C8}

@@ -21,13 +21,16 @@ import {
   getJob,
   markHomeSeen,
   saveActionState,
+  saveInsightFeedback,
   setTrackedCompanies,
 } from './service'
 import { saveSignalFeedback, type ProfileRow } from '../services/data'
+import { scoreFreshness } from '../services/surface-state'
 import { tickerDurationSeconds } from '../account-list/mapping'
 import { relationLevel } from './types'
 import type {
   HomeAccountCandidate,
+  HomeCoaching,
   HomeDashboardData,
   HomePriorityAction,
   HomeRelationLevel,
@@ -79,10 +82,16 @@ function relativeTime(value: string | null): string {
 }
 
 const LEVEL_LABELS: Record<HomeRelationLevel, string> = {
-  promoter: 'Promoteur',
-  passive: 'Passif',
-  detractor: 'Détracteur',
+  strong: 'Solide',
+  intermediate: 'Intermédiaire',
+  fragile: 'Fragile',
   unavailable: 'Score indisponible',
+}
+
+/** Confiance qualitative uniquement (doctrine anti-%, cf. SPEC-04 §12) : faible < 40, moyen < 70, élevé au-delà. */
+function confidenceLevel(confidence: number | null): 'faible' | 'moyen' | 'élevé' | null {
+  if (confidence === null) return null
+  return confidence >= 70 ? 'élevé' : confidence >= 40 ? 'moyen' : 'faible'
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -494,6 +503,7 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
       <aside class="home-cockpit-rail">
         ${topMarkup(data)}
         ${signalsMarkup(data)}
+        ${coachingMarkup(data.coaching)}
       </aside>
     </div>`,
   ].join('')
@@ -593,22 +603,25 @@ function scoreRowMarkup(data: HomeDashboardData): string {
         ? `<div class="hscore-tr down">↘ ${relation.delta30d} pts sur 30 j</div>`
         : '<div class="hscore-tr">→ stable sur 30 j</div>'
   const distribution = relation.distribution
-    ? `<div class="hscore-cols" role="img" aria-label="Répartition : ${relation.distribution.promoters}% promoteurs, ${relation.distribution.passives}% passifs, ${relation.distribution.detractors}% détracteurs">
-        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.promoters)}%;background:var(--sage)"><span>${relation.distribution.promoters}%</span></div><div class="hcol-k">Promoteurs</div></div>
-        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.passives)}%;background:var(--amber)"><span>${relation.distribution.passives}%</span></div><div class="hcol-k">Passifs</div></div>
-        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.detractors)}%;background:var(--coral)"><span>${relation.distribution.detractors}%</span></div><div class="hcol-k">Détracteurs</div></div>
+    ? `<div class="hscore-cols" role="img" aria-label="Répartition : ${relation.distribution.strong}% solides, ${relation.distribution.intermediate}% intermédiaires, ${relation.distribution.fragile}% fragiles">
+        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.strong)}%;background:var(--sage)"><span>${relation.distribution.strong}%</span></div><div class="hcol-k">Solides</div></div>
+        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.intermediate)}%;background:var(--amber)"><span>${relation.distribution.intermediate}%</span></div><div class="hcol-k">Intermédiaires</div></div>
+        <div class="hcol"><div class="hcol-bar" style="height:${Math.max(14, relation.distribution.fragile)}%;background:var(--coral)"><span>${relation.distribution.fragile}%</span></div><div class="hcol-k">Fragiles</div></div>
       </div>`
     : `<div class="distribution-empty">Données insuffisantes</div>`
   const planCopy = data.plan.accountLimit === null ? `offre ${esc(data.plan.name)} · illimitée` : `sur ${data.plan.accountLimit} · offre ${esc(data.plan.name)}`
+  const freshness = relation.score !== null ? scoreFreshness(relation.computedAt, new Date()) : 'ready'
   return `<div class="cockpit-kpis">
     <article class="cockpit-kpi score-kpi" aria-label="Score relationnel global">
-      <span class="cockpit-kpi-label">Score relationnel global</span>
-      <div class="score-kpi-value">${scoreValue}${relation.score !== null ? `<span class="hscore-band ${relation.level}">${LEVEL_LABELS[relation.level]}</span>` : ''}</div>
+      <span class="cockpit-kpi-label">Score relationnel global
+        <span class="hscore-why" tabIndex="0" aria-label="Comment ce score est calculé">?<span class="hscore-why-tip">Moyenne informative des comptes suivis mesurés (jamais utilisée pour classer ou recommander). Chaque compte est calculé par le moteur relationnel backend, jamais côté front.</span></span>
+      </span>
+      <div class="score-kpi-value">${scoreValue}${relation.score !== null ? `<span class="hscore-band ${relation.level}">${LEVEL_LABELS[relation.level]}</span>` : ''}${freshness === 'stale' ? '<span class="hscore-stale">⏱ Mise à jour retardée</span>' : ''}</div>
       ${trend}
       <small>${relation.includedAccounts} compte${relation.includedAccounts > 1 ? 's' : ''} mesuré${relation.includedAccounts > 1 ? 's' : ''}${relation.excludedAccounts ? ` · ${relation.excludedAccounts} sans score` : ''}</small>
     </article>
     <article class="cockpit-kpi distribution-kpi">
-      <span class="cockpit-kpi-label">Comptes par NPS</span>
+      <span class="cockpit-kpi-label">Comptes par niveau</span>
       ${distribution}
     </article>
     <button class="cockpit-kpi number-kpi" data-home="go-accounts" aria-label="Ouvrir les comptes suivis">
@@ -696,7 +709,7 @@ function actionsMarkup(actions: HomePriorityAction[]): string {
       <div class="krs-arow">
         ${action.accountId ? `<button type="button" class="krs-cpt" data-open-account="${esc(action.accountId)}">🔗 ${esc(action.accountName ?? 'Compte')}</button>` : ''}
         ${action.personId ? `<button type="button" class="krs-cpt" data-open-person="${esc(action.personId)}">👤 ${esc(action.personName ?? 'Personne')}</button>` : ''}
-        <span class="krs-asig">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${action.confidence !== null ? ` · confiance ${action.confidence}%` : ''}</span>
+        <span class="krs-asig">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${confidenceLevel(action.confidence) ? ` · confiance ${confidenceLevel(action.confidence)}` : ''}</span>
         <span class="krs-do-inline">
           <button class="krs-b sm yes" data-home="action-done" aria-label="Marquer comme fait"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg> Fait</button>
           <button class="krs-b sm later" data-home="action-postpone" aria-label="Reporter à demain">↺</button>
@@ -721,7 +734,7 @@ function signalsMarkup(data: HomeDashboardData): string {
             ${signal.personName ? `<span class="sig-cpt">${esc(signal.personName)}</span>` : ''}
             <span class="sig-src">${esc(signal.source)}${signal.inferenceLevel ? ` · ${esc(signal.inferenceLevel)}` : ''}</span>
             <span class="sig-date">${esc(formatDate(signal.observedAt))}</span>
-            <span class="sig-conf" style="background:${confidenceColor(signal.confidence)}" title="${signal.confidence !== null ? `confiance ${signal.confidence}%` : 'confiance inconnue'}" aria-label="${signal.confidence !== null ? `confiance ${signal.confidence}%` : 'confiance inconnue'}"></span>
+            <span class="sig-conf" style="background:${confidenceColor(signal.confidence)}" title="${confidenceLevel(signal.confidence) ? `confiance ${confidenceLevel(signal.confidence)}` : 'confiance inconnue'}" aria-label="${confidenceLevel(signal.confidence) ? `confiance ${confidenceLevel(signal.confidence)}` : 'confiance inconnue'}"></span>
             ${signal.userVerdict ? `<span class="sig-verdict ${signal.userVerdict}">${signal.userVerdict === 'confirmed' ? '✓ confirmé' : '✕ infirmé'}</span>` : ''}
           </span>
         </span>
@@ -739,6 +752,39 @@ function signalsMarkup(data: HomeDashboardData): string {
     <div class="syncbar" aria-hidden="true"></div>
     <div class="sig-body">${items}</div>
     ${foot}
+  </section>`
+}
+
+/**
+ * Bloc 11 — coaching relationnel (SPEC-05) : style de communication du
+ * collaborateur connecté, sourcé et daté. `null` tant que la couverture
+ * d'échanges analysés reste sous le seuil minimal (jamais un profil forcé).
+ */
+function coachingMarkup(coaching: HomeCoaching): string {
+  if (!coaching) {
+    return `<section class="sig-card" aria-label="Coaching relationnel">
+      <div class="sig-head"><span class="sig-ic" aria-hidden="true">◎</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé</div></div></div>
+      <div class="sig-body">${emptyState('◎', 'Analyse comportementale insuffisante', 'Le coaching se construira au fil des synchronisations — aucune personnalité n’est inférée sans preuves suffisantes.')}</div>
+    </section>`
+  }
+  const items = coaching.insights.map((insight) => `<div class="sig-item" data-coach-item="${esc(insight.id)}">
+    <span class="sig-emoji" aria-hidden="true">◎</span>
+    <span class="sig-b">
+      <span class="sig-it-t" style="display:block">${esc(insight.trait)}</span>
+      <span class="sig-it-d" style="display:block">${esc(insight.observation)}</span>
+      <span class="sig-meta">
+        <span class="sig-src">${confidenceLevel(insight.confidence) ? `confiance ${confidenceLevel(insight.confidence)}` : 'confiance à confirmer'}</span>
+        ${insight.feedback
+          ? `<span class="sig-verdict ${insight.feedback === 'useful' ? 'confirmed' : 'dismissed'}">${insight.feedback === 'useful' ? '✓ utile' : '✕ pas juste'}</span>`
+          : `<span class="krs-do-inline"><button type="button" class="krs-b sm yes" data-coach-fb="useful" data-insight="${esc(insight.id)}" aria-label="Lecture utile">👍</button><button type="button" class="krs-b sm no" data-coach-fb="inaccurate" data-insight="${esc(insight.id)}" aria-label="Pas juste">👎</button></span>`}
+      </span>
+    </span>
+  </div>`).join('')
+  return `<section class="sig-card" aria-label="Coaching relationnel">
+    <div class="sig-head"><span class="sig-ic" aria-hidden="true">◎</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé — jamais un diagnostic</div></div></div>
+    ${coaching.executiveSummary ? `<div style="padding:10px 14px 0;font-size:11.5px;color:var(--t2);line-height:1.5">Dans les échanges observés : <b>${esc(coaching.executiveSummary)}</b></div>` : ''}
+    <div class="sig-body">${items}</div>
+    <div style="padding:0 14px 12px;font-family:var(--mono);font-size:8.5px;color:var(--t3)">Analyse mise à jour ${coaching.updatedAt ? esc(relativeTime(coaching.updatedAt)) : 'à confirmer'}</div>
   </section>`
 }
 
@@ -778,6 +824,7 @@ function bindCockpit(ctx: HomeContext, data: HomeDashboardData): void {
   })
   bindActions(ctx, data)
   bindSignalDrawer(ctx, data)
+  bindCoaching(ctx, data)
 }
 
 function bindActions(ctx: HomeContext, data: HomeDashboardData): void {
@@ -814,6 +861,23 @@ function bindActions(ctx: HomeContext, data: HomeDashboardData): void {
   })
 }
 
+function bindCoaching(ctx: HomeContext, data: HomeDashboardData): void {
+  const coaching = data.coaching
+  if (!coaching) return
+  ctx.container.querySelectorAll<HTMLButtonElement>('[data-coach-fb]').forEach((button) => button.addEventListener('click', () => {
+    const insightId = button.dataset.insight
+    const feedback = button.dataset.coachFb === 'useful' ? 'useful' : 'inaccurate'
+    const insight = coaching.insights.find((item) => item.id === insightId)
+    if (!insight) return
+    void saveInsightFeedback(ctx.organizationId, ctx.session.user.id, insight.id, feedback).then(() => {
+      insight.feedback = feedback
+      const item = ctx.container.querySelector<HTMLElement>(`[data-coach-item="${CSS.escape(insight.id)}"] .sig-meta`)
+      if (item) item.innerHTML = `<span class="sig-src">${confidenceLevel(insight.confidence) ? `confiance ${confidenceLevel(insight.confidence)}` : 'confiance à confirmer'}</span><span class="sig-verdict ${feedback === 'useful' ? 'confirmed' : 'dismissed'}">${feedback === 'useful' ? '✓ utile' : '✕ pas juste'}</span>`
+      ctx.toast(feedback === 'useful' ? 'Merci — lecture confirmée.' : 'Pris en compte — cela affinera le profil.')
+    }).catch((error) => ctx.toast(error instanceof Error ? error.message : 'Feedback non enregistré.', 'error'))
+  }))
+}
+
 function bindSignalDrawer(ctx: HomeContext, data: HomeDashboardData): void {
   ctx.container.querySelectorAll<HTMLButtonElement>('[data-signal-index]').forEach((item) => item.addEventListener('click', () => {
     const signal = data.latestSignals[Number(item.dataset.signalIndex)]
@@ -840,7 +904,7 @@ function openSignalDrawer(ctx: HomeContext, signal: HomeSignal): void {
     <div class="sig-drawer-facts detail-facts" style="grid-template-columns:1fr 1fr">
       ${fact('Source', esc(signal.source))}
       ${fact('Observé le', esc(formatDate(signal.observedAt)))}
-      ${fact('Confiance', signal.confidence !== null ? `${signal.confidence}%` : 'Non mesurée')}
+      ${fact('Confiance', confidenceLevel(signal.confidence) ?? 'Non mesurée')}
       ${fact('Niveau d’inférence', esc(signal.inferenceLevel ?? 'Non renseigné'))}
       ${signal.accountName ? fact('Compte', esc(signal.accountName)) : ''}
       ${signal.personName ? fact('Personne', esc(signal.personName)) : ''}

@@ -22,6 +22,7 @@ import {
 } from './priority'
 import type {
   HomeAccountCandidate,
+  HomeCoaching,
   HomeDashboardData,
   HomeSignal,
   HomeSourceStatus,
@@ -30,6 +31,8 @@ import type {
 } from './types'
 import { relationLevel } from './types'
 import { signalTitle } from '../services/signal-labels'
+import { getResponsibleBehaviorProfile, type UserBehaviorProfile } from '../services/data'
+import { MIN_BEHAVIOR_INTERACTIONS } from '../person-detail/types'
 
 type DbRow = Record<string, unknown>
 
@@ -333,6 +336,40 @@ export function buildSources(connectors: DbRow[]): HomeSourceStatus[] {
   return sources
 }
 
+/**
+ * Coaching relationnel (SPEC-05) : style de communication du collaborateur
+ * connecté, réutilisant `user_behavioral_profiles` (déjà la source de « Mon
+ * profil »). `null` tant que la couverture d'échanges analysés reste sous le
+ * seuil minimal — jamais un profil synthétique affiché en dessous.
+ */
+export function buildCoaching(profile: UserBehaviorProfile | null, feedbackRows: DbRow[]): HomeCoaching {
+  if (!profile || profile.source_message_count < MIN_BEHAVIOR_INTERACTIONS) return null
+  const feedback = new Map<string, 'useful' | 'inaccurate'>()
+  for (const row of feedbackRows) {
+    const type = String(row.feedback_type)
+    if (type === 'useful' || type === 'inaccurate') feedback.set(String(row.insight_id), type)
+  }
+  const insights = profile.behavioral_analysis_data
+    .map((item, index) => ({ id: `insight-${index}`, trait: str(item.trait ?? null), observation: str(item.observation ?? null), confidence: num(item.confidence ?? null) }))
+    .filter((item): item is { id: string; trait: string | null; observation: string; confidence: number | null } => item.observation !== null)
+    .map((item) => ({ id: item.id, trait: item.trait ?? 'Observation', observation: item.observation, confidence: item.confidence, feedback: feedback.get(item.id) ?? null }))
+  if (!insights.length) return null
+  return { executiveSummary: profile.executive_summary, updatedAt: profile.updated_at, insights }
+}
+
+/** Erreur PostgREST « table absente » ⇒ dégradé, jamais une exception qui casse la Home. */
+async function safeBehaviorProfile(userId: string, organizationId: string, degradedReasons: string[]): Promise<UserBehaviorProfile | null> {
+  try {
+    return await getResponsibleBehaviorProfile(userId, organizationId)
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      degradedReasons.push('table user_behavioral_profiles')
+      return null
+    }
+    throw error
+  }
+}
+
 export async function getHomeDashboard(organizationId: string, userId: string): Promise<HomeDashboardData> {
   const client = getSupabase()
   const degradedReasons: string[] = []
@@ -340,7 +377,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
 
-  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData] = await Promise.all([
+  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData, behaviorProfileData, insightFeedbackData] = await Promise.all([
     safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
     safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
@@ -356,6 +393,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeCount(client.from('company_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage company_signals', degradedReasons),
     safeCount(client.from('behavioral_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage behavioral_signals', degradedReasons),
     safeQuery<DbRow[]>(client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', organizationId).order('computed_at', { ascending: false }).limit(2000), 'snapshots du score compte', degradedReasons),
+    safeBehaviorProfile(userId, organizationId, degradedReasons),
+    safeQuery<DbRow[]>(client.from('insight_feedback').select('insight_id,feedback_type').eq('organization_id', organizationId).eq('user_id', userId).limit(200), 'table insight_feedback', degradedReasons),
   ])
 
   if (!companiesData || !contactsData || !connectorsData) {
@@ -463,6 +502,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     return days !== null && days <= 30
   }
 
+  const coaching = buildCoaching(behaviorProfileData, rows(insightFeedbackData))
+
   return {
     generatedAt: now.toISOString(),
     workspaceId: organizationId,
@@ -516,6 +557,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     teamMembers,
     priorityActions,
     latestSignals: signals,
+    coaching,
   }
 }
 
@@ -554,6 +596,17 @@ export async function saveActionState(input: {
     if (isMissingSchemaError(error)) throw new Error('La persistance des actions nécessite la migration 202607150009_home_foundation.sql.')
     throw new Error(String(record(error).message ?? 'Action non enregistrée'))
   }
+}
+
+/** Feedback binaire sur un insight de coaching (Utile/Pas juste — SPEC-05 §15). */
+export async function saveInsightFeedback(organizationId: string, userId: string, insightId: string, feedbackType: 'useful' | 'inaccurate'): Promise<void> {
+  const { error } = await getSupabase().from('insight_feedback').upsert({
+    organization_id: organizationId,
+    user_id: userId,
+    insight_id: insightId,
+    feedback_type: feedbackType,
+  }, { onConflict: 'user_id,insight_id' })
+  if (error) throw new Error(String(record(error).message ?? 'Feedback non enregistré'))
 }
 
 function mapCandidate(row: DbRow): HomeAccountCandidate {

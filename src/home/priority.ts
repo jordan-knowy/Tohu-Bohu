@@ -81,8 +81,8 @@ export function riskScore(account: ScoredAccount, now: Date): { score: number; r
   let total = 0
   const reasons: string[] = []
   if (account.score !== null) {
-    if (account.score < 50) { total += 30; reasons.push(`score détracteur (${account.score})`) }
-    else if (account.score < 60) { total += 15; reasons.push(`score passif bas (${account.score})`) }
+    if (account.score < 50) { total += 30; reasons.push(`score fragile (${account.score})`) }
+    else if (account.score < 60) { total += 15; reasons.push(`score intermédiaire bas (${account.score})`) }
   }
   if (account.delta30d !== null && account.delta30d <= -3) {
     total += Math.min(20, Math.abs(account.delta30d) * 2)
@@ -122,7 +122,7 @@ export function aggregateGlobalScore(accounts: ScoredAccount[]): {
   score: number | null
   includedAccounts: number
   excludedAccounts: number
-  distribution: { promoters: number; passives: number; detractors: number } | null
+  distribution: { strong: number; intermediate: number; fragile: number } | null
   confidence: number | null
 } {
   const tracked = accounts.filter((account) => account.tracked)
@@ -131,18 +131,18 @@ export function aggregateGlobalScore(accounts: ScoredAccount[]): {
     return { score: null, includedAccounts: 0, excludedAccounts: tracked.length, distribution: null, confidence: null }
   }
   const score = Math.round(scored.reduce((sum, account) => sum + (account.score ?? 0), 0) / scored.length)
-  const promoters = scored.filter((account) => relationLevel(account.score) === 'promoter').length
-  const passives = scored.filter((account) => relationLevel(account.score) === 'passive').length
-  const detractors = scored.length - promoters - passives
+  const strong = scored.filter((account) => relationLevel(account.score) === 'strong').length
+  const intermediate = scored.filter((account) => relationLevel(account.score) === 'intermediate').length
+  const fragile = scored.length - strong - intermediate
   const confidences = scored.map((account) => account.confidence).filter((value): value is number => value !== null)
   return {
     score,
     includedAccounts: scored.length,
     excludedAccounts: tracked.length - scored.length,
     distribution: {
-      promoters: Math.round((promoters / scored.length) * 100),
-      passives: Math.round((passives / scored.length) * 100),
-      detractors: Math.round((detractors / scored.length) * 100),
+      strong: Math.round((strong / scored.length) * 100),
+      intermediate: Math.round((intermediate / scored.length) * 100),
+      fragile: Math.round((fragile / scored.length) * 100),
     },
     confidence: confidences.length ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length) : null,
   }

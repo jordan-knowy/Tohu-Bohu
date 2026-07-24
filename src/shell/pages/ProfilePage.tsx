@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { initials } from '../../lib/auth'
+import { confidenceLevel } from '../../person-detail/ui'
 import { getProfile, getResponsibleBehaviorProfile, listManagedAccounts, type Account, type ProfileRow } from '../../services/data'
 
 type PageContext = { session: Session; workspaceId: string }
@@ -53,7 +54,7 @@ export default function ProfilePage({ context }: { context: PageContext }) {
         <h2>{profile.full_name}</h2>
         <p>{[profile.role_title, profile.company_name, context.session.user.email].filter(Boolean).join(' · ') || 'Responsable de compte'}</p>
       </div>
-      <div className="profile-score"><b>{behavior?.global_confidence ?? '—'}</b><span>Confiance du profil</span></div>
+      <div className="profile-score"><b>{confidenceLevel(behavior?.global_confidence ?? null) ?? '—'}</b><span>Confiance du profil</span></div>
     </section>
     <div className="detail-grid">
       <div className="detail-column">
@@ -73,7 +74,7 @@ export default function ProfilePage({ context }: { context: PageContext }) {
         <Panel icon="⌁" title="Signaux personnels" subtitle={`${behavior?.behavioral_analysis_data?.length ?? 0} signal(s)`}>
           {behavior?.behavioral_analysis_data?.length
             ? behavior.behavioral_analysis_data.map((item, index) => <div className="signal" key={index}>
-              <div className="signal-head"><b>{item.trait ?? 'Signal comportemental'}</b><span className="sig-tag">{item.confidence ?? '—'}%</span></div>
+              <div className="signal-head"><b>{item.trait ?? 'Signal comportemental'}</b><span className="sig-tag">{confidenceLevel(item.confidence ?? null) ?? '—'}</span></div>
               <p>{item.observation ?? ''}</p>
             </div>)
             : <EmptyState icon="◎" title="Lecture en construction" copy="Connecte Gmail ou Outlook puis lance une synchronisation pour générer cette analyse." />}

@@ -32,6 +32,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     feedback: [],
     profileNames: new Map(),
     degradedReasons: [],
+    lockedBy: null,
     ...overrides,
   }
 }
@@ -118,7 +119,49 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     const data = buildPersonDetail(raw({ cognitiveProfile: { source_message_count: 3, behavioral_analysis_data: [{ trait: 'Concision', observation: 'Messages courts', confidence: 70 }] } }))
     expect(data.behavior.analyzedInteractions).toBe(3)
     expect(data.behavior.analyzedInteractions).toBeLessThan(data.behavior.minimumInteractions)
+    expect(data.behavior.cognitiveProfile.maturity).toBe('emerging')
     expect(data.behavior.insights).toHaveLength(1)
+  })
+
+  it('profil cognitif : conserve le référentiel fixe et mappe uniquement les observations structurées', () => {
+    const data = buildPersonDetail(raw({ cognitiveProfile: {
+      source_interaction_count: 14,
+      cognitive_profile_data: {
+        schema_version: 2,
+        interpersonal: {
+          assertiveness: { status: 'observed', score: 78, label: 'Assertivité marquée', observation: 'Cadre régulièrement les prochaines étapes.', confidence: 81, evidence_count: 9, source_types: ['email'], evolution: 'stable' },
+          warmth: { status: 'insufficient', score: 90, observation: 'Ce texte ne doit pas être affiché.' },
+        },
+        exchange_styles: {
+          tempo: { status: 'observed', score: 22, label: 'Rapide', observation: 'Réponses généralement rapprochées.', confidence: 74, evidence_count: 7, source_types: ['email'] },
+        },
+        observable_markers: {
+          response_time: { status: 'observed', score: 20, label: 'Réactif', observation: 'Répond le plus souvent dans la journée.', confidence: 76, evidence_count: 8, source_types: ['email'] },
+        },
+      },
+    } }))
+    expect(data.behavior.cognitiveProfile.maturity).toBe('usable')
+    expect(data.behavior.cognitiveProfile.exchangeStyles.map((theme) => theme.id)).toEqual(['tempo', 'openness', 'orientation', 'certainty'])
+    expect(data.behavior.cognitiveProfile.observableMarkers.map((theme) => theme.id)).toEqual([
+      'response_time', 'dominance_listening_speaking', 'linguistic_synchrony', 'pronouns_status', 'register_distance', 'self_disclosure',
+    ])
+    expect(data.behavior.cognitiveProfile.exchangeStyles[0]).toMatchObject({ label: 'Rapide', score: 22, evidenceCount: 7 })
+    expect(data.behavior.cognitiveProfile.interpersonal.warmth).toMatchObject({ status: 'insufficient', score: null, observation: null })
+  })
+
+  it('profil cognitif : 0 à 2 interactions ne produisent aucun profil', () => {
+    const data = buildPersonDetail(raw({ cognitiveProfile: { source_interaction_count: 2, cognitive_profile_data: { schema_version: 2 } } }))
+    expect(data.behavior.cognitiveProfile.maturity).toBe('none')
+    expect(data.behavior.profileMinimumInteractions).toBe(3)
+  })
+
+  it('profil cognitif : les signaux de veille ne sont jamais comptés comme interactions', () => {
+    const data = buildPersonDetail(raw({
+      behavioralSignals: Array.from({ length: 8 }, (_, index) => ({ id: `s${index}`, text: 'Signal externe', signal_type: 'career' })),
+      messages: [{ id: 'm1', direction: 'inbound', sent_at: '2026-07-01' }, { id: 'm2', direction: 'outbound', sent_at: '2026-07-02' }],
+    }))
+    expect(data.behavior.analyzedInteractions).toBe(1)
+    expect(data.behavior.cognitiveProfile.maturity).toBe('none')
   })
 })
 
@@ -143,6 +186,24 @@ describe('buildScoreHistory / scoreWindow — courbe sur vraies données', () =>
 
   it('ignore les lignes sans score ou sans date', () => {
     expect(buildScoreHistory([], [{ snapshot_date: '2026-05-01' }, { score: 44 }])).toEqual([])
+  })
+
+  it('fusionne canonical et legacy : canonical ne doit pas effacer les mois plus anciens que seul legacy couvre', () => {
+    const legacy = [
+      { score: 18, snapshot_date: '2026-05-23' },
+      { score: 33, snapshot_date: '2026-06-22' },
+      { score: 39, snapshot_date: '2026-07-20' },
+    ]
+    const canonical = [
+      { score: 40, computed_at: '2026-07-20T10:00:00Z' },
+      { score: 45, computed_at: '2026-07-22T10:00:00Z' },
+    ]
+    const history = buildScoreHistory(canonical, legacy)
+    expect(history).toHaveLength(3)
+    expect(history[0]).toMatchObject({ monthKey: '2026-05', score: 18 })
+    expect(history[1]).toMatchObject({ monthKey: '2026-06', score: 33 })
+    // Juillet : canonical couvre ce mois, donc il prend le dessus sur legacy (45, pas 39).
+    expect(history[2]).toMatchObject({ monthKey: '2026-07', score: 45 })
   })
 })
 

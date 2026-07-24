@@ -48,17 +48,18 @@ function optional(result: QueryResult, label: string, degraded: string[]): unkno
 export async function getAccountDetail(workspaceId: string, accountId: string): Promise<AccountDetailData> {
   const client = getSupabase()
   const degradedReasons: string[] = []
+  const currentUserId = (await client.auth.getUser()).data.user?.id ?? ''
   const [
     accountResult, peopleResult, signalsResult, meetingsResult, settingsResult,
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
-    memoryResult, factsResult, connectorsResult, feedbackResult,
+    memoryResult, factsResult, connectorsResult, feedbackResult, lockResult,
   ] = await Promise.all([
     client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
     client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
     client.from('company_signals').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(30),
     client.from('meetings').select('id,platform,starts_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('starts_at', { ascending: false }).limit(500),
     client.from('account_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
-    client.from('account_user_preferences').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', (await client.auth.getUser()).data.user?.id ?? '').maybeSingle(),
+    client.from('account_user_preferences').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', currentUserId).maybeSingle(),
     client.from('account_watch_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
     client.from('account_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('computed_at', { ascending: false }).limit(36),
     client.from('account_contact_roles').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('active', true),
@@ -67,6 +68,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId),
+    client.from('resource_lock').select('locked_by').eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('lock_state', 'active').maybeSingle(),
   ])
 
   if (accountResult.error) throw new Error(accountResult.error.message)
@@ -87,6 +89,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
   const factRows = rows(optional(factsResult, 'Firmographie sourcée', degradedReasons))
   const connectorRows = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
   const feedbackRows = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
+  const lockRow = object(optional(lockResult, 'Verrou', degradedReasons))
   const roleByContact = new Map(roleRows.map((row) => [String(row.contact_id), row]))
   const feedbackBySignal = new Map(feedbackRows.map((row) => [String(row.signal_id), text(row.verdict)]))
   const profileIds = new Set<string>()
@@ -222,6 +225,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       location: text(context.location),
       tags: Array.isArray(context.tags) ? context.tags.filter((item): item is string => typeof item === 'string') : [],
       primaryOwnerName: profileNames.get(String(settings.primary_owner_user_id)) ?? null,
+      locked: text(lockRow.locked_by) !== null,
+      lockedByMe: text(lockRow.locked_by) === currentUserId,
     },
     relationship: {
       score: number(latestScore.score) ?? number(context.relationship_score),
@@ -308,6 +313,30 @@ export async function setAccountArchived(data: AccountDetailData, userId: string
     updated_by: userId,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'organization_id,company_id' })
+  if (error) throw error
+}
+
+/** Verrou SPEC-09 : masque le compte (mémoire, mêmes politiques à venir) aux
+ *  non-autorisés. Seul l'auteur du verrou peut le lever (appliqué par la RLS
+ *  resource_lock_owner_release, pas seulement côté client). */
+export async function setAccountLock(data: AccountDetailData, userId: string, locked: boolean): Promise<void> {
+  if (locked) {
+    const { error } = await getSupabase().from('resource_lock').insert({
+      organization_id: data.account.workspaceId,
+      subject_type: 'company',
+      subject_id: data.account.id,
+      locked_by: userId,
+    })
+    if (error) throw error
+    return
+  }
+  const { error } = await getSupabase().from('resource_lock')
+    .update({ lock_state: 'released', released_at: new Date().toISOString(), released_by: userId })
+    .eq('organization_id', data.account.workspaceId)
+    .eq('subject_type', 'company')
+    .eq('subject_id', data.account.id)
+    .eq('lock_state', 'active')
+    .eq('locked_by', userId)
   if (error) throw error
 }
 

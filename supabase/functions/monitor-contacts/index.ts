@@ -1,11 +1,12 @@
 // Veille PAR PERSONNE (phase 2). Cron : détecte changement de poste + activité récente
-// via l'agent n8n (réutilise cache + déjà-connu) → behavioral_signals + notifications.
+// via l'agent d'enrichissement (réutilise cache + déjà-connu) → behavioral_signals + notifications.
 //
 // v2 — tiering par valeur (A/B/C) + routage de sources par type de domaine +
 // réutilisation du contexte entreprise déjà collecté par monitor-company-news,
 // pour ne payer l'agent IA que sur ce qui le mérite et ne jamais rechercher deux
 // fois la même chose.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { runEnrichmentAgentThrottled } from '../_shared/enrichment-agent.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,14 +17,17 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const N8N_ENRICH_URL = 'https://alyah-knowledge.app.n8n.cloud/webhook/tohu-bohu-enrich';
 const STALE_MS = 12 * 60 * 60 * 1000;
 const MAX_PER_RUN = 18;
-// L'instance n8n a crashé (18 exécutions simultanées le 2026-07-20 13h10) quand tous les
-// contacts d'un run étaient déclenchés en parallèle d'un coup. Des lots de 5 concurrents
-// max sont passés sans incident historiquement — on plafonne le vrai parallélisme vers
-// n8n à ce niveau, indépendamment du nombre de contacts traités par run.
-const N8N_CONCURRENCY = 5;
+// L'agent d'enrichissement tournait via un workflow n8n (webhook + node "AI Agent"),
+// sur une instance à mémoire partagée : plusieurs invocations simultanées (cron + un
+// "Actualiser" manuel) dépassaient le cap LOCAL ci-dessous et faisaient crasher
+// l'instance entière (incidents du 2026-07-20 et du 2026-07-22). Depuis, l'agent tourne
+// en appels directs OpenRouter + Perplexity (supabase/functions/_shared/enrichment-agent.ts),
+// protégés par un sémaphore GLOBAL en base (acquire_enrichment_slot) qui borne le vrai
+// nombre d'appels IA simultanés tous déclencheurs confondus. Ce cap local reste utile
+// pour ne pas ouvrir 18 promesses d'un coup en attente du sémaphore.
+const LOCAL_CONCURRENCY = 5;
 const COMPANY_FRESH_MS = 60 * 24 * 60 * 60 * 1000; // 60 jours
 
 // ── Classification de domaine (portée de enrich-contact) ─────────────────────
@@ -63,6 +67,41 @@ function sourceHintsFor(domainType: DomainType): string | null {
     case 'personal': return 'Email personnel : recherche par nom + rôle connu uniquement, pas de registre d\'entreprise.';
     default: return null;
   }
+}
+
+/** "Fxravet81" pour fxravet81@gmail.com, ou "John Doe" pour john.doe@x.com : le
+ *  nom actuel n'est qu'une reformulation de la partie locale de l'email, pas un
+ *  vrai nom trouvé quelque part. Sert à savoir si on peut remplacer le nom sans
+ *  confirmation quand l'agent en trouve un meilleur avec forte confiance. */
+function looksLikePlaceholderName(fullName: string, email: string): boolean {
+  const local = (email.split('@')[0] ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const normalized = fullName.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return normalized.length > 0 && normalized === local;
+}
+
+/** L'agent renvoie parfois "to_confirm"/"N/A" dans linkedinUrl au lieu de null
+ *  (confusion avec les champs *Confidence du schéma) — observé en prod : 8
+ *  contacts d'un même org se sont retrouvés avec linkedin_url="to_confirm",
+ *  faisant croire au détecteur de doublons que c'était 8 fois la même personne.
+ *  Seule une vraie URL de profil personnel est acceptée. */
+function sanitizeLinkedinUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\//i.test(value.trim()) ? value.trim() : null;
+}
+
+/** Filet de sécurité : le modèle respecte presque toujours la consigne "laisse
+ *  fullName tel quel si rien trouvé", mais pas toujours — observé en test : un
+ *  pseudo non résolu ("satyan81") reformaté en "satyan MICROSOFT" (le nom de la
+ *  société pris pour un nom de famille) pour se conformer à la casse imposée.
+ *  On ne fait jamais confiance à un candidat qui n'a pas la forme d'un nom de
+ *  personne ou qui contient le nom de la société. */
+function looksLikeRealPersonName(candidate: string, companyName: string): boolean {
+  const parts = candidate.trim().split(/\s+/);
+  if (parts.length < 2) return false;
+  if (!parts.every((p) => /^[a-zà-öø-ÿ'-]+$/i.test(p))) return false;
+  const companyNorm = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (companyNorm && parts.some((p) => p.toLowerCase().replace(/[^a-z0-9]+/g, '') === companyNorm)) return false;
+  return true;
 }
 
 // ── Tiering par valeur ────────────────────────────────────────────────────────
@@ -222,21 +261,17 @@ Deno.serve(async (req) => {
     const previous = cacheRow?.data ?? c.enrichment_data ?? null;
     const { context: companyContext, skip: skipCompanyResearch } = companyContextFor(c);
 
+    const currentNameIsPlaceholder = looksLikePlaceholderName(c.full_name ?? '', email);
     let enr: any = null;
     try {
-      const r = await fetch(N8N_ENRICH_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          entityType: 'person', entityId: c.id, organizationId: c.organization_id,
-          fullName: c.full_name ?? '', email, domain: c.companies?.domain ?? domain,
-          company: c.companies?.name ?? '', linkedinUrl: '',
-          tier, domainType, sourceHints: sourceHintsFor(domainType), skipCompanyResearch, companyContext,
-          alreadyKnown: { previousEnrichment: previous, note: 'Détecte surtout les CHANGEMENTS récents (poste, activité) vs le déjà-connu.' },
-        }),
-        signal: AbortSignal.timeout(120000),
+      enr = await runEnrichmentAgentThrottled(supabase, {
+        entityType: 'person', fullName: c.full_name ?? '', email, domain: c.companies?.domain ?? domain,
+        company: c.companies?.name ?? '', linkedinUrl: '', knownLinkedinUrl: '',
+        tier, domainType, sourceHints: sourceHintsFor(domainType), skipCompanyResearch, companyContext,
+        nameLooksLikePlaceholder: currentNameIsPlaceholder,
+        alreadyKnown: { previousEnrichment: previous, note: 'Détecte surtout les CHANGEMENTS récents (poste, activité) vs le déjà-connu.' },
       });
-      if (r.ok) { const d = await r.json().catch(() => null); enr = d && (d.output ?? d); }
-    } catch { /* ignore */ }
+    } catch { /* ignore — enr reste null, traité comme échec ci-dessous */ }
 
     await supabase.from('contacts').update({ last_monitored_at: new Date().toISOString() }).eq('id', c.id);
     if (!enr) {
@@ -270,16 +305,24 @@ Deno.serve(async (req) => {
       }
 
       const enrichedAt = new Date().toISOString();
+      // Résolution du vrai nom : jamais d'écrasement silencieux d'un nom déjà
+      // plausible. Auto-appliqué seulement si le nom actuel était un pseudo ET que
+      // l'agent est très confiant (2 sources / LinkedIn nominatif) — sinon suggestion
+      // à valider (voir contact_name_suggestions, revue sur la fiche personne).
+      const nameChanged = typeof enr.fullName === 'string' && enr.fullName.trim() !== '' && enr.fullName.trim() !== (c.full_name ?? '').trim()
+        && looksLikeRealPersonName(enr.fullName, c.companies?.name ?? '');
+      const autoApplyName = nameChanged && currentNameIsPlaceholder && enr.fullNameConfidence === 'confirmed';
       // Le contenu enrichi et son statut sont écrits séparément. Ainsi une ancienne
       // contrainte de statut ne peut plus empêcher la mise à jour de toute la fiche.
       const { error: enrichmentUpdateError } = await supabase.from('contacts').update({
         enrichment_data: enr,
         web_bio: enr.summary ?? null,
         role_title: enr.currentRole ?? c.role_title ?? null,
-        linkedin_url: enr.linkedinUrl ?? c.linkedin_url ?? null,
+        linkedin_url: sanitizeLinkedinUrl(enr.linkedinUrl) ?? c.linkedin_url ?? null,
         location: enr.location ?? c.location ?? null,
         last_enriched_at: enrichedAt,
         enrichment_error: null,
+        ...(autoApplyName ? { full_name: enr.fullName } : {}),
       }).eq('id', c.id);
       if (enrichmentUpdateError) {
         totalFailed++;
@@ -287,6 +330,19 @@ Deno.serve(async (req) => {
         return;
       }
       totalEnriched++;
+
+      if (nameChanged && !autoApplyName) {
+        const { data: existingSuggestion } = await supabase.from('contact_name_suggestions')
+          .select('id, suggested_full_name').eq('contact_id', c.id).eq('status', 'pending').maybeSingle();
+        if (existingSuggestion?.suggested_full_name !== enr.fullName) {
+          if (existingSuggestion) await supabase.from('contact_name_suggestions').delete().eq('id', existingSuggestion.id);
+          await supabase.from('contact_name_suggestions').insert({
+            organization_id: c.organization_id, contact_id: c.id, suggested_full_name: enr.fullName,
+            source: 'enrichment_agent',
+            evidence: enr.linkedinUrl ? `Trouvé via recherche web (${enr.linkedinUrl})` : 'Trouvé via recherche web.',
+          });
+        }
+      }
       // La contrainte CHECK contacts_enrichment_status_check n'autorise que pending|running|done|failed.
       const { error: statusUpdateError } = await supabase.from('contacts')
         .update({ enrichment_status: 'done' }).eq('id', c.id);
@@ -374,7 +430,18 @@ Deno.serve(async (req) => {
     }
   };
 
-  await runWithConcurrency(contacts as Contact[], N8N_CONCURRENCY, processContact);
+  await runWithConcurrency(contacts as Contact[], LOCAL_CONCURRENCY, processContact);
+
+  // Détection de doublons inter-comptes (même personne, emails différents) : un
+  // balayage par org coûte ~1s pour un millier de contacts (comparaison de noms
+  // par trigramme indexée + égalité LinkedIn) — trop pour le déclencher à chaque
+  // clic "Enrichir maintenant", donc réservé au passage cron planifié.
+  if (mode === 'cron') {
+    const touchedOrgIds = [...new Set((contacts as Contact[]).map((c) => c.organization_id))];
+    for (const orgId of touchedOrgIds) {
+      await supabase.rpc('detect_contact_merge_candidates', { p_organization_id: orgId }).catch(() => null);
+    }
+  }
 
   return jsonResponse({
     success: errors.length === 0,

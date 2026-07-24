@@ -99,6 +99,8 @@ export interface AccountDetailData {
     location: string | null
     tags: string[]
     primaryOwnerName: string | null
+    locked: boolean
+    lockedByMe: boolean
   }
   relationship: {
     score: number | null

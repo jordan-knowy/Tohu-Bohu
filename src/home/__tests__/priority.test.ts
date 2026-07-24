@@ -49,14 +49,14 @@ function signal(overrides: Partial<HomeSignal>): HomeSignal {
   }
 }
 
-describe('relationLevel — seuils de la mission §3', () => {
-  it('classe 70-100 Promoteur, 50-69 Passif, 0-49 Détracteur', () => {
-    expect(relationLevel(100)).toBe('promoter')
-    expect(relationLevel(70)).toBe('promoter')
-    expect(relationLevel(69)).toBe('passive')
-    expect(relationLevel(50)).toBe('passive')
-    expect(relationLevel(49)).toBe('detractor')
-    expect(relationLevel(0)).toBe('detractor')
+describe('relationLevel — bandes Fragile/Intermédiaire/Solide (doctrine anti-NPS)', () => {
+  it('classe 70-100 Solide, 50-69 Intermédiaire, 0-49 Fragile', () => {
+    expect(relationLevel(100)).toBe('strong')
+    expect(relationLevel(70)).toBe('strong')
+    expect(relationLevel(69)).toBe('intermediate')
+    expect(relationLevel(50)).toBe('intermediate')
+    expect(relationLevel(49)).toBe('fragile')
+    expect(relationLevel(0)).toBe('fragile')
   })
   it('retourne unavailable pour un score absent — jamais une valeur inventée', () => {
     expect(relationLevel(null)).toBe('unavailable')
@@ -86,14 +86,14 @@ describe('aggregateGlobalScore — score global (scénarios 10 et 11)', () => {
     expect(empty.distribution).toBeNull()
     expect(empty.confidence).toBeNull()
   })
-  it('calcule la répartition Promoteurs/Passifs/Détracteurs en pourcentages', () => {
+  it('calcule la répartition Solide/Intermédiaire/Fragile en pourcentages', () => {
     const result = aggregateGlobalScore([
       account({ id: 'a', score: 80 }),
       account({ id: 'b', score: 55 }),
       account({ id: 'c', score: 30 }),
       account({ id: 'd', score: 72 }),
     ])
-    expect(result.distribution).toEqual({ promoters: 50, passives: 25, detractors: 25 })
+    expect(result.distribution).toEqual({ strong: 50, intermediate: 25, fragile: 25 })
   })
 })
 
@@ -130,7 +130,7 @@ describe('atRiskAccounts — À risque multi-facteurs (scénario 13)', () => {
   })
   it('documente chaque facteur dans riskReasons', () => {
     const { reasons } = riskScore(account({ score: 40, lastInteractionAt: '2026-06-01T00:00:00Z', contactCount: 1 }), NOW)
-    expect(reasons.join(' ')).toMatch(/détracteur/)
+    expect(reasons.join(' ')).toMatch(/fragile/)
     expect(reasons.join(' ')).toMatch(/44 j sans contact/)
     expect(reasons.join(' ')).toMatch(/seul interlocuteur/)
   })

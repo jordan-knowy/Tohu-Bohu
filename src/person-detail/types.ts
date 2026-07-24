@@ -64,6 +64,34 @@ export type PersonEvidence = {
   inferenceLevel: string | null
 }
 
+export type CognitiveThemeStatus = 'observed' | 'emerging' | 'insufficient'
+export type CognitiveEvolution = 'rising' | 'stable' | 'declining' | 'mixed' | null
+
+export type PersonCognitiveTheme = {
+  id: string
+  status: CognitiveThemeStatus
+  score: number | null
+  label: string | null
+  observation: string | null
+  confidence: number | null
+  evidenceCount: number
+  sourceTypes: string[]
+  evolution: CognitiveEvolution
+}
+
+export type PersonCognitiveProfile = {
+  schemaVersion: number
+  maturity: 'none' | 'emerging' | 'usable' | 'consolidated' | 'refined'
+  interpersonal: {
+    assertiveness: PersonCognitiveTheme
+    warmth: PersonCognitiveTheme
+  }
+  exchangeStyles: PersonCognitiveTheme[]
+  speechActs: PersonCognitiveTheme[]
+  observableMarkers: PersonCognitiveTheme[]
+  posture: PersonCognitiveTheme
+}
+
 export type PersonCareerEntry = {
   id: string
   entryType: 'experience' | 'education' | 'detected_change'
@@ -121,6 +149,24 @@ export type PersonHistoryEvent = {
   sourceLabel: string
 }
 
+export type PersonNameSuggestion = {
+  id: string
+  suggestedFullName: string
+  source: 'enrichment_agent' | 'signature'
+  evidence: string | null
+  createdAt: string
+}
+
+export type PersonMergeSuggestion = {
+  id: string
+  otherContactId: string
+  otherContactName: string
+  otherContactEmail: string | null
+  confidence: 'high' | 'medium'
+  evidence: { name_similarity?: number; linkedin_match?: boolean; same_company?: boolean; shares_surname?: boolean }
+  createdAt: string
+}
+
 export type PersonScorePoint = {
   monthKey: string
   score: number | null
@@ -150,6 +196,8 @@ export interface PersonDetailData {
     primaryOwnerName: string | null
     createdAt: string | null
     updatedAt: string | null
+    locked: boolean
+    lockedByMe: boolean
   }
 
   summary: {
@@ -192,7 +240,9 @@ export interface PersonDetailData {
     globalConfidence: number | null
     cognitiveMode: string | null
     analyzedInteractions: number
+    profileMinimumInteractions: number
     minimumInteractions: number
+    cognitiveProfile: PersonCognitiveProfile
     insights: PersonBehavioralInsight[]
     evidences: PersonEvidence[]
     updatedAt: string | null
@@ -205,6 +255,8 @@ export interface PersonDetailData {
   careerEntries: PersonCareerEntry[]
   memoryEntries: PersonMemoryEntry[]
   history: PersonHistoryEvent[]
+  nameSuggestion: PersonNameSuggestion | null
+  mergeSuggestions: PersonMergeSuggestion[]
 }
 
 export const RELATIONSHIP_TYPES = [
@@ -216,3 +268,4 @@ export const DECISION_ROLES = [
 ] as const
 
 export const MIN_BEHAVIOR_INTERACTIONS = 10
+export const MIN_COGNITIVE_PROFILE_INTERACTIONS = 3

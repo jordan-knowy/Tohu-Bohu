@@ -52,13 +52,13 @@ function base(): HomeDashboardData {
     lastVisitDigest: { since: iso(2), newSignals: 3, coolingAccounts: 1, jobChanges: 1, newPeople: 2, overdueActions: 0 },
     globalRelationship: {
       score: 58,
-      level: 'passive',
+      level: 'intermediate',
       confidence: 64,
       computedAt: iso(0.2),
       delta30d: 4,
       includedAccounts: 4,
       excludedAccounts: 1,
-      distribution: { promoters: 33, passives: 50, detractors: 17 },
+      distribution: { strong: 33, intermediate: 50, fragile: 17 },
     },
     benchmark: null,
     sources: [
@@ -70,13 +70,13 @@ function base(): HomeDashboardData {
     counters: { accounts: 5, accountsDelta30d: 2, people: 14, peopleDelta30d: 3, activeRelationships: 3, decliningRelationships: 1 },
     topAccounts: {
       best: [
-        { id: 'p1', name: 'Fixture Alpha', industry: 'Conseil', score: 72, level: 'promoter', confidence: 70, trend: 'up', lastInteractionAt: iso(2) },
-        { id: 'p2', name: 'Fixture Bravo', industry: 'Juridique', score: 70, level: 'promoter', confidence: 55, trend: 'stable', lastInteractionAt: iso(4) },
-        { id: 'p3', name: 'Fixture Charlie', industry: null, score: 61, level: 'passive', confidence: null, trend: null, lastInteractionAt: iso(9) },
+        { id: 'p1', name: 'Fixture Alpha', industry: 'Conseil', score: 72, level: 'strong', confidence: 70, trend: 'up', lastInteractionAt: iso(2) },
+        { id: 'p2', name: 'Fixture Bravo', industry: 'Juridique', score: 70, level: 'strong', confidence: 55, trend: 'stable', lastInteractionAt: iso(4) },
+        { id: 'p3', name: 'Fixture Charlie', industry: null, score: 61, level: 'intermediate', confidence: null, trend: null, lastInteractionAt: iso(9) },
       ],
       atRisk: [
-        { id: 'p4', name: 'Fixture Delta', industry: 'Immobilier', score: 39, level: 'detractor', confidence: 40, trend: 'down', lastInteractionAt: iso(41), riskScore: 78, riskReasons: ['score détracteur (39)', '41 j sans contact', 'un seul interlocuteur connu'] },
-        { id: 'p5', name: 'Fixture Echo', industry: null, score: 55, level: 'passive', confidence: 62, trend: 'down', lastInteractionAt: iso(35), riskScore: 52, riskReasons: ['en baisse de 8 pts sur 30 j', '35 j sans contact'] },
+        { id: 'p4', name: 'Fixture Delta', industry: 'Immobilier', score: 39, level: 'fragile', confidence: 40, trend: 'down', lastInteractionAt: iso(41), riskScore: 78, riskReasons: ['score fragile (39)', '41 j sans contact', 'un seul interlocuteur connu'] },
+        { id: 'p5', name: 'Fixture Echo', industry: null, score: 55, level: 'intermediate', confidence: 62, trend: 'down', lastInteractionAt: iso(35), riskScore: 52, riskReasons: ['en baisse de 8 pts sur 30 j', '35 j sans contact'] },
       ],
     },
     teamMembers: [
@@ -99,6 +99,14 @@ function base(): HomeDashboardData {
       { id: 'sig6', kind: 'company', signalType: 'silence', title: 'Silence prolongé', summary: '41 j sans contact (fixture).', accountId: 'p4', accountName: 'Fixture Delta', personId: null, personName: null, source: 'Historique', observedAt: iso(1), confidence: 90, inferenceLevel: 'observed', userVerdict: null },
       { id: 'sig7', kind: 'company', signalType: 'anniversaire', title: '1 an de relation', summary: 'Occasion de consolider (fixture).', accountId: 'p1', accountName: 'Fixture Alpha', personId: null, personName: null, source: 'Historique', observedAt: iso(20), confidence: 95, inferenceLevel: 'observed', userVerdict: null },
     ],
+    coaching: {
+      executiveSummary: 'répond de façon directe et structurée, avec des relances courtes (fixture).',
+      updatedAt: iso(1),
+      insights: [
+        { id: 'insight-0', trait: 'Style de réponse', observation: 'Privilégie des messages courts et actionnables (fixture).', confidence: 72, feedback: null },
+        { id: 'insight-1', trait: 'Relances', observation: 'Relance en général sous 48 h après un silence (fixture).', confidence: 48, feedback: 'useful' },
+      ],
+    },
   }
 }
 
@@ -145,6 +153,7 @@ function fixtureFor(state: string): HomeDashboardData {
       data.priorityActions = []
       data.latestSignals = []
       data.counters = { accounts: 5, accountsDelta30d: null, people: 0, peopleDelta30d: null, activeRelationships: 0, decliningRelationships: 0 }
+      data.coaching = null
       return data
     case 'degraded':
       data.degraded = true

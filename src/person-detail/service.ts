@@ -24,7 +24,8 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     contactResult, settingsResult, userSettingsResult, summaryResult, snapshotsResult,
     legacyScoresResult, legacyCareerResult, relationshipResult, cognitiveResult, behavioralResult,
     recommendationsResult, detailsResult, careerResult, memoryResult,
-    participantsResult, messagesResult, connectorsResult, feedbackResult,
+    participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
+    nameSuggestionResult, mergeSuggestionsResult,
   ] = await Promise.all([
     client.from('contacts').select('*,companies(*)').eq('organization_id', workspaceId).eq('id', personId).is('merged_into_contact_id', null).maybeSingle(),
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
@@ -45,6 +46,9 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('communication_messages').select('id,sent_at,direction,subject,provider').eq('organization_id', workspaceId).eq('contact_id', personId).order('sent_at', { ascending: false }).limit(500),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId).eq('user_id', userId),
+    client.from('resource_lock').select('locked_by').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
+    client.from('contact_name_suggestions').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    client.from('contact_merge_suggestions').select('*').eq('organization_id', workspaceId).eq('status', 'pending').or(`contact_a_id.eq.${personId},contact_b_id.eq.${personId}`),
   ])
 
   if (contactResult.error) {
@@ -71,6 +75,9 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const connectors = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
   const feedback = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
+  const lockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const nameSuggestionRow = object(optional(nameSuggestionResult, 'Suggestion de nom', degradedReasons))
+  const mergeSuggestionRows = rows(optional(mergeSuggestionsResult, 'Suggestions de fusion', degradedReasons))
 
   const meetings = participants.map((row) => object(row.meetings)).filter((row) => row.id)
 
@@ -108,7 +115,67 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     feedback,
     profileNames,
     degradedReasons,
+    lockedBy: text(lockRow.locked_by),
+    nameSuggestion: nameSuggestionRow.id ? nameSuggestionRow : null,
+    mergeSuggestions: mergeSuggestionRows,
   })
+}
+
+/** Suggestion de nom trouvée par l'agent d'enrichissement ou une signature email —
+ *  jamais appliquée sans ce clic (voir doctrine dans supabase/functions/monitor-contacts). */
+export async function acceptPersonNameSuggestion(data: PersonDetailData, userId: string, suggestionId: string, suggestedFullName: string): Promise<void> {
+  const client = getSupabase()
+  const { error: nameError } = await client.from('contacts').update({ full_name: suggestedFullName }).eq('id', data.person.id)
+  if (nameError) throw nameError
+  const { error } = await client.from('contact_name_suggestions')
+    .update({ status: 'accepted', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', suggestionId)
+  if (error) throw error
+}
+
+export async function dismissPersonNameSuggestion(userId: string, suggestionId: string): Promise<void> {
+  const { error } = await getSupabase().from('contact_name_suggestions')
+    .update({ status: 'dismissed', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', suggestionId)
+  if (error) throw error
+}
+
+/** La fiche actuellement ouverte (data.person.id) reste la fiche conservée — l'autre
+ *  y est fusionnée via le RPC merge_contacts déjà utilisé par la dédup automatique. */
+export async function acceptPersonMergeSuggestion(data: PersonDetailData, userId: string, suggestionId: string, otherContactId: string): Promise<void> {
+  const client = getSupabase()
+  const { error: mergeError } = await client.rpc('merge_contacts', { primary_id: data.person.id, secondary_id: otherContactId })
+  if (mergeError) throw mergeError
+  const { error } = await client.from('contact_merge_suggestions')
+    .update({ status: 'accepted', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', suggestionId)
+  if (error) throw error
+}
+
+export async function dismissPersonMergeSuggestion(userId: string, suggestionId: string): Promise<void> {
+  const { error } = await getSupabase().from('contact_merge_suggestions')
+    .update({ status: 'dismissed', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', suggestionId)
+  if (error) throw error
+}
+
+/** Verrou SPEC-09 : masque la mémoire d'équipe de cette Personne aux non-autorisés.
+ *  Seul l'auteur du verrou peut le lever (appliqué par la RLS, pas seulement côté client). */
+export async function setPersonLock(data: PersonDetailData, userId: string, locked: boolean): Promise<void> {
+  if (locked) {
+    const { error } = await getSupabase().from('resource_lock').insert({
+      organization_id: data.person.workspaceId,
+      subject_type: 'contact',
+      subject_id: data.person.id,
+      locked_by: userId,
+    })
+    if (error) throw error
+    return
+  }
+  const { error } = await getSupabase().from('resource_lock')
+    .update({ lock_state: 'released', released_at: new Date().toISOString(), released_by: userId })
+    .eq('organization_id', data.person.workspaceId)
+    .eq('subject_type', 'contact')
+    .eq('subject_id', data.person.id)
+    .eq('lock_state', 'active')
+    .eq('locked_by', userId)
+  if (error) throw error
 }
 
 export async function setPersonFavorite(data: PersonDetailData, userId: string, favorite: boolean): Promise<void> {
@@ -148,11 +215,25 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
 }
 
 export type PersonEnrichmentResult = { scanned: number; enriched: number; failed: number }
+export type PersonCognitiveSyncResult = {
+  providers: string[]
+  messages: number
+  peopleAnalyzed: number
+  errors: string[]
+}
 
 /** invokeError : FunctionsHttpError.message est générique, le vrai détail est dans error.context. */
 async function invokeError(error: unknown, fallback: string): Promise<Error> {
-  const detail = await (error as { context?: Response })?.context?.clone?.().json?.().catch(() => null)
-  if (detail?.error) return new Error(String(detail.error))
+  const context = (error as { context?: Response })?.context
+  const raw = context ? await context.clone().text().catch(() => '') : ''
+  let detail: { error?: unknown; message?: unknown } | null = null
+  try { detail = raw ? JSON.parse(raw) : null } catch { /* réponse Edge non JSON */ }
+  if (detail?.error || detail?.message) return new Error(String(detail.error ?? detail.message))
+  if (context?.status === 546) return new Error('La fonction de synchronisation a été interrompue par Supabase. Déploie la dernière version ciblée de sync-email-analysis puis réessaie.')
+  if (context?.status === 500) return new Error(raw || 'Le moteur cognitif distant a échoué. Vérifie que la migration cognitive est appliquée et que la fonction est à jour.')
+  if (error instanceof Error && /failed to fetch|network|timeout/i.test(error.message)) {
+    return new Error('Connexion à Supabase interrompue. Vérifie le réseau puis relance la synchronisation.')
+  }
   return error instanceof Error && !error.message.includes('non-2xx') ? error : new Error(fallback)
 }
 
@@ -164,6 +245,51 @@ export async function triggerPersonEnrichment(contactId: string): Promise<Person
   if (error) throw await invokeError(error, 'Déclenchement de l’enrichissement impossible.')
   if (data?.error) throw new Error(String(data.error))
   return data as PersonEnrichmentResult
+}
+
+/** Relecture ciblée des échanges et recalcul du profil cognitif. Le contrôle
+ * super-admin est répété dans l'edge function : masquer le bouton ne constitue
+ * jamais le mécanisme d'autorisation. */
+export async function triggerPersonCognitiveSync(data: PersonDetailData, userId: string): Promise<PersonCognitiveSyncResult> {
+  const client = getSupabase()
+  if (!userId) throw new Error('Session utilisateur introuvable.')
+  const providersWithInteractions = data.sources
+    .filter((source) => source.status === 'connected' && (source.interactionCount ?? 0) > 0)
+    .map((source) => source.provider)
+    .filter((provider) => provider === 'google' || provider === 'microsoft')
+  const { data: connectors, error: connectorError } = await client.from('connectors')
+    .select('provider')
+    .eq('organization_id', data.person.workspaceId)
+    .eq('user_id', userId)
+    .eq('status', 'connected')
+    .in('provider', providersWithInteractions.length ? providersWithInteractions : ['google', 'microsoft'])
+  if (connectorError) throw connectorError
+  if (!connectors?.length) throw new Error('Aucun connecteur Gmail ou Microsoft 365 actif pour ce compte.')
+
+  const result: PersonCognitiveSyncResult = { providers: [], messages: 0, peopleAnalyzed: 0, errors: [] }
+  for (const connector of connectors) {
+    const provider = String(connector.provider)
+    const { data: response, error } = await client.functions.invoke('sync-email-analysis', {
+      body: {
+        organizationId: data.person.workspaceId,
+        provider,
+        contactId: data.person.id,
+      },
+    })
+    if (error || response?.error || response?.success === false) {
+      const reason = response?.error
+        ? String(response.error)
+        : (await invokeError(error, `Synchronisation ${provider} impossible.`)).message
+      result.errors.push(`${provider}: ${reason}`)
+      continue
+    }
+    result.providers.push(provider)
+    result.messages += Number(response?.messages ?? 0)
+    result.peopleAnalyzed += Number(response?.peopleAnalyzed ?? 0)
+    if (Array.isArray(response?.analysisErrors)) result.errors.push(...response.analysisErrors.map(String))
+  }
+  if (!result.providers.length) throw new Error(result.errors.join(' · ') || 'Synchronisation cognitive impossible.')
+  return result
 }
 
 /** Supprime une personne de Tohu : archivage (réversible), pas de suppression

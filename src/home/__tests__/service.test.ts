@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus } from '../service'
+import { buildCoaching, buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus } from '../service'
+import type { UserBehaviorProfile } from '../../services/data'
 
 const NOW = new Date('2026-07-15T12:00:00Z')
 
@@ -150,5 +151,44 @@ describe('buildTeamMembers — vision d’équipe réelle', () => {
 
   it('n’affiche pas un membre dont le profil n’est pas lisible', () => {
     expect(buildTeamMembers([{ user_id: 'u1' }], [], [], NOW)).toEqual([])
+  })
+})
+
+function behaviorProfile(overrides: Partial<UserBehaviorProfile> = {}): UserBehaviorProfile {
+  return {
+    global_confidence: 60,
+    executive_summary: 'répond de façon directe (fixture)',
+    cognitive_mode: null,
+    cognitive_mode_confidence: null,
+    behavioral_analysis_data: [{ trait: 'Style', observation: 'Messages courts', confidence: 70 }],
+    communication_style_data: {},
+    source_message_count: 20,
+    updated_from: [],
+    updated_at: '2026-07-10T00:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('buildCoaching — style de communication du collaborateur (SPEC-05)', () => {
+  it('retourne null sans profil', () => {
+    expect(buildCoaching(null, [])).toBeNull()
+  })
+  it('retourne null sous le seuil minimal d’interactions analysées — jamais un profil forcé', () => {
+    expect(buildCoaching(behaviorProfile({ source_message_count: 3 }), [])).toBeNull()
+  })
+  it('construit les insights avec feedback persisté, jamais un pourcentage de confiance stocké comme label', () => {
+    const result = buildCoaching(behaviorProfile({
+      behavioral_analysis_data: [
+        { trait: 'Style', observation: 'Messages courts', confidence: 70 },
+        { trait: 'Relances', observation: 'Relance sous 48h', confidence: 40 },
+      ],
+    }), [{ insight_id: 'insight-1', feedback_type: 'useful' }])
+    expect(result?.insights).toEqual([
+      { id: 'insight-0', trait: 'Style', observation: 'Messages courts', confidence: 70, feedback: null },
+      { id: 'insight-1', trait: 'Relances', observation: 'Relance sous 48h', confidence: 40, feedback: 'useful' },
+    ])
+  })
+  it('ignore les entrées sans observation exploitable', () => {
+    expect(buildCoaching(behaviorProfile({ behavioral_analysis_data: [{ trait: 'Style', observation: '' }] }), [])).toBeNull()
   })
 })

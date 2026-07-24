@@ -31,6 +31,7 @@ import AccountDetailPage from '../account-detail/AccountDetailPage'
 import PersonListPage from '../person-list/PersonListPage'
 import PersonDetailPage from '../person-detail/PersonDetailPage'
 import GlobalSearch from './GlobalSearch'
+import NotificationBell from './NotificationBell'
 import AskPage from './pages/AskPage'
 import HomePage from './pages/HomePage'
 import ConnectorsPage from './pages/ConnectorsPage'
@@ -149,6 +150,7 @@ function AppShell({ context }: { context: AppContext }) {
       <header className="topbar">
         <div><h1 id="page-title">{page.title}</h1><p id="page-subtitle">{page.subtitle}</p></div>
         <GlobalSearch />
+        <NotificationBell userId={context.session.user.id} />
       </header>
       <main className={LEGACY_CONTENT_PATHS.has(location.pathname) ? 'content' : 'ra-content'}><Outlet context={context} /></main>
     </div>

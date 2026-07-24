@@ -34,6 +34,12 @@ export function scoreTone(score: number | null): string {
   return 'var(--coral)'
 }
 
+/** Confiance qualitative uniquement — aucun pourcentage décoratif (SPEC-04 §12 / SPEC-05 §12). */
+export function confidenceLevel(confidence: number | null): 'faible' | 'moyen' | 'élevé' | null {
+  if (confidence === null) return null
+  return confidence >= 70 ? 'élevé' : confidence >= 40 ? 'moyen' : 'faible'
+}
+
 export function phaseLabel(phase: string): string {
   return ({ growing: '↗ en progression', stable: '→ stable', declining: '↘ en retrait', unknown: 'Phase à confirmer' } as Record<string, string>)[phase] ?? phase
 }
@@ -48,16 +54,16 @@ export function provenanceLabel(item: DataSourceReference | null): string {
   const freshness = item.lastVerifiedAt ?? item.observedAt
   const parts = [item.sourceLabel]
   if (freshness) parts.push(formatDate(freshness))
-  if (item.confidence !== null) parts.push(`confiance ${Math.round(item.confidence)}%`)
+  if (item.confidence !== null) parts.push(`confiance ${confidenceLevel(item.confidence)}`)
   const inference = inferenceLabel(item.inferenceLevel)
   if (inference) parts.push(inference)
   return parts.join(' · ')
 }
 
 /** Section repliable au patron .csec de la référence. */
-export function Csec({ id, icon, title, meta, children, defaultOpen = true }: { id: string; icon: React.ReactNode; title: string; meta?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }) {
+export function Csec({ id, icon, title, meta, children, defaultOpen = true, className = '' }: { id: string; icon: React.ReactNode; title: string; meta?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; className?: string }) {
   const [open, setOpen] = useState(defaultOpen)
-  return <section className={`csec ${open ? 'open' : ''}`} id={id}>
+  return <section className={`csec ${className} ${open ? 'open' : ''}`.trim()} id={id}>
     <button type="button" className="csec-header" aria-expanded={open} aria-controls={`${id}-body`} onClick={() => setOpen((value) => !value)} style={{ width: '100%', background: 'none', border: 0, textAlign: 'left' }}>
       <span className="csec-icon" aria-hidden="true">{icon}</span>
       <span className="csec-title">{title}</span>

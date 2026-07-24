@@ -413,7 +413,7 @@ function PageBody({ context }: { context: PageContext }) {
         {sortHeader('nm', 'Compte')}
         <span className="dxa-h-rel">Relation</span>
         {sortHeader('dur', 'Relation depuis', 'dxa-h-dur')}
-        {sortHeader('nps', 'NPS', 'center')}
+        {sortHeader('nps', 'Score', 'center')}
         {sortHeader('ct', 'Contacts', 'center dxa-h-ct')}
         <span className="dxa-h-ch">Canaux</span>
         <span className="center">Owner</span>

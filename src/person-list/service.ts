@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase'
+import { triggerBehaviorSyncs } from '../services/behavior-sync'
 import {
   buildPersonListRows, buildPersonTickerItems,
   type PersonListRow, type Row, type TeamMember, type TickerItem,
@@ -118,6 +119,7 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
   void Promise.allSettled([
     client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
     client.functions.invoke('monitor-contacts', { body: { organizationId: workspaceId } }),
+    triggerBehaviorSyncs(workspaceId),
   ])
 }
 

@@ -6,14 +6,14 @@
  * « Données insuffisantes » ou masque la sous-section.
  */
 
-export type HomeRelationLevel = 'promoter' | 'passive' | 'detractor' | 'unavailable'
+export type HomeRelationLevel = 'strong' | 'intermediate' | 'fragile' | 'unavailable'
 
-/** Seuils d'affichage (mission §3) : 70-100 Promoteur, 50-69 Passif, 0-49 Détracteur. */
+/** Bandes du score relationnel (doctrine anti-NPS) : 70-100 Solide, 50-69 Intermédiaire, 0-49 Fragile. */
 export function relationLevel(score: number | null): HomeRelationLevel {
   if (score === null || !Number.isFinite(score)) return 'unavailable'
-  if (score >= 70) return 'promoter'
-  if (score >= 50) return 'passive'
-  return 'detractor'
+  if (score >= 70) return 'strong'
+  if (score >= 50) return 'intermediate'
+  return 'fragile'
 }
 
 export type HomeSyncJob = {
@@ -169,7 +169,7 @@ export type HomeDashboardData = {
     delta30d: number | null
     includedAccounts: number
     excludedAccounts: number
-    distribution: { promoters: number; passives: number; detractors: number } | null
+    distribution: { strong: number; intermediate: number; fragile: number } | null
   }
 
   /** Benchmark sectoriel : null tant qu'aucune source/méthodologie n'existe (sous-section masquée). */
@@ -206,4 +206,25 @@ export type HomeDashboardData = {
   teamMembers: HomeTeamMember[]
   priorityActions: HomePriorityAction[]
   latestSignals: HomeSignal[]
+  coaching: HomeCoaching
 }
+
+export type HomeCoachingInsight = {
+  id: string
+  trait: string
+  observation: string
+  confidence: number | null
+  feedback: 'useful' | 'inaccurate' | null
+}
+
+/**
+ * Style de communication observé du collaborateur connecté (SPEC-05 : sourcé,
+ * daté, confiance qualitative, jamais un diagnostic de personnalité).
+ * `null` tant que la couverture d'échanges analysés est insuffisante —
+ * jamais un profil synthétique affiché en dessous du seuil.
+ */
+export type HomeCoaching = {
+  executiveSummary: string | null
+  updatedAt: string | null
+  insights: HomeCoachingInsight[]
+} | null

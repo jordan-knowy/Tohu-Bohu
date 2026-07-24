@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase'
+import { triggerBehaviorSyncs } from './behavior-sync'
 
 export type EntityStatus = 'active' | 'watch' | 'inactive'
 
@@ -293,6 +294,7 @@ export async function createPerson(values: Partial<Person>): Promise<Person> {
   if (values.location?.trim()) contactUpdates.location = values.location.trim()
   const { data, error } = await client.from('contacts').update(contactUpdates).eq('id', String(resolvedContact.contact_id)).select(contactSelect).single()
   if (error) throw error
+  void triggerBehaviorSyncs(organizationId).catch(() => undefined)
   return mapPerson(data as DbRow)
 }
 
