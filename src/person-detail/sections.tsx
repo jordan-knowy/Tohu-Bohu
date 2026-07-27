@@ -42,7 +42,7 @@ export function RelationSection({ data }: { data: PersonDetailData }) {
           {relation.score ?? '—'}
           <span className="ic" tabIndex={0}>i<span className="tip">
             <span className="tip-h">Comment c’est calculé</span>
-            Score composite produit par le moteur relationnel backend (intensité · réciprocité · récence). Échelle 0–100. Le front n’effectue aucun calcul.
+            Score composite produit par le moteur relationnel backend (intensité · réciprocité · longévité), ajusté selon la récence du dernier échange. Échelle 0–100. Le front n’effectue aucun calcul.
             <span className="tip-f">{relation.computedAt ? `Calculé le ${formatDate(relation.computedAt)}` : 'En attente du moteur backend.'}</span>
           </span></span>
           {freshness === 'stale' && <span className="reco-prio" style={{ marginLeft: 8, fontSize: 9.5, verticalAlign: 'middle' }} title="Le dernier calcul date de plus de 48 h — peut ne plus refléter les tout derniers échanges.">⏱ Mise à jour retardée</span>}

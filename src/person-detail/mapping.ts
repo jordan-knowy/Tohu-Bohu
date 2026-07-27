@@ -1,6 +1,7 @@
 // Mapping pur des lignes Supabase vers PersonDetailData.
 // Aucune requête ici : tout est testable sans réseau.
 
+import { formatPersonName } from '../lib/names'
 import { signalTitle } from '../services/signal-labels'
 import {
   MIN_COGNITIVE_PROFILE_INTERACTIONS,
@@ -522,7 +523,7 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     person: {
       id: raw.personId,
       workspaceId: raw.workspaceId,
-      fullName: text(contact.full_name) ?? 'Contact',
+      fullName: formatPersonName(text(contact.full_name)) ?? 'Contact',
       avatarUrl: text(contact.avatar_url),
       jobTitle: text(contact.role_title),
       location: text(contact.location),
@@ -561,7 +562,13 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       dimensions: {
         intensity: num(latestSnapshot.intensity_score) ?? num(latestHistory.score_intensite) ?? num(cognitiveProfile.score_intensite),
         reciprocity: num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite),
-        longevity: num(latestSnapshot.recency_score) ?? num(latestHistory.score_longevite) ?? num(cognitiveProfile.score_longevite),
+        // Depuis relationship-score-v2, récence et longévité sont deux champs
+        // distincts. L'historique calculé reste prioritaire sur le recency_score
+        // des anciens snapshots v1, où la longévité était stockée sous ce nom.
+        longevity: num(latestSnapshot.longevity_score)
+          ?? num(latestHistory.score_longevite)
+          ?? num(cognitiveProfile.score_longevite)
+          ?? (text(latestSnapshot.model_version) === 'relationship-score-v1' ? num(latestSnapshot.recency_score) : null),
       },
     },
     scoreHistory,

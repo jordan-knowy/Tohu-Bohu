@@ -3,6 +3,7 @@
 // réutilisés tels quels pour que les deux listes se comportent à l'identique.
 
 import { accountTier as scoreTier, durationLabel, latestContactScore, logoColor, monthsBetween, RELATION_COLORS, scoreColor, tickerDurationSeconds, TIER_COLORS, type AccountTier, type TeamMember } from '../account-list/mapping'
+import { formatPersonName } from '../lib/names'
 
 export { durationLabel, logoColor, RELATION_COLORS, scoreColor, tickerDurationSeconds, TIER_COLORS, type TeamMember }
 
@@ -119,7 +120,7 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
 
     return [{
       id,
-      name: text(contact.full_name) ?? 'Personne',
+      name: formatPersonName(text(contact.full_name)) ?? 'Personne',
       avatarUrl: text(contact.avatar_url),
       jobTitle: text(contact.role_title),
       companyId,
@@ -150,7 +151,7 @@ const SIGNAL_TAGS: Record<string, string> = {
 
 export function buildPersonTickerItems(signals: Row[]): TickerItem[] {
   return signals.flatMap((signal) => {
-    const person = text(object(signal.contacts).full_name)
+    const person = formatPersonName(text(object(signal.contacts).full_name))
     const summary = text(signal.text) ?? text(signal.inference)
     if (!person || !summary) return []
     const sourceType = String(signal.source_type ?? '')

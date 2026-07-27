@@ -33,6 +33,8 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     profileNames: new Map(),
     degradedReasons: [],
     lockedBy: null,
+    nameSuggestion: null,
+    mergeSuggestions: [],
     ...overrides,
   }
 }
@@ -50,12 +52,27 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
 
   it('le snapshot canonique prime sur l’historique hérité', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', intensity_score: 90, reciprocity_score: 70, recency_score: 60 }],
+      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', intensity_score: 90, reciprocity_score: 70, longevity_score: 60, recency_score: 25, model_version: 'relationship-score-v2' }],
       legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_intensite: 10, score_reciprocite: 10, score_longevite: 10 }],
     }))
     expect(data.relationship.score).toBe(81)
     expect(data.relationship.phase).toBe('growing')
     expect(data.relationship.dimensions).toEqual({ intensity: 90, reciprocity: 70, longevity: 60 })
+  })
+
+  it('ne confond pas la récence canonique avec la longévité', () => {
+    const data = buildPersonDetail(raw({
+      scoreSnapshots: [{ score: 65, computed_at: '2026-07-10T00:00:00Z', recency_score: 0, model_version: 'relationship-score-v2' }],
+      legacyScores: [{ score: 65, snapshot_date: '2026-07-10', score_longevite: 55 }],
+    }))
+    expect(data.relationship.dimensions.longevity).toBe(55)
+  })
+
+  it('relit encore la longévité des snapshots v1 historiques', () => {
+    const data = buildPersonDetail(raw({
+      scoreSnapshots: [{ score: 65, computed_at: '2026-07-10T00:00:00Z', recency_score: 42, model_version: 'relationship-score-v1' }],
+    }))
+    expect(data.relationship.dimensions.longevity).toBe(42)
   })
 
   it('sans snapshot canonique, contact_score_history fournit score, phase et dimensions', () => {

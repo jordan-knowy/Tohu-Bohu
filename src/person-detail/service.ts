@@ -132,6 +132,24 @@ export async function acceptPersonNameSuggestion(data: PersonDetailData, userId:
   if (error) throw error
 }
 
+/** Renommage manuel depuis la fiche. La casse est normalisée en base (trigger
+ *  contacts.full_name) quelle que soit la saisie. Marquer la source à 'manual'
+ *  fait sortir ce nom de la détection de pseudo (voir looksLikePlaceholderName
+ *  dans monitor-contacts) : l'agent d'enrichissement ne l'écrasera plus jamais
+ *  silencieusement, et ses futures recherches web partiront de ce vrai nom. */
+export async function renamePerson(data: PersonDetailData, fullName: string): Promise<void> {
+  const trimmed = fullName.trim()
+  if (!trimmed) throw new Error('Le nom ne peut pas être vide.')
+  const client = getSupabase()
+  const { data: current, error: readError } = await client.from('contacts').select('source_summary').eq('id', data.person.id).maybeSingle()
+  if (readError) throw readError
+  const { error } = await client.from('contacts').update({
+    full_name: trimmed,
+    source_summary: { ...object(current?.source_summary), last_identity_source: 'manual', last_identity_seen_at: new Date().toISOString() },
+  }).eq('id', data.person.id)
+  if (error) throw error
+}
+
 export async function dismissPersonNameSuggestion(userId: string, suggestionId: string): Promise<void> {
   const { error } = await getSupabase().from('contact_name_suggestions')
     .update({ status: 'dismissed', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', suggestionId)

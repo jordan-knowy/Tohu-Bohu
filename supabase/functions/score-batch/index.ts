@@ -1,5 +1,6 @@
 // Scoring relationnel EN MASSE (doc 08) → cognitive_profiles + historique mensuel (contact_score_history) + NPS (nps_snapshots).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { observedRelationshipAgeInDays, scoreLongevite } from '../_shared/relationship-longevity.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,21 +34,7 @@ function scoreReciprocite(s: Stats): number {
   const asym = Math.abs(s.initiationRatio - 0.5) * 2;
   return Math.max(0.40, 1.0 - asym * 0.60) * 0.50 + clamp(s.responseRate) * 0.30 + clamp(s.responseTimeRatio / 2) * 0.20;
 }
-function scoreLongevite(s: Stats): { score: number; factor: number } {
-  if (s.ageInDays < 30) return { score: 0, factor: 0 };
-  const factor = s.ageInDays < 90 ? (s.ageInDays - 30) / 60 : 1.0;
-  const ageScore = clamp(s.ageInDays / (24 * 30));
-  let consistency = 0.5;
-  if (s.monthlyExchangeCounts.length >= 3) {
-    const mean = s.monthlyExchangeCounts.reduce((a, b) => a + b, 0) / s.monthlyExchangeCounts.length;
-    if (mean > 0) {
-      const variance = s.monthlyExchangeCounts.reduce((a, b) => a + (b - mean) ** 2, 0) / s.monthlyExchangeCounts.length;
-      consistency = Math.max(0, 1.0 - (Math.sqrt(variance) / mean) / 2.0);
-    }
-  }
-  return { score: (ageScore * 0.45 + consistency * 0.35 + (s.quartersWithMeetings / 4) * 0.20) * factor, factor };
-}
-function buildStats(allMsgs: any[], allMeets: any[], firstSeen: string | null, nowMs: number): Stats {
+function buildStats(allMsgs: any[], allMeets: any[], nowMs: number): Stats {
   const messages = allMsgs.filter(m => m.sent_at && new Date(m.sent_at).getTime() <= nowMs);
   const meetings = allMeets.filter(m => m.starts_at && new Date(m.starts_at).getTime() <= nowMs);
   const c30 = nowMs - 30 * 86400000, c90 = nowMs - 90 * 86400000;
@@ -63,15 +50,19 @@ function buildStats(allMsgs: any[], allMeets: any[], firstSeen: string | null, n
   for (const m of messages) if (m.thread_id) threads.set(m.thread_id, (threads.get(m.thread_id) || 0) + 1);
   const avgThreadDepth = threads.size ? Array.from(threads.values()).reduce((a, b) => a + b, 0) / threads.size : 1;
   const channelCount = (messages.length > 0 ? 1 : 0) + (meetings.length > 0 ? 1 : 0);
-  const ageInDays = firstSeen ? Math.round((nowMs - new Date(firstSeen).getTime()) / 86400000)
-    : messages.length > 0 ? Math.round((nowMs - new Date(messages[messages.length - 1].sent_at).getTime()) / 86400000) : 0;
   const allDates = [...messages.map(m => new Date(m.sent_at).getTime()), ...meetings.map(m => new Date(m.starts_at).getTime())];
+  // L'ancienneté de la relation commence à la première interaction observée.
+  // contacts.created_at est une date d'import technique : l'utiliser remettait
+  // à zéro la longévité de relations anciennes lors d'une synchronisation.
+  const ageInDays = observedRelationshipAgeInDays(allDates, nowMs);
   const lastContact = allDates.length ? Math.max(...allDates) : 0;
   const daysSinceLastContact = lastContact ? Math.round((nowMs - lastContact) / 86400000) : 999;
   const monthlyExchangeCounts: number[] = [];
   for (let i = 0; i < 6; i++) {
     const start = nowMs - (i + 1) * 30 * 86400000, end = nowMs - i * 30 * 86400000;
-    monthlyExchangeCounts.push(messages.filter(m => { const t = new Date(m.sent_at).getTime(); return t > start && t <= end; }).length);
+    const messageCount = messages.filter(m => { const t = new Date(m.sent_at).getTime(); return t > start && t <= end; }).length;
+    const meetingCount = meetings.filter(m => { const t = new Date(m.starts_at).getTime(); return t > start && t <= end; }).length;
+    monthlyExchangeCounts.push(messageCount + meetingCount);
   }
   const quartersWithMeetings = [0, 1, 2, 3].filter(q => {
     const start = nowMs - (q + 1) * 90 * 86400000, end = nowMs - q * 90 * 86400000;
@@ -89,12 +80,22 @@ function computeScore(stats: Stats, prevScore: number | null) {
   const { score: sl, factor: lf } = scoreLongevite(stats);
   const ew = lf < 1 ? { intensite: W.intensite + W.longevite * (1 - lf) * 0.54, reciprocite: W.reciprocite + W.longevite * (1 - lf) * 0.46, longevite: W.longevite * lf } : W;
   const raw = si * ew.intensite + sr * ew.reciprocite + sl * ew.longevite;
-  const finalScore = Math.round(clamp(honeymoon(raw, stats.ageInDays) * temporalDecay(stats.daysSinceLastContact, clamp(stats.totalInteractions / 500))) * 100);
+  const recency = temporalDecay(stats.daysSinceLastContact, clamp(stats.totalInteractions / 500));
+  const finalScore = Math.round(clamp(honeymoon(raw, stats.ageInDays) * recency) * 100);
   const delta = finalScore - (prevScore ?? finalScore);
   let phase: 'growth' | 'stagnant' | 'decline' = 'stagnant';
   if (delta >= PHASE_DELTA) phase = 'growth';
   else if (delta <= -PHASE_DELTA && finalScore <= PHASE_DECLINE_MAX) phase = 'decline';
-  return { finalScore, delta, phase, si: Math.round(si * 100), sr: Math.round(sr * 100), sl: Math.round(sl * 100), confidence: Math.min(90, 30 + stats.totalInteractions * 3) };
+  return {
+    finalScore,
+    delta,
+    phase,
+    si: Math.round(si * 100),
+    sr: Math.round(sr * 100),
+    sl: Math.round(sl * 100),
+    recency: Math.round(recency * 100),
+    confidence: Math.min(90, 30 + stats.totalInteractions * 3),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -207,7 +208,7 @@ Deno.serve(async (req) => {
     let lastScore: number | null = null;
     for (const ma of MONTHS) {
       const nowMs = ma === 0 ? now : now - ma * 30 * 86400000;
-      const stats = buildStats(cm, cmeet, c.created_at, nowMs);
+      const stats = buildStats(cm, cmeet, nowMs);
       if (stats.totalInteractions === 0) continue;
       const r = computeScore(stats, ma === 0 ? (prevByC.get(c.id) ?? null) : lastScore);
       lastScore = r.finalScore;
@@ -221,7 +222,7 @@ Deno.serve(async (req) => {
         const lastInteractionAt = interactionDates.length ? new Date(Math.max(...interactionDates)).toISOString() : null;
         profileRows.push({ organization_id: c.organization_id, contact_id: c.id, profile_version: 1, engagement_score: r.finalScore, score_delta: r.delta, score_phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, global_confidence: r.confidence, updated_at: new Date().toISOString() });
         if (userId) relationshipRows.push({ organization_id: c.organization_id, user_id: userId, contact_id: c.id, engagement_score: r.finalScore, score_evolution: r.delta, phase: r.phase, phase_started_at: new Date().toISOString(), last_contact_at: lastInteractionAt, last_contact_type: cm.length ? 'email' : cmeet.length ? 'meeting' : null, reciprocity_pct: r.sr, snapshot_date: snapDate });
-        personSnapshotRows.push({ organization_id: c.organization_id, contact_id: c.id, score: r.finalScore, phase: r.phase === 'growth' ? 'growing' : r.phase === 'decline' ? 'declining' : 'stable', phase_delta: r.delta, intensity_score: r.si, reciprocity_score: r.sr, recency_score: r.sl, confidence: r.confidence, total_interactions: stats.totalInteractions, email_interactions: cm.length, meeting_interactions: cmeet.length, last_interaction_at: lastInteractionAt, computed_at: new Date().toISOString(), model_version: 'relationship-score-v1', source_type: 'computed', source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred' });
+        personSnapshotRows.push({ organization_id: c.organization_id, contact_id: c.id, score: r.finalScore, phase: r.phase === 'growth' ? 'growing' : r.phase === 'decline' ? 'declining' : 'stable', phase_delta: r.delta, intensity_score: r.si, reciprocity_score: r.sr, longevity_score: r.sl, recency_score: r.recency, confidence: r.confidence, total_interactions: stats.totalInteractions, email_interactions: cm.length, meeting_interactions: cmeet.length, last_interaction_at: lastInteractionAt, computed_at: new Date().toISOString(), model_version: 'relationship-score-v2', source_type: 'computed', source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred' });
 
         if (c.company_id && trackedCompanySet.has(c.company_id)) {
           if (!companyEngaged.has(c.company_id)) companyEngaged.set(c.company_id, []);

@@ -1,3 +1,4 @@
+import { formatPersonName } from '../lib/names'
 import { getSupabase } from '../lib/supabase'
 import { triggerBehaviorSyncs } from '../services/behavior-sync'
 import {
@@ -99,7 +100,7 @@ export async function detectPersonCandidates(workspaceId: string): Promise<Perso
   if (error) throw error
   return rows(object(data).candidates).map((candidate) => ({
     contactId: String(candidate.contact_id),
-    fullName: text(candidate.full_name) ?? 'Personne détectée',
+    fullName: formatPersonName(text(candidate.full_name)) ?? 'Personne détectée',
     email: text(candidate.email),
     roleTitle: text(candidate.role_title),
     companyName: text(candidate.company_name),

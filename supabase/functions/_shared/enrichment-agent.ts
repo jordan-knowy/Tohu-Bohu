@@ -81,7 +81,7 @@ RÉSOLUTION DU VRAI NOM (impératif quand le message signale "NOM ACTUEL PROBABL
 - "confirmed" seulement si LinkedIn nominatif clair ou DEUX sources concordent sur le même prénom/nom.
 - "to_confirm" si une seule source, plausible mais non recoupée.
 - Si rien trouvé, renvoie "fullName" EXACTEMENT identique à la valeur donnée dans "Nom :" ci-dessous (recopie-la telle quelle, ne la restructure PAS) et "fullNameConfidence" à "to_confirm" — n'invente jamais un nom, et ne prends JAMAIS le nom de la société ou du domaine pour un nom de famille.
-FORMAT DU CHAMP "fullName" (uniquement quand un vrai prénom ET nom de famille de la PERSONNE ont été trouvés) : prénom en minuscules, NOM DE FAMILLE EN MAJUSCULES, dans cet ordre — ex. "françois-xavier RAVET", "julie MARTIN".
+FORMAT DU CHAMP "fullName" (uniquement quand un vrai prénom ET nom de famille de la PERSONNE ont été trouvés) : prénom en casse titre, NOM DE FAMILLE EN MAJUSCULES, dans cet ordre — ex. "François-Xavier RAVET", "Julie MARTIN".
 
 ROUTAGE DES SOURCES : suis STRICTEMENT les "SOURCES PRIORITAIRES POUR CE DOMAINE" transmises dans le message plutôt que d'improviser — ce routage est déjà déterminé (registre légal pour une entreprise française, Crunchbase pour une startup, etc.).
 
@@ -133,7 +133,7 @@ const EMIT_PROFILE_PARAMETERS = {
   type: 'object',
   properties: {
     entityType: { type: 'string', enum: ['person', 'company'] },
-    fullName: { type: 'string', description: 'Prénom en minuscules, NOM DE FAMILLE EN MAJUSCULES (ex. "françois-xavier RAVET").' },
+    fullName: { type: 'string', description: 'Prénom en casse titre, NOM DE FAMILLE EN MAJUSCULES (ex. "François-Xavier RAVET").' },
     fullNameConfidence: { type: 'string', enum: ['confirmed', 'to_confirm'] },
     currentRole: { type: ['string', 'null'] },
     currentCompany: { type: ['string', 'null'] },
@@ -240,18 +240,19 @@ async function webSearch(apiKey: string, query: string): Promise<string> {
   }
 }
 
-/** Convention imposée pour tout nom de personne dans l'app : prénom en
- *  minuscules, NOM DE FAMILLE EN MAJUSCULES (ex. "françois-xavier RAVET").
- *  Le dernier "mot" est traité comme le nom de famille — heuristique simple,
- *  suffisante pour l'ordre prénom(s)-puis-nom majoritaire en France. */
+/** Convention imposée pour tout nom de personne dans l'app : prénom en casse
+ *  titre, NOM DE FAMILLE EN MAJUSCULES (ex. "François-Xavier RAVET") — même
+ *  règle que public.format_person_full_name (trigger contacts.full_name) et
+ *  src/lib/names.ts côté frontend. Le premier "mot" est traité comme le
+ *  prénom, le reste comme le nom de famille. */
 export function formatPersonName(raw: string): string {
   const trimmed = raw.trim().replace(/\s+/g, ' ');
   if (!trimmed) return trimmed;
+  const titleCase = (word: string) => word.split('-').map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part).join('-');
   const parts = trimmed.split(' ');
-  if (parts.length === 1) return parts[0].toLowerCase();
-  const lastName = parts[parts.length - 1];
-  const firstNames = parts.slice(0, -1).join(' ');
-  return `${firstNames.toLowerCase()} ${lastName.toUpperCase()}`;
+  if (parts.length === 1) return titleCase(parts[0]);
+  const [firstName, ...rest] = parts;
+  return `${titleCase(firstName)} ${rest.join(' ').toUpperCase()}`;
 }
 
 function safeParseArgs(raw: string): Record<string, unknown> | null {

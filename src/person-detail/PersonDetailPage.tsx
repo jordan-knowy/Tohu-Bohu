@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { verifySuperAdmin } from '../super-admin/service'
-import { getPersonDetail, setPersonArchived, setPersonFavorite, setPersonLock, setPersonRoles, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment } from './service'
+import { getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonRoles, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment } from './service'
 import { BehaviorSection, IdentitySuggestionsSection, RecommendationsSection, RelationSection } from './sections'
 import { ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonDetailData } from './types'
@@ -73,11 +73,23 @@ function ChipMenu({ label, value, color, options, onSelect, icon }: {
 
 function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
-  const [, run] = useBusy()
+  const [busy, run] = useBusy()
   const person = data.person
   const relation = data.relationship
   const confLevel = confidenceLevel(relation.confidence)
   const confFill = confLevel === 'élevé' ? 100 : confLevel === 'moyen' ? 66 : confLevel === 'faible' ? 33 : 0
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState('')
+  const startEditName = () => { setNameValue(person.fullName); setEditingName(true) }
+  const saveName = (event: React.FormEvent) => {
+    event.preventDefault()
+    void run('rename', async () => {
+      await renamePerson(data, nameValue)
+      setEditingName(false)
+      toast('Nom mis à jour — les prochaines recherches d’enrichissement repartiront de ce nom.')
+      await refresh()
+    })
+  }
   const setRelation = (value: string) => void run('relation', async () => {
     await setPersonRoles(data, userId, { relationshipType: value })
     toast(`Type de relation enregistré : ${value}.`)
@@ -93,7 +105,17 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
     <div className="hero-body">
       <div className="hero-left">
         <div>
-          <div className="hero-name">{person.fullName}<FavoriteRow data={data} userId={userId} refresh={refresh} /></div>
+          <div className="hero-name">
+            {editingName
+              ? <form className="hero-name-edit" onSubmit={saveName}>
+                <label className="sr-only" htmlFor="hero-name-input">Nom complet</label>
+                <input id="hero-name-input" className="pp-input" value={nameValue} onChange={(event) => setNameValue(event.target.value)} autoFocus />
+                <button className="contact-copy" disabled={busy !== null}>OK</button>
+                <button type="button" className="contact-copy" onClick={() => setEditingName(false)}>✕</button>
+              </form>
+              : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
+            <FavoriteRow data={data} userId={userId} refresh={refresh} />
+          </div>
           <div className="hero-sub">
             <span>{subtitle || 'Fonction à confirmer'}</span>
             {person.location && <><span className="hero-dot" /><span>{person.location}</span></>}
