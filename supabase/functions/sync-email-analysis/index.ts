@@ -163,6 +163,10 @@ const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 
  *  global se répartisse sur plusieurs relations prioritaires plutôt que d'être
  *  monopolisé par une seule (ex. une boîte qui reçoit beaucoup d'un seul tiers). */
 const PER_CONTACT_MAX_MESSAGES = positiveIntegerEnv('EMAIL_PER_CONTACT_MAX_MESSAGES', 150)
+/** Une relecture demandée depuis une fiche Personne est exhaustive pour ce
+ * correspondant dans la fenêtre autorisée. Elle a son propre plafond, plus
+ * élevé que le budget partagé d'une synchronisation globale. */
+const TARGET_CONTACT_MAX_MESSAGES = positiveIntegerEnv('EMAIL_TARGET_CONTACT_MAX_MESSAGES', 2000)
 const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
 /** Nombre de connecteurs traités par tick du cron de reprise du backfill —
  *  reste faible pour que le temps d'exécution total du tick reste borné,
@@ -210,7 +214,11 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
     const targetQuery = targetEmails.length
       ? ` {${targetEmails.flatMap((email) => [`from:${email}`, `to:${email}`]).join(' ')}}`
       : ''
-    const query = `newer_than:${DISCOVERY_LOOKBACK_DAYS}d -category:promotions${beforeDate ? ` before:${beforeDate}` : ''}${targetQuery}`
+    // Une recherche ciblée relit tout l'historique que Gmail peut retourner
+    // pour ces identités ; la fenêtre glissante ne concerne que les backfills
+    // globaux, où elle est reprise progressivement par curseur.
+    const lookbackQuery = targetEmails.length ? '' : `newer_than:${DISCOVERY_LOOKBACK_DAYS}d `
+    const query = `${lookbackQuery}-category:promotions${beforeDate ? ` before:${beforeDate}` : ''}${targetQuery}`
     const params = new URLSearchParams({
       q: query,
       maxResults: String(Math.min(500, DISCOVERY_MAX_MESSAGES - ids.length)),
@@ -325,7 +333,7 @@ async function microsoftTargetMessages(token: string, ownEmail: string, targetEm
   for (const targetEmail of targetEmails) {
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/messages?$top=100&$search=${encodeURIComponent(`"participants:${targetEmail}"`)}&$select=${select}`
     let fetched = 0
-    while (nextUrl && fetched < PER_CONTACT_MAX_MESSAGES) {
+    while (nextUrl && fetched < TARGET_CONTACT_MAX_MESSAGES) {
       const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' } })
       if (!response.ok) throw new Error(`Microsoft Graph ciblé ${response.status}`)
       const page = await response.json()
@@ -355,6 +363,96 @@ async function microsoftTargetMessages(token: string, ownEmail: string, targetEm
   })
   const oldestSentAt = messages.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
   return { messages, truncated, oldestSentAt }
+}
+
+type MeetingCorpus = { excerpts: string[]; meetingCount: number }
+
+function normalizedSpeaker(value: string | null | undefined): string {
+  return String(value ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Une transcription n'est utilisée que si le préfixe de locuteur correspond
+ * exactement à une identité connue du contact. En cas d'ambiguïté, elle reste
+ * visible dans l'historique mais n'alimente pas l'inférence comportementale. */
+function attributedTranscriptExcerpt(transcript: string, identities: string[]): string | null {
+  const speakers = new Set(identities
+    .flatMap((identity) => {
+      const email = cleanEmail(identity)
+      return [identity, email.includes('@') ? email.split('@')[0] : '']
+    })
+    .map(normalizedSpeaker)
+    .filter((identity) => identity.length >= 4))
+  if (!speakers.size) return null
+
+  const attributed = String(transcript ?? '').split(/\r?\n/).flatMap((line) => {
+    const match = line.trim().match(/^(.+?)(?:\s+\(\d{1,2}:\d{2}(?::\d{2})?\))?\s*:\s*(.+)$/)
+    if (!match || !speakers.has(normalizedSpeaker(match[1]))) return []
+    const content = sanitizeBody(match[2])
+    return content ? [content] : []
+  })
+  if (!attributed.length) return null
+  return `[Transcription de réunion]\n${attributed.join('\n')}`.slice(0, 2400)
+}
+
+async function loadMeetingCorpus(
+  supabase: ReturnType<typeof createClient>,
+  organizationId: string,
+  contactIds: string[],
+  contactNames: Map<string, string>,
+): Promise<Map<string, MeetingCorpus>> {
+  const result = new Map<string, MeetingCorpus>()
+  if (!contactIds.length) return result
+  const { data: participantRows, error: participantError } = await supabase.from('meeting_participants')
+    .select('meeting_id,contact_id,email,display_name')
+    .eq('organization_id', organizationId)
+    .eq('is_current_user', false)
+    .in('contact_id', contactIds)
+    .limit(2000)
+  if (participantError) throw participantError
+
+  const participantsByMeeting = new Map<string, any[]>()
+  for (const participant of participantRows ?? []) {
+    if (!participant.meeting_id || !participant.contact_id) continue
+    participantsByMeeting.set(String(participant.meeting_id), [
+      ...(participantsByMeeting.get(String(participant.meeting_id)) ?? []),
+      participant,
+    ])
+  }
+  const meetingIds = [...participantsByMeeting.keys()]
+  if (!meetingIds.length) return result
+  const { data: transcriptRows, error: transcriptError } = await supabase.from('meeting_transcripts')
+    .select('meeting_id,transcript_text,created_at')
+    .eq('organization_id', organizationId)
+    .eq('consent_status', 'granted')
+    .in('meeting_id', meetingIds)
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (transcriptError) throw transcriptError
+
+  const usedMeetingsByContact = new Map<string, Set<string>>()
+  for (const transcript of transcriptRows ?? []) {
+    const meetingId = String(transcript.meeting_id ?? '')
+    for (const participant of participantsByMeeting.get(meetingId) ?? []) {
+      const contactId = String(participant.contact_id)
+      const excerpt = attributedTranscriptExcerpt(String(transcript.transcript_text ?? ''), [
+        String(participant.display_name ?? ''),
+        String(participant.email ?? ''),
+        contactNames.get(contactId) ?? '',
+      ])
+      if (!excerpt) continue
+      const used = usedMeetingsByContact.get(contactId) ?? new Set<string>()
+      if (used.has(meetingId)) continue
+      used.add(meetingId)
+      usedMeetingsByContact.set(contactId, used)
+      const current = result.get(contactId) ?? { excerpts: [], meetingCount: 0 }
+      current.excerpts.push(excerpt)
+      current.meetingCount++
+      result.set(contactId, current)
+    }
+  }
+  return result
 }
 
 /** Capture le historyId Gmail courant juste après un backfill complet — point
@@ -539,7 +637,7 @@ async function analyze(
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
   const previous = Object.keys(previousProfile).length ? JSON.stringify(previousProfile).slice(0, 8000) : '{}'
   const prompt = `Tu construis le profil comportemental évolutif de ${name}, ${role === 'responsable' ? 'responsable de compte connecté' : 'personne suivie'}.
-Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les nouveaux extraits. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
+Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les emails ou prononcé dans les passages de réunion explicitement attribués. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
 
 Règles impératives :
 - aucune pathologie, donnée sensible ou personnalité essentialisée ;
@@ -549,7 +647,7 @@ Règles impératives :
 - status vaut "observed" si plusieurs preuves convergent, "emerging" si la tendance reste fragile, "insufficient" sans preuve ;
 - pour "insufficient", score, label et observation valent null ;
 - score et confidence sont compris entre 0 et 100 ;
-- evidence_count compte les preuves distinctes ; source_types contient "email" pour ces extraits ;
+- evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript" ;
 - evolution vaut "rising", "stable", "declining", "mixed" ou null ;
 - le score des axes va du pôle gauche/bas (0) au pôle droit/haut (100) : assertiveness conciliant→assertif, warmth distant→chaleureux, tempo rapide→analytique, openness innovant→conforme, orientation tâche→relation, certainty nuancé→tranché.
 
@@ -733,15 +831,27 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
     let targetEmails: string[] = []
     if (manualContactId) {
-      const { data: target, error: targetError } = await supabase.from('contacts')
-        .select('email,secondary_emails')
-        .eq('organization_id', organizationId)
-        .eq('id', manualContactId)
-        .is('merged_into_contact_id', null)
-        .maybeSingle()
+      const [{ data: target, error: targetError }, { data: targetAliases, error: aliasError }] = await Promise.all([
+        supabase.from('contacts')
+          .select('email,secondary_emails')
+          .eq('organization_id', organizationId)
+          .eq('id', manualContactId)
+          .is('merged_into_contact_id', null)
+          .maybeSingle(),
+        supabase.from('contact_identity_aliases')
+          .select('identity_value')
+          .eq('organization_id', organizationId)
+          .eq('contact_id', manualContactId)
+          .eq('identity_type', 'email'),
+      ])
       if (targetError) throw targetError
+      if (aliasError) throw aliasError
       if (!target) throw new Error('Personne introuvable dans cet espace.')
-      targetEmails = [target.email, ...(target.secondary_emails ?? [])].map(cleanEmail).filter(Boolean)
+      targetEmails = [...new Set([
+        target.email,
+        ...(target.secondary_emails ?? []),
+        ...(targetAliases ?? []).map((alias: any) => alias.identity_value),
+      ].map(cleanEmail).filter(Boolean))]
       if (!targetEmails.length) throw new Error('Aucune adresse email disponible pour cette personne.')
     }
     // Reprise de backfill : si une passe précédente s'est arrêtée avant la fin
@@ -759,18 +869,28 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           messages: rawScan.messages.filter((message) =>
             [message.from.email, ...message.to.map((recipient) => recipient.email)].some((email) => targetEmails.includes(cleanEmail(email))),
           ),
-          truncated: false,
         }
       : rawScan
     const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
-    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
+    const [{ data: existingContacts }, { data: identityAliases, error: identityAliasError }] = await Promise.all([
+      supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null),
+      supabase.from('contact_identity_aliases').select('contact_id,identity_value').eq('organization_id', organizationId).eq('identity_type', 'email'),
+    ])
+    if (identityAliasError) throw identityAliasError
     const contactByEmail = new Map<string, any>()
+    const contactById = new Map<string, any>()
     for (const item of existingContacts ?? []) {
+      contactById.set(String(item.id), item)
       for (const email of [item.email, ...(item.secondary_emails ?? [])]) {
         const normalized = cleanEmail(email)
         if (normalized) contactByEmail.set(normalized, item)
       }
+    }
+    for (const alias of identityAliases ?? []) {
+      const contact = contactById.get(String(alias.contact_id))
+      const normalized = cleanEmail(alias.identity_value)
+      if (contact && normalized) contactByEmail.set(normalized, contact)
     }
 
     // Qui a droit au traitement complet (corps + stockage) se décide par
@@ -779,7 +899,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // les vraies relations derrière du volume automatisé récent.
     const { data: trackedCompanyRows } = await supabase.from('companies').select('domain').eq('organization_id', organizationId).eq('is_tracked', true)
     const trackedDomains = new Set((trackedCompanyRows ?? []).map((row: any) => String(row.domain ?? '').toLowerCase().trim()).filter(Boolean))
-    const relevance = selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, ANALYSIS_MAX_MESSAGES)
+    const relevance = manualContactId
+      ? { selectedIds: new Set(messages.map((message) => message.id)), contactsPrioritized: targetEmails.length ? 1 : 0 }
+      : selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, ANALYSIS_MAX_MESSAGES)
     for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
     if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
 
@@ -861,7 +983,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
-      else if (message.body && primaryContact.is_tracked === true) contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), message.body])
+      else if (message.body && (primaryContact.is_tracked === true || primaryContact.id === manualContactId)) {
+        contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email]\n${message.body}`])
+      }
     })
 
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Détection des personnes et organisations', progress: 60 }).eq('id', syncJobId)
@@ -879,23 +1003,55 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     }
 
     let peopleAnalyzed = 0
+    const emailCandidateIds = [...contactCorpus.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, manualContactId ? 1 : 24)
+      .map(([contactId]) => contactId)
+    const meetingOnlyCandidateIds = manualContactId
+      ? [manualContactId]
+      : [...contactById.values()]
+        .filter((contact) => contact.is_tracked === true && !contactCorpus.has(String(contact.id)))
+        .slice(0, 24)
+        .map((contact) => String(contact.id))
+    const meetingCandidateIds = [...new Set([
+      ...emailCandidateIds,
+      ...meetingOnlyCandidateIds,
+    ])]
+    let meetingCorpus = new Map<string, MeetingCorpus>()
+    try {
+      meetingCorpus = await loadMeetingCorpus(
+        supabase,
+        organizationId,
+        meetingCandidateIds,
+        new Map([...contactById.values()].map((contact) => [String(contact.id), String(contact.full_name ?? '')])),
+      )
+    } catch (error) {
+      analysisErrors.push(`transcriptions de réunion: ${errorMessage(error)}`)
+    }
+    const combinedCorpus = new Map<string, string[]>()
+    for (const contactId of meetingCandidateIds) {
+      const excerpts = [...(contactCorpus.get(contactId) ?? []), ...(meetingCorpus.get(contactId)?.excerpts ?? [])]
+      if (excerpts.length) combinedCorpus.set(contactId, excerpts)
+    }
     // Toute nouvelle preuve peut affiner un profil existant. Le seuil de trois
     // porte sur le corpus attribué total, pas sur la seule passe courante.
-    const candidates = [...contactCorpus.entries()]
+    const candidates = [...combinedCorpus.entries()]
       .filter(([contactId, excerpts]) => excerpts.length > 0 && (!manualContactId || contactId === manualContactId))
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, manualContactId ? 1 : 24)
     for (let i = 0; i < candidates.length; i++) {
       const [contactId, excerpts] = candidates[i]
       try {
-        const contact = [...contactByEmail.values()].find((item) => item.id === contactId)
+        const contact = contactById.get(contactId) ?? [...contactByEmail.values()].find((item) => item.id === contactId)
+        const attributedMeetingCount = meetingCorpus.get(contactId)?.meetingCount ?? 0
         const [{ count: interactionCountRaw, error: countError }, { data: previousRaw, error: previousError }] = await Promise.all([
           supabase.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('contact_id', contactId).eq('direction', 'inbound'),
           supabase.from('cognitive_profiles').select('cognitive_profile_data').eq('organization_id', organizationId).eq('contact_id', contactId).eq('profile_version', 1).maybeSingle(),
         ])
         if (countError) throw countError
         if (previousError) throw previousError
-        const interactionCount = interactionCountRaw ?? 0
+        const messageCount = interactionCountRaw ?? 0
+        const interactionCount = messageCount + attributedMeetingCount
         if (interactionCount < 3) continue
         const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
@@ -914,16 +1070,18 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           behavioral_analysis_data: structuredSignals,
           communication_style_data: asRecord(cognitiveProfileData.exchange_styles),
           cognitive_profile_data: cognitiveProfileData,
-          source_message_count: interactionCount,
+          source_message_count: messageCount,
+          source_meeting_count: attributedMeetingCount,
           source_interaction_count: interactionCount,
           maturity_level: maturityFor(interactionCount),
-          analysis_version: 2,
+          analysis_version: 3,
           last_analyzed_at: now,
-          updated_from: [provider, 'email'],
+          updated_from: attributedMeetingCount ? [provider, 'email', 'meeting_transcript'] : [provider, 'email'],
           updated_at: now,
         }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
         if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')
-        const signals = structuredSignals.map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait, text: item.observation, inference: item.trait, inference_level: 'observable', confidence: pct(item.confidence), source_type: `email_${provider}_analysis`, source_ref: `sync:${now}`, observed_at: now }))
+        const signalSource = attributedMeetingCount ? 'mixed_exchange_analysis' : `email_${provider}_analysis`
+        const signals = structuredSignals.map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait, text: item.observation, inference: item.trait, inference_level: 'observable', confidence: pct(item.confidence), source_type: signalSource, source_ref: `sync:${now}`, observed_at: now }))
         if (signals.length) {
           const { error: signalsError } = await supabase.from('behavioral_signals').insert(signals)
           if (signalsError) throw signalsError
@@ -1073,13 +1231,24 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       return { success: true, messages: 0 }
     }
 
-    const { data: existingContacts } = await supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null)
+    const [{ data: existingContacts }, { data: identityAliases, error: identityAliasError }] = await Promise.all([
+      supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null),
+      supabase.from('contact_identity_aliases').select('contact_id,identity_value').eq('organization_id', organizationId).eq('identity_type', 'email'),
+    ])
+    if (identityAliasError) throw identityAliasError
     const contactByEmail = new Map<string, any>()
+    const contactById = new Map<string, any>()
     for (const item of existingContacts ?? []) {
+      contactById.set(String(item.id), item)
       for (const email of [item.email, ...(item.secondary_emails ?? [])]) {
         const normalized = cleanEmail(email)
         if (normalized) contactByEmail.set(normalized, item)
       }
+    }
+    for (const alias of identityAliases ?? []) {
+      const contact = contactById.get(String(alias.contact_id))
+      const normalized = cleanEmail(alias.identity_value)
+      if (contact && normalized) contactByEmail.set(normalized, contact)
     }
 
     let storedMessages = 0

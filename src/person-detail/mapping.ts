@@ -475,6 +475,9 @@ export type PersonDetailRaw = {
   memoryEntries: Row[]
   meetings: Row[]
   messages: Row[]
+  meetingCount?: number
+  messageCount?: number
+  authoredMessageCount?: number
   connectors: Row[]
   feedback: Row[]
   profileNames: Map<string, string>
@@ -505,8 +508,15 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const score = num(latestSnapshot.score) ?? num(latestHistory.score) ?? num(relationshipSnapshot.engagement_score) ?? num(cognitiveProfile.engagement_score)
   // Seules les productions attribuées à la personne comptent pour ouvrir son
   // profil. Les signaux de veille externes ne sont pas des interactions.
-  const authoredMessages = raw.messages.filter((message) => message.direction === 'inbound').length
-  const analyzedInteractions = num(cognitiveProfile.source_interaction_count) ?? num(cognitiveProfile.source_message_count) ?? authoredMessages
+  const authoredMessages = raw.authoredMessageCount
+    ?? raw.messages.filter((message) => message.direction === 'inbound').length
+  const meetingCount = raw.meetingCount ?? raw.meetings.length
+  const messageCount = raw.messageCount ?? raw.messages.length
+  const analyzedEmailInteractions = num(cognitiveProfile.source_message_count) ?? 0
+  const analyzedMeetingInteractions = num(cognitiveProfile.source_meeting_count) ?? 0
+  const analyzedInteractions = num(cognitiveProfile.source_interaction_count)
+    ?? (analyzedEmailInteractions + analyzedMeetingInteractions)
+  const availableInteractions = authoredMessages + meetingCount
 
   const providerCounts = new Map<string, number>()
   for (const message of raw.messages) {
@@ -554,9 +564,9 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       phaseDelta: num(latestSnapshot.phase_delta) ?? num(cognitiveProfile.score_delta) ?? scoreDelta(scoreHistory),
       confidence: num(latestSnapshot.confidence) ?? num(cognitiveProfile.global_confidence),
       computedAt: text(latestSnapshot.computed_at) ?? text(latestHistory.snapshot_date) ?? text(relationshipSnapshot.snapshot_date),
-      totalInteractions: raw.meetings.length + raw.messages.length,
-      emailInteractions: raw.messages.length,
-      meetingInteractions: raw.meetings.length,
+      totalInteractions: meetingCount + messageCount,
+      emailInteractions: messageCount,
+      meetingInteractions: meetingCount,
       firstInteractionAt: allDates[0] ?? null,
       lastInteractionAt: allDates.at(-1) ?? text(relationshipSnapshot.last_contact_at),
       dimensions: {
@@ -576,7 +586,10 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       executiveSummary,
       globalConfidence: num(cognitiveProfile.global_confidence),
       cognitiveMode: text(cognitiveProfile.cognitive_mode),
+      availableInteractions,
       analyzedInteractions,
+      analyzedEmailInteractions,
+      analyzedMeetingInteractions,
       profileMinimumInteractions: MIN_COGNITIVE_PROFILE_INTERACTIONS,
       minimumInteractions: MIN_BEHAVIOR_INTERACTIONS,
       cognitiveProfile: buildCognitiveProfile(cognitiveProfile, analyzedInteractions),

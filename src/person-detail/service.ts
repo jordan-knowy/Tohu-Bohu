@@ -25,7 +25,8 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     legacyScoresResult, legacyCareerResult, relationshipResult, cognitiveResult, behavioralResult,
     recommendationsResult, detailsResult, careerResult, memoryResult,
     participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
-    nameSuggestionResult, mergeSuggestionsResult,
+    nameSuggestionResult, mergeSuggestionsResult, participantCountResult,
+    messageCountResult, authoredMessageCountResult,
   ] = await Promise.all([
     client.from('contacts').select('*,companies(*)').eq('organization_id', workspaceId).eq('id', personId).is('merged_into_contact_id', null).maybeSingle(),
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
@@ -49,6 +50,9 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('resource_lock').select('locked_by').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
     client.from('contact_name_suggestions').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     client.from('contact_merge_suggestions').select('*').eq('organization_id', workspaceId).eq('status', 'pending').or(`contact_a_id.eq.${personId},contact_b_id.eq.${personId}`),
+    client.from('meeting_participants').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
+    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
+    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('direction', 'inbound'),
   ])
 
   if (contactResult.error) {
@@ -79,7 +83,12 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   const nameSuggestionRow = object(optional(nameSuggestionResult, 'Suggestion de nom', degradedReasons))
   const mergeSuggestionRows = rows(optional(mergeSuggestionsResult, 'Suggestions de fusion', degradedReasons))
 
-  const meetings = participants.map((row) => object(row.meetings)).filter((row) => row.id)
+  const meetings = [...new Map(
+    participants
+      .map((row) => object(row.meetings))
+      .filter((row) => row.id)
+      .map((meeting) => [String(meeting.id), meeting]),
+  ).values()]
 
   const profileIds = new Set<string>()
   if (text(settings.primary_owner_user_id)) profileIds.add(String(settings.primary_owner_user_id))
@@ -111,6 +120,11 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     memoryEntries,
     meetings,
     messages,
+    meetingCount: participantCountResult.error ? meetings.length : (participantCountResult.count ?? meetings.length),
+    messageCount: messageCountResult.error ? messages.length : (messageCountResult.count ?? messages.length),
+    authoredMessageCount: authoredMessageCountResult.error
+      ? messages.filter((message) => message.direction === 'inbound').length
+      : (authoredMessageCountResult.count ?? 0),
     connectors,
     feedback,
     profileNames,

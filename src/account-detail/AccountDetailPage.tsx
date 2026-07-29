@@ -17,8 +17,10 @@ import {
   updateRecommendationStatus,
 } from './service'
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
+import { V48AccountLiveView, V48AccountRelationView, V48AccountSourceNote } from './V48AccountViews'
 
 type PageContext = { session: Session; workspaceId: string }
+type AccountDetailTab = 'relation' | 'live'
 
 const WATCH_FAMILIES = ['gouvernance', 'dirigeants', 'recrutements', 'événements légaux', 'financement', 'presse', 'appels d’offres', 'renouvellements', 'signaux métier', 'changements d’interlocuteurs']
 const FACT_LABELS: Record<string, string> = {
@@ -397,32 +399,31 @@ function EnrichAccountButton({ companyId, accountName }: { companyId: string; ac
   return <span className="account-enrich"><button className="kfav-star" onClick={() => void run()} disabled={busy} title="Enrichir maintenant (super admin)" aria-label="Enrichir maintenant"><Icon name="sparkles" /></button>{feedback && <small>{feedback}</small>}</span>
 }
 
-function AccountHero({ data, toggleFavorite }: { data: AccountDetailData; toggleFavorite: () => Promise<void> }) {
+function AccountHero({ data, toggleFavorite, openPeople }: { data: AccountDetailData; toggleFavorite: () => Promise<void>; openPeople: () => void }) {
   const account = data.account
-  const relation = data.relationship
-  return <section className={`hero-header account-detail-hero ${account.archivedAt ? 'archived' : ''}`}>
-    <div className="hero-body">
-      <div className="hero-left">
-        <div className="hero-av">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}</div>
-        <div className="account-hero-copy">
-          <h1 className="hero-name">{account.name}<button className={`hero-fav ${account.favorite ? 'on' : ''}`} onClick={() => void toggleFavorite()} aria-label={account.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={account.favorite}>
+  return <section className={`hero-header account-detail-hero v48-identity-card ${account.archivedAt ? 'archived' : ''}`}>
+    <div className="hero-body v48-identity-body">
+      <div className="hero-left v48-identity-left">
+        <div className="v48-account-avatar">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}<i /></div>
+        <div className="account-hero-copy v48-identity-copy">
+          <div className="v48-eyebrow">Portefeuille / {account.name}</div>
+          <div className="v48-name-row"><h1 className="hero-name">{account.name}<button className={`hero-fav ${account.favorite ? 'on' : ''}`} onClick={() => void toggleFavorite()} aria-label={account.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={account.favorite}>
             <svg viewBox="0 0 24 24" fill={account.favorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7"><path d="m12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9L12 2.5Z" /></svg>
-          </button></h1>
-          <div className="hero-sub"><span>{account.sector ?? 'Secteur à confirmer'}</span><span className="hero-dot" /><span>{account.location ?? 'Ville à confirmer'}</span>{account.offerScope && <><span className="hero-dot" /><span>{account.offerScope}</span></>}</div>
-          <div className="hero-meta"><span className="crel2-chip"><span className="crel2-k">Relation</span><span className="crel2-dot" /><span className="crel2-v">{account.relationshipStatus ?? account.accountType ?? 'À confirmer'}</span><span className="crel2-def">fidéliser</span><span className="crel2-c">▼</span></span></div>
+          </button></h1><span className="v48-live"><i />Live</span></div>
+          <div className="hero-sub"><span>{account.sector ?? 'Secteur à confirmer'}</span><span className="hero-dot" /><span>{account.location ?? 'Ville à confirmer'}</span>{account.relationshipStartedAt && <><span className="hero-dot" /><span>{account.accountType?.toLowerCase() || 'relation'} depuis {formatDate(account.relationshipStartedAt)}</span></>}</div>
+          <div className="hero-meta v48-account-chips">
+            <span className="crel2-chip"><span className="crel2-k">Relation</span><span className="crel2-dot" /><span className="crel2-v">{account.relationshipStatus ?? account.accountType ?? 'À confirmer'}</span><span className="crel2-c">⌄</span></span>
+            <button className="v48-account-chip" onClick={openPeople}><span className="v48-account-chip-label">Interlocuteurs</span><span className="v48-account-chip-logo">{data.people.length}</span><strong>Organigramme</strong><span>→</span></button>
+            <span className="v48-account-chip"><span className="v48-account-chip-label">Ancienneté</span><strong>{tenureLabel(account.relationshipStartedAt)}</strong></span>
+          </div>
         </div>
       </div>
-      <div className="hero-right account-hero-right">
-        <div className="hero-score-block"><div className="hero-score-val">{relation.score ?? '—'}</div><div className="hero-score-label">NPS compte · inféré</div><div className={`hero-score-trend ${relation.phaseDelta !== null && relation.phaseDelta < 0 ? 'down' : ''}`}>{relation.phaseDelta === null ? 'variation indisponible' : `${relation.phaseDelta > 0 ? '↗ +' : relation.phaseDelta < 0 ? '↘ ' : '→ '}${relation.phaseDelta} friction financière`}</div></div>
-        <span className="hero-divider" />
-        <div className="hero-score-block hero-int"><div className="hero-score-val">{data.people.length}</div><div className="hero-score-label">Interlocuteurs actifs</div></div>
-        <span className="hero-divider" />
-        <div className="account-confidence"><b>{confidenceLevel(relation.confidence) ?? '—'}</b><span>Confiance</span></div>
+      <div className="hero-right v48-identity-right">
+        <div className="v48-owner-card">
+          <span className="v48-owner-avatar">{initials(account.primaryOwnerName ?? 'À confirmer')}</span>
+          <div><span>Owner du compte</span><strong>{account.primaryOwnerName ?? 'À confirmer'}</strong><small>Organisation</small></div>
+        </div>
       </div>
-    </div>
-    <div className="ctx-grid hdr-conn">
-      <div className="hdr-conn-tiles">{data.sources.length ? data.sources.map((source) => <span className={`src-tile ${['connected', 'ready', 'active'].includes(source.status) ? 'on' : ''}`} key={source.provider}><SourceIcon provider={source.provider} label={source.label} /><span className="src-name">{source.label}</span><span className={`src-led ${['connected', 'ready', 'active'].includes(source.status) ? 'on' : 'off'}`} /></span>) : <span className="src-tile"><span className="src-name">Aucune source contributrice confirmée</span><span className="src-led off" /></span>}</div>
-      <Link className="ctx-manage" to="/app/connectors">Gérer les connecteurs <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg></Link>
     </div>
   </section>
 }
@@ -433,6 +434,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const [data, setData] = useState<AccountDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [watchOpen, setWatchOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<AccountDetailTab>('relation')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const refresh = useCallback(async () => {
     try { setError(null); setData(await getAccountDetail(context.workspaceId, accountId)) }
@@ -457,6 +459,10 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     await setAccountLock(data, context.session.user.id, !account.lockedByMe)
     await refresh()
   }
+  const showDetails = () => {
+    setActiveTab('live')
+    window.requestAnimationFrame(() => document.getElementById('account-details-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   return <div className="pp account-pp">
     <div className="pp-back account-toolbar">
       <Link to="/app/accounts">← Comptes</Link>
@@ -469,33 +475,18 @@ export default function AccountDetailPage({ context }: { context: PageContext })
         <button className="kfav-star" onClick={() => void toggleArchived()} title={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} aria-label={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}><Icon name={archived ? 'restore' : 'trash'} /></button>
       </div>
     </div>
-    <div className="page">
-      <main className="col-main">
-        <AccountHero data={data} toggleFavorite={toggleFavorite} />
-        {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
-        <div className="kctrl account-kctrl">
-          <button className="acct-block" onClick={() => document.getElementById('account-people')?.scrollIntoView({ behavior: 'smooth' })}>
-            <span className="acct-mono acct-num">{data.people.length}</span><span className="acct-info"><span className="acct-eyebrow">Contacts sur le compte</span><span className="acct-name">{data.people.length} interlocuteur{data.people.length > 1 ? 's' : ''} actif{data.people.length > 1 ? 's' : ''}</span></span><span className="acct-btn">Voir l’organigramme →</span>
-          </button>
-          <div className="kowner">
-            <span className="kowner-av">{initials(account.primaryOwnerName ?? 'À confirmer')}</span><span className="kowner-b"><span className="kowner-l">Owner de la fiche</span><span className="kowner-n">{account.primaryOwnerName ?? 'À confirmer'}</span><span className="kowner-btn">Changer l’owner</span></span>
-            <span className="kvis"><span className="kvis-badge org"><span className="kvi"><Icon name="share" /></span>Organisation<span className="chev">⌄</span></span></span>
-          </div>
-        </div>
-        <RelationshipBand data={data} userId={context.session.user.id} refresh={refresh} />
-        <Health data={data} />
-        <Recommendations data={data} userId={context.session.user.id} refresh={refresh} />
-        <PeopleMap people={data.people} navigate={navigate} />
-        <TeamMemory data={data} />
-        <Memory data={data} userId={context.session.user.id} refresh={refresh} />
-        <div className="pp-footnote">Tohu · {account.name} — chaque bloc est alimenté par des données persistées et sourcées. Les informations non vérifiées sont marquées « à confirmer ».</div>
-      </main>
-      <aside className="rail account-rail">
-        <WatchCard data={data} open={() => setWatchOpen(true)} />
-        <Firmographics data={data} />
-        <Signals data={data} userId={context.session.user.id} refresh={refresh} />
-      </aside>
-    </div>
+    {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
+    <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
+      <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
+      <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Live &amp; Signaux</button>
+      {activeTab === 'live' && <button type="button" className="v48-tabs-action" onClick={showDetails}>
+        <Icon name="building" /> Coordonnées
+      </button>}
+    </nav>
+    <AccountHero data={data} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} />
+    {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><V48AccountRelationView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} /></main>}
+    {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
+    <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
   </div>
 }

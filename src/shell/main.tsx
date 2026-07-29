@@ -60,7 +60,7 @@ const PAGE_TITLES: Array<{ test: (path: string) => boolean; title: string; subti
 
 // Vues portées depuis le shell historique : elles gardent leur conteneur .content
 // (largeur/padding d'origine) là où les vues React natives utilisent .ra-content.
-const LEGACY_CONTENT_PATHS = new Set(['/app/ask', '/app/home', '/app/connectors', '/app/profile', '/app/account'])
+const LEGACY_CONTENT_PATHS = new Set(['/app/ask', '/app/home', '/app/connectors', '/app/account'])
 
 function activeNav(path: string): string {
   if (path === '/app/ask') return 'cerveau'

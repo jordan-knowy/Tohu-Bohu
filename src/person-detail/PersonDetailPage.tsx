@@ -4,12 +4,12 @@ import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { verifySuperAdmin } from '../super-admin/service'
 import { getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonRoles, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment } from './service'
-import { BehaviorSection, IdentitySuggestionsSection, RecommendationsSection, RelationSection } from './sections'
-import { ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
+import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonDetailData } from './types'
-import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, scoreTone, useBusy, useToast } from './ui'
+import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
 
 type PageContext = { workspaceId: string; userId: string }
+type PersonDetailTab = 'profile' | 'relation' | 'live'
 
 const RELATION_COLORS: Record<string, string> = {
   Prospect: '#2896A8', Client: '#2EA86A', Partenaire: '#6E50C8', 'Fournisseur / Prestataire': '#C97A20',
@@ -77,7 +77,6 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
   const person = data.person
   const relation = data.relationship
   const confLevel = confidenceLevel(relation.confidence)
-  const confFill = confLevel === 'élevé' ? 100 : confLevel === 'moyen' ? 66 : confLevel === 'faible' ? 33 : 0
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const startEditName = () => { setNameValue(person.fullName); setEditingName(true) }
@@ -101,11 +100,17 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
     await refresh()
   })
   const subtitle = [person.jobTitle, data.employment?.accountName].filter(Boolean).join(' · ')
-  return <div className="hero-header">
-    <div className="hero-body">
-      <div className="hero-left">
-        <div>
-          <div className="hero-name">
+  return <div className="hero-header v48-identity-card">
+    <div className="hero-body v48-identity-body">
+      <div className="hero-left v48-identity-left">
+        <div className="v48-avatar-wrap">
+          {person.avatarUrl ? <img alt={person.fullName} src={person.avatarUrl} /> : <span>{initials(person.fullName)}</span>}
+          <i aria-hidden="true" />
+        </div>
+        <div className="v48-identity-copy">
+          <div className="v48-eyebrow">Personnes / {person.fullName}</div>
+          <div className="v48-name-row">
+            <div className="hero-name">
             {editingName
               ? <form className="hero-name-edit" onSubmit={saveName}>
                 <label className="sr-only" htmlFor="hero-name-input">Nom complet</label>
@@ -115,6 +120,8 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
               </form>
               : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
             <FavoriteRow data={data} userId={userId} refresh={refresh} />
+            </div>
+            <span className="v48-live"><i />Live</span>
           </div>
           <div className="hero-sub">
             <span>{subtitle || 'Fonction à confirmer'}</span>
@@ -136,37 +143,34 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
               options={DECISION_ROLES.map((value) => ({ value, hint: ROLE_POWER[value] ?? '' }))}
               onSelect={setRole}
             />
+            {data.employment && <Link className="v48-account-chip" to={`/app/accounts/${data.employment.accountId}`}>
+              <span className="v48-account-chip-label">Entreprise</span>
+              <span className="v48-account-chip-logo">{initials(data.employment.accountName)}</span>
+              <strong>{data.employment.accountName}</strong>
+              <span>→</span>
+            </Link>}
           </div>
-          {data.summary
-            ? <div className="k-accroche">
-              <span className="k-acc-ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="#6E50C8"><path d="M12 2l1.9 5.8L20 9l-5.4 1.6L12 16l-1.6-5.4L4 9l6.1-1.2z" /></svg></span>
-              <span><b>{data.summary.text}</b></span>
-              <span className="k-acc-src">{provenanceLabel(data.summary.provenance)}</span>
-            </div>
-            : <div className="k-accroche k-acc-empty">
-              <span>Tohu ne dispose pas encore de suffisamment d’éléments pour produire une synthèse fiable.</span>
-            </div>}
         </div>
       </div>
-      <div className="hero-right">
-        <div className="hero-score-block">
-          <div className="hero-score-val" style={{ color: relation.score === null ? 'rgba(212,197,245,.4)' : scoreTone(relation.score) }}>{relation.score ?? '—'}</div>
-          <div className="hero-score-label">NPS relationnel</div>
-          <div className="hero-score-trend" style={{ color: 'var(--sage-l)' }}>{relation.score === null ? 'données insuffisantes' : phaseLabel(relation.phase)}</div>
-        </div>
-        <div className="hero-divider" />
-        <div className="hero-conf-block">
-          <div className="hero-conf-ring" style={{ background: confLevel === null ? 'conic-gradient(#3a2f66 0 100%)' : `conic-gradient(var(--violet) 0 ${confFill}%,rgba(255,255,255,.1) ${confFill}% 100%)` }}>
-            <span className="hero-conf-val word">{confLevel ?? '—'}</span>
+      <div className="hero-right v48-identity-right">
+        <div className="v48-reliability">
+          <span>Indice de fiabilité</span>
+          <strong className={`v48-reliability-${confLevel ?? 'none'}`}>{confLevel ? confLevel.charAt(0).toUpperCase() + confLevel.slice(1) : 'À confirmer'}</strong>
+          <div>
+            <span><b>{relation.meetingInteractions}</b> réunion{relation.meetingInteractions > 1 ? 's' : ''}</span>
+            <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''} retrouvé{relation.totalInteractions > 1 ? 's' : ''}</span>
           </div>
-          <div className="hero-conf-label">Confiance</div>
         </div>
-        <div className="hero-photo">
-          {person.avatarUrl ? <img alt={person.fullName} src={person.avatarUrl} /> : <span className="hero-av" aria-hidden="true">{initials(person.fullName)}</span>}
+        <div className="v48-owner-card">
+          <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
+          <div>
+            <span>Owner de la fiche</span>
+            <strong>{person.primaryOwnerName ?? 'À confirmer'}</strong>
+            <small>Organisation</small>
+          </div>
         </div>
       </div>
     </div>
-    <SourceBar data={data} />
   </div>
 }
 
@@ -369,7 +373,7 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
       const result = await triggerPersonCognitiveSync(data, userId)
       await refresh()
       if (result.peopleAnalyzed > 0) {
-        toast(`Profil cognitif recalculé depuis ${result.messages} échange${result.messages > 1 ? 's' : ''} synchronisé${result.messages > 1 ? 's' : ''}.`)
+        toast('Profil cognitif recalculé à partir des emails et prises de parole attribuables retrouvés.')
       } else if (result.errors.length) {
         toast(`Échanges synchronisés, mais analyse incomplète : ${result.errors.join(' · ')}`, 'error')
       } else {
@@ -388,6 +392,11 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
 }
 
 function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
+  const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
+  const showContact = () => {
+    setActiveTab('live')
+    window.requestAnimationFrame(() => document.getElementById('person-contact-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   return <>
     <div className="pp-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Link to="/app/people">← Personnes</Link>
@@ -399,26 +408,20 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
     </div>
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
-    <div className="page">
-      <div className="col-main">
-        <Hero data={data} userId={userId} refresh={refresh} />
-        <IdentitySuggestionsSection data={data} userId={userId} refresh={refresh} />
-        <ControlCards data={data} />
-        <RelationshipBand data={data} />
-        <RelationSection data={data} />
-        <RecommendationsSection data={data} userId={userId} refresh={refresh} />
-        <BehaviorSection data={data} manualSyncAction={isSuperAdmin ? <CognitiveSyncButton data={data} userId={userId} refresh={refresh} /> : undefined} />
-        <HistoryCard data={data} memory={<MemoryCard data={data} userId={userId} refresh={refresh} embedded />} />
-        <div className="pp-footnote">
-          Tohu · {data.person.fullName} — chaque bloc est alimenté par des données persistées et sourcées ({relativeDate(data.relationship.lastInteractionAt).toLowerCase()} pour le dernier échange observé). Les informations non vérifiées sont marquées « à confirmer ».
-        </div>
-      </div>
-      <aside className="rail">
-        <WatchCard data={data} userId={userId} refresh={refresh} />
-        <ContactsCard data={data} userId={userId} refresh={refresh} />
-        <SignalsCard data={data} userId={userId} refresh={refresh} />
-      </aside>
-    </div>
+    <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
+      <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
+      <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
+      <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>CV Live &amp; Signaux</button>
+      {activeTab === 'live' && <button type="button" className="v48-tabs-action" onClick={showContact}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+        Contact
+      </button>}
+    </nav>
+    <Hero data={data} userId={userId} refresh={refresh} />
+    {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView data={data} userId={userId} refresh={refresh} /></div>}
+    {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
+    {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
+    <V48PersonSourceNote data={data} />
   </>
 }
 

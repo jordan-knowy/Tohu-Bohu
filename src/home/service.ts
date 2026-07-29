@@ -382,7 +382,10 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
     safeQuery<DbRow>(client.from('subscriptions').select('*').eq('organization_id', organizationId).maybeSingle(), 'table subscriptions', degradedReasons),
-    safeQuery<DbRow[]>(client.from('company_signals').select('*,companies(id,name)').eq('organization_id', organizationId).order('observed_at', { ascending: false }).limit(30), 'table company_signals', degradedReasons),
+    // nullsFirst:false — un signal sans date connue (ex. fait générique trouvé
+    // au premier passage d'enrichissement) ne doit jamais passer pour le plus
+    // récent : SQL trie NULL en tête par défaut en DESC, l'inverse de l'intention.
+    safeQuery<DbRow[]>(client.from('company_signals').select('*,companies(id,name)').eq('organization_id', organizationId).order('observed_at', { ascending: false, nullsFirst: false }).limit(30), 'table company_signals', degradedReasons),
     safeQuery<DbRow[]>(client.from('behavioral_signals').select('*,contacts(id,full_name,company_id)').eq('organization_id', organizationId).order('observed_at', { ascending: false }).limit(30), 'table behavioral_signals', degradedReasons),
     safeQuery<DbRow>(client.from('profiles').select('*').eq('id', userId).single(), 'table profiles', degradedReasons),
     safeQuery<DbRow[]>(client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', organizationId).eq('user_id', userId).limit(500), 'table signal_feedback', degradedReasons),

@@ -12,14 +12,19 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const W = { intensite: 0.40, reciprocite: 0.35, longevite: 0.25 };
-const PHASE_DELTA = 8.0, PHASE_DECLINE_MAX = 70, HONEYMOON_DAYS = 45, HL_MIN = 30, HL_MAX = 180;
+const PHASE_DELTA = 8.0, PHASE_DECLINE_MAX = 70, HL_MIN = 30, HL_MAX = 180;
+// Score ancré à 50 (neutre) : une relation naissante n'a pas encore assez de recul
+// pour s'écarter du neutre — elle ne s'en écarte qu'à mesure que les preuves
+// s'accumulent (CONFIDENCE_INTERACTIONS), et seulement dans le sens que ces preuves
+// indiquent. Un silence prolongé (staleDelta) ne peut que faire baisser le score :
+// il n'y a pas de symétrie "silence = bonus", seule la dégradation est pénalisée.
+const BASELINE_SCORE = 50, MAX_SIGNAL_SPREAD = 45, CONFIDENCE_INTERACTIONS = 12, RECENCY_PENALTY_SPREAD = 35;
 // Score compte : mêmes seuils de phase que le score personne (cohérence de lecture),
 // demi-vie de récence plus longue car un compte reste "vivant" plus longtemps qu'un contact isolé.
 const ACCOUNT_PHASE_DELTA = 8, ACCOUNT_PHASE_DECLINE_MAX = 70, ACCOUNT_RECENCY_HALFLIFE_DAYS = 90;
 const RECENT_WINDOW_MS = 14 * 86400000;
 const clamp = (v: number, min = 0, max = 1) => Math.max(min, Math.min(max, v));
 const temporalDecay = (days: number, depth: number) => Math.exp(-(Math.LN2 / (HL_MIN + depth * (HL_MAX - HL_MIN))) * days);
-const honeymoon = (raw: number, age: number) => age >= HONEYMOON_DAYS ? raw : Math.min(raw, 0.45 + (age / HONEYMOON_DAYS) * 0.20);
 
 interface Stats { emailsLast30: number; meetingsLast90: number; avgThreadDepth: number; channelCount: number; initiationRatio: number; responseRate: number; responseTimeRatio: number; ageInDays: number; daysSinceLastContact: number; monthlyExchangeCounts: number[]; quartersWithMeetings: number; totalInteractions: number; }
 
@@ -81,7 +86,14 @@ function computeScore(stats: Stats, prevScore: number | null) {
   const ew = lf < 1 ? { intensite: W.intensite + W.longevite * (1 - lf) * 0.54, reciprocite: W.reciprocite + W.longevite * (1 - lf) * 0.46, longevite: W.longevite * lf } : W;
   const raw = si * ew.intensite + sr * ew.reciprocite + sl * ew.longevite;
   const recency = temporalDecay(stats.daysSinceLastContact, clamp(stats.totalInteractions / 500));
-  const finalScore = Math.round(clamp(honeymoon(raw, stats.ageInDays) * recency) * 100);
+  // Confiance : le nombre d'interactions détermine à quel point le score peut
+  // s'écarter du neutre (50). Peu d'échanges → le score reste proche de 50, quel
+  // que soit le signal ; beaucoup d'échanges → le signal (positif ou négatif)
+  // s'exprime pleinement.
+  const confidence = clamp(stats.totalInteractions / CONFIDENCE_INTERACTIONS);
+  const signalDelta = (raw - 0.5) * 2 * MAX_SIGNAL_SPREAD * confidence;
+  const staleDelta = -(1 - recency) * RECENCY_PENALTY_SPREAD * confidence;
+  const finalScore = Math.round(clamp(BASELINE_SCORE + signalDelta + staleDelta, 0, 100));
   const delta = finalScore - (prevScore ?? finalScore);
   let phase: 'growth' | 'stagnant' | 'decline' = 'stagnant';
   if (delta >= PHASE_DELTA) phase = 'growth';
@@ -296,9 +308,11 @@ Deno.serve(async (req) => {
     const weightSum = engaged.reduce((sum, e) => sum + (1 + e.interactions), 0);
     const engagementComponent = weightSum > 0 ? weightedScoreSum / weightSum : 0;
     const recencyComponent = daysSinceLastInteraction != null ? Math.exp(-(Math.LN2 / ACCOUNT_RECENCY_HALFLIFE_DAYS) * daysSinceLastInteraction) * 100 : 0;
+    // Aucun contact engagé mesuré ≠ compte en échec : neutre (50), pas 0 — le
+    // phase 'unknown' ci-dessous distingue déjà ce cas d'un score réellement mauvais.
     const finalScore = engaged.length > 0
       ? Math.round(clamp((engagementComponent / 100) * 0.55 + (contactCoverage / 100) * 0.25 + (recencyComponent / 100) * 0.20) * 100)
-      : 0;
+      : 50;
 
     const prevScore = prevAccountScoreByCompany.get(companyId) ?? null;
     const phaseDelta = prevScore != null ? finalScore - prevScore : null;

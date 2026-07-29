@@ -239,7 +239,10 @@ export interface PersonDetailData {
     executiveSummary: string | null
     globalConfidence: number | null
     cognitiveMode: string | null
+    availableInteractions: number
     analyzedInteractions: number
+    analyzedEmailInteractions: number
+    analyzedMeetingInteractions: number
     profileMinimumInteractions: number
     minimumInteractions: number
     cognitiveProfile: PersonCognitiveProfile

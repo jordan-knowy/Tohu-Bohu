@@ -519,14 +519,19 @@ function highlightsMarkup(data: HomeDashboardData): string {
     accountId: action.accountId,
     personId: action.personId,
   }))
-  const items = fromActions.length ? fromActions : data.latestSignals.slice(0, 12).map((signal) => ({
-    label: signal.signalType,
-    src: 'int' as const,
-    name: signal.accountName ?? signal.personName ?? '',
-    title: signal.title,
-    accountId: signal.accountId,
-    personId: signal.personId,
-  }))
+  const items = fromActions.length ? fromActions : data.latestSignals
+    // "presence" = faits généraux d'un compte (souvent sans date propre, ex. au
+    // premier passage d'enrichissement) — jamais une actualité datée du jour,
+    // donc jamais un highlight, même si la ligne est techniquement récente.
+    .filter((signal) => signal.signalType !== 'presence')
+    .slice(0, 12).map((signal) => ({
+      label: signal.signalType,
+      src: 'int' as const,
+      name: signal.accountName ?? signal.personName ?? '',
+      title: signal.title,
+      accountId: signal.accountId,
+      personId: signal.personId,
+    }))
   if (!items.length) return ''
   const duration = tickerDurationSeconds(items.length)
   const rowMarkup = items.map((item) => `<button class="crm-mv-item ${esc(item.src)}" ${item.accountId ? `data-open-account="${esc(item.accountId)}"` : item.personId ? `data-open-person="${esc(item.personId)}"` : ''}>

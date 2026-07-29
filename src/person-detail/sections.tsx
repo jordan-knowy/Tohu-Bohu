@@ -462,8 +462,8 @@ export function BehaviorSection({ data, manualSyncAction }: { data: PersonDetail
     {!hasProfile && <div className="behavior-insufficient" role="status">
       <span className="behavior-insufficient-icon" aria-hidden="true">◇</span>
       {evidenceThresholdReached
-        ? <div><strong>Analyse cognitive en attente</strong><p>{behavior.analyzedInteractions} interactions attribuées — le profil structuré sera produit lors de la prochaine synchronisation des échanges.</p></div>
-        : <div><strong>Analyse comportementale insuffisante</strong><p>{behavior.analyzedInteractions} interaction{behavior.analyzedInteractions > 1 ? 's' : ''} analysée{behavior.analyzedInteractions > 1 ? 's' : ''} — 3 sont nécessaires pour faire émerger un premier profil. Aucune personnalité n’est inférée sans preuves suffisantes.</p></div>}
+        ? <div><strong>Analyse cognitive en attente</strong><p>{behavior.availableInteractions} interaction{behavior.availableInteractions > 1 ? 's' : ''} retrouvée{behavior.availableInteractions > 1 ? 's' : ''}, dont {behavior.analyzedInteractions} analysée{behavior.analyzedInteractions > 1 ? 's' : ''} — le profil structuré sera produit lors de la prochaine synchronisation des échanges.</p></div>
+        : <div><strong>Analyse comportementale insuffisante</strong><p>{behavior.availableInteractions} interaction{behavior.availableInteractions > 1 ? 's' : ''} retrouvée{behavior.availableInteractions > 1 ? 's' : ''}, dont {behavior.analyzedInteractions} analysée{behavior.analyzedInteractions > 1 ? 's' : ''} — 3 preuves attribuables sont nécessaires pour faire émerger un premier profil. Aucune personnalité n’est inférée sans preuves suffisantes.</p></div>}
     </div>}
     {emerging && <div className="behavior-insufficient" role="status">
       <span className="behavior-insufficient-icon" aria-hidden="true">◇</span>

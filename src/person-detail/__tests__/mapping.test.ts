@@ -177,7 +177,8 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
       behavioralSignals: Array.from({ length: 8 }, (_, index) => ({ id: `s${index}`, text: 'Signal externe', signal_type: 'career' })),
       messages: [{ id: 'm1', direction: 'inbound', sent_at: '2026-07-01' }, { id: 'm2', direction: 'outbound', sent_at: '2026-07-02' }],
     }))
-    expect(data.behavior.analyzedInteractions).toBe(1)
+    expect(data.behavior.availableInteractions).toBe(1)
+    expect(data.behavior.analyzedInteractions).toBe(0)
     expect(data.behavior.cognitiveProfile.maturity).toBe('none')
   })
 })
