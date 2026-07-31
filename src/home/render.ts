@@ -270,6 +270,17 @@ function setStep(ctx: HomeContext, index: number): void {
   })
 }
 
+/** Le backend peut encore publier le libellé de l'étape précédente au
+ * moment où le front a déjà activé la suivante. Ne jamais dupliquer ce
+ * libellé dans le stepper : chaque étape doit rester lisible une seule fois. */
+export function uniqueProgressLabel(labels: string[], activeIndex: number, label: string | null | undefined): string | null {
+  const normalized = label?.trim()
+  if (!normalized) return null
+  return labels.some((current, index) => index !== activeIndex && current.trim() === normalized)
+    ? null
+    : normalized
+}
+
 /** Pourcentage réel affiché pendant le stepper — reflète une progression backend
  * effectivement committée (sync_jobs.progress), pas une animation simulée. */
 function setProgress(ctx: HomeContext, pct: number, label?: string | null): void {
@@ -281,8 +292,11 @@ function setProgress(ctx: HomeContext, pct: number, label?: string | null): void
   if (text) text.textContent = `${clamped}%`
   if (bar) bar.setAttribute('aria-valuenow', String(clamped))
   if (label) {
-    const active = ctx.container.querySelector<HTMLElement>('.stp-row.active .stp-lbl')
-    if (active) active.textContent = label
+    const activeRow = ctx.container.querySelector<HTMLElement>('.stp-row.active')
+    const active = activeRow?.querySelector<HTMLElement>('.stp-lbl')
+    const labels = [...ctx.container.querySelectorAll<HTMLElement>('.stp-row .stp-lbl')].map((item) => item.textContent ?? '')
+    const nextLabel = uniqueProgressLabel(labels, Number(activeRow?.dataset.step ?? -1), label)
+    if (active && nextLabel) active.textContent = nextLabel
   }
 }
 

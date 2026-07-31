@@ -1,16 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
 import { acceptPersonMergeSuggestion, acceptPersonNameSuggestion, dismissPersonMergeSuggestion, dismissPersonNameSuggestion, savePersonRecommendationFeedback, updatePersonRecommendationStatus } from './service'
 import { scoreFreshness } from '../services/surface-state'
-import type { PersonCognitiveTheme, PersonDetailData, PersonMergeSuggestion, PersonRecommendation } from './types'
+import type { PersonCognitiveTheme, PersonDetailData, PersonMergeSuggestion, PersonRecommendation, PersonSecondaryAxis } from './types'
 import { Csec, Empty, Prov, confidenceLevel, formatDate, formatMonth, phaseLabel, provenanceLabel, relativeDate, scoreTone, seniorityLabel, useBusy, useToast } from './ui'
 
 type SectionProps = { data: PersonDetailData; userId: string; refresh: () => Promise<void> }
 
 const WaveIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>
 const SparkIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="1.7" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 11.9 10.1 8.6z" /></svg>
-const CircleIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M1 12h4M19 12h4" strokeLinecap="round" /></svg>
 const BoltIcon = <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z" /></svg>
 const CheckIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
 const CrossIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -324,18 +323,12 @@ export function RecommendationsSection({ data, userId, refresh }: SectionProps) 
 
 // ─── Profil comportemental ─────────────────────────────────────────────────
 
-function confidenceDots(confidence: number | null): number {
-  if (confidence === null) return 0
-  const level = confidenceLevel(confidence)
-  return level === 'élevé' ? 3 : level === 'moyen' ? 2 : 1
-}
-
-function BehaviorSlider({ label, left, right, theme }: { label: string; left: string; right: string; theme: PersonCognitiveTheme }) {
-  const position = theme.score ?? 50
+export function BehaviorSlider({ axis }: { axis: PersonSecondaryAxis }) {
+  const position = axis.score ?? 50
   return <div className="kslider">
-    <div className="kfac-name">{label}</div>
-    <div className="kslider-poles"><span className={theme.score !== null && position < 50 ? 'on' : ''}>{left}</span><span className={theme.score !== null && position >= 50 ? 'on' : ''}>{right}</span></div>
-    <div className={`kslider-wrap ${theme.score === null ? 'locked' : ''}`} role="img" aria-label={theme.score === null ? `${label} : non observable à ce stade` : `${label} : ${theme.label ?? `${position}/100`}`}>
+    <div className="kfac-name">{axis.label}</div>
+    <div className="kslider-poles"><span className={axis.activePole === 'left' ? 'on' : ''}>{axis.poleLeft}</span><span className={axis.activePole === 'right' ? 'on' : ''}>{axis.poleRight}</span></div>
+    <div className={`kslider-wrap ${axis.score === null ? 'locked' : ''}`} role="img" aria-label={axis.score === null ? `${axis.label} : non observable à ce stade` : `${axis.label} : ${axis.observation ?? `${position}/100`}`}>
       <div className="kslider-track"><div className="kslider-half l" /><div className="kslider-half r" /></div>
       <div className="kslider-mid" />
       <div className="kslider-cursor" style={{ left: `${position}%` }} />
@@ -343,7 +336,7 @@ function BehaviorSlider({ label, left, right, theme }: { label: string; left: st
   </div>
 }
 
-function BehaviorCircle({ data, assertiveness, warmth, proofOpen, toggleProof }: {
+export function BehaviorCircle({ data, assertiveness, warmth, proofOpen, toggleProof }: {
   data: PersonDetailData
   assertiveness: PersonCognitiveTheme
   warmth: PersonCognitiveTheme
@@ -413,106 +406,10 @@ function BehaviorCircle({ data, assertiveness, warmth, proofOpen, toggleProof }:
   </div>
 }
 
-const BEHAVIOR_MARKERS = [
-  { id: 'response_time', title: 'Temps de réponse', hint: 'Délai, cadence et réciprocité observés dans les fils de communication.' },
-  { id: 'dominance_listening_speaking', title: 'Dominance · écoute ↔ parole', hint: 'Répartition entre écoute, prise de parole, cadrage et pilotage des échanges.' },
-  { id: 'linguistic_synchrony', title: 'Synchronie linguistique', hint: 'Alignement du vocabulaire, du registre et des formulations entre interlocuteurs.' },
-  { id: 'pronouns_status', title: 'Pronoms & statut', hint: 'Usage des pronoms et indices de positionnement statutaire dans les échanges.' },
-  { id: 'register_distance', title: 'Registre & distance', hint: 'Niveau de formalisme, proximité, technicité et distance relationnelle observés.' },
-  { id: 'self_disclosure', title: 'Auto-divulgation', hint: 'Profondeur du dévoilement personnel par rapport au contenu professionnel.' },
-] as const
-
-function behaviorSourceBadge(source: string): string {
-  const normalized = source.toLocaleLowerCase('fr-FR')
-  if (/read|transcript|meeting|visio/.test(normalized)) return '🎙 transcript'
-  if (/outlook|gmail|mail|email/.test(normalized)) return '✉'
-  return source
-}
-
-export function BehaviorSection({ data, manualSyncAction }: { data: PersonDetailData; manualSyncAction?: ReactNode }) {
-  const behavior = data.behavior
-  const profile = behavior.cognitiveProfile
-  const [proofOpen, setProofOpen] = useState(false)
-  const [markersOpen, setMarkersOpen] = useState(true)
-  const evidenceThresholdReached = behavior.analyzedInteractions >= behavior.profileMinimumInteractions
-  const hasProfile = evidenceThresholdReached && profile.schemaVersion >= 2
-  const emerging = hasProfile && behavior.analyzedInteractions < behavior.minimumInteractions
-  const styles = new Map(profile.exchangeStyles.map((theme) => [theme.id, theme]))
-  const sliders = [
-    { label: 'Tempo', left: 'Rapide', right: 'Analytique', theme: styles.get('tempo')! },
-    { label: 'Ouverture', left: 'Innovant', right: 'Conforme', theme: styles.get('openness')! },
-    { label: 'Orientation', left: 'Tâche', right: 'Relation', theme: styles.get('orientation')! },
-    { label: 'Certitude', left: 'Nuancé', right: 'Tranché', theme: styles.get('certainty')! },
-  ]
-  const acts = new Map(profile.speechActs.map((theme) => [theme.id, theme]))
-  const speechActs = [
-    { id: 'directive', label: 'Directif', role: 'cadre', theme: acts.get('directive')! },
-    { id: 'commissive', label: 'Commissif', role: 's’engage', theme: acts.get('commissive')! },
-    { id: 'assertive', label: 'Assertif', role: 'factuel', theme: acts.get('assertive')! },
-    { id: 'interrogative', label: 'Interrogatif', role: 'consulte', theme: acts.get('interrogative')! },
-    { id: 'expressive', label: 'Expressif', role: 'engagé', theme: acts.get('expressive')! },
-  ]
-  const markerThemes = new Map(profile.observableMarkers.map((theme) => [theme.id, theme]))
-  const markerCards = BEHAVIOR_MARKERS.map((definition) => ({ ...definition, theme: markerThemes.get(definition.id)! }))
-  const postureText = profile.posture.observation
-  const summaryText = behavior.executiveSummary
-
-  return <Csec id="sec-profil" icon={CircleIcon} title="Profil comportemental · Cercle interpersonnel">
-    {manualSyncAction && <div className="behavior-manual-sync">{manualSyncAction}</div>}
-    {!hasProfile && <div className="behavior-insufficient" role="status">
-      <span className="behavior-insufficient-icon" aria-hidden="true">◇</span>
-      {evidenceThresholdReached
-        ? <div><strong>Analyse cognitive en attente</strong><p>{behavior.availableInteractions} interaction{behavior.availableInteractions > 1 ? 's' : ''} retrouvée{behavior.availableInteractions > 1 ? 's' : ''}, dont {behavior.analyzedInteractions} analysée{behavior.analyzedInteractions > 1 ? 's' : ''} — le profil structuré sera produit lors de la prochaine synchronisation des échanges.</p></div>
-        : <div><strong>Analyse comportementale insuffisante</strong><p>{behavior.availableInteractions} interaction{behavior.availableInteractions > 1 ? 's' : ''} retrouvée{behavior.availableInteractions > 1 ? 's' : ''}, dont {behavior.analyzedInteractions} analysée{behavior.analyzedInteractions > 1 ? 's' : ''} — 3 preuves attribuables sont nécessaires pour faire émerger un premier profil. Aucune personnalité n’est inférée sans preuves suffisantes.</p></div>}
-    </div>}
-    {emerging && <div className="behavior-insufficient" role="status">
-      <span className="behavior-insufficient-icon" aria-hidden="true">◇</span>
-      <div><strong>Profil émergent</strong><p>{behavior.analyzedInteractions} interactions analysées — fiabilité recommandée à partir de {behavior.minimumInteractions}. Seuls les thèmes soutenus par des preuves sont renseignés.</p></div>
-    </div>}
-    {hasProfile && <>
-    <div className="beh-grid">
-      <BehaviorCircle data={data} assertiveness={profile.interpersonal.assertiveness} warmth={profile.interpersonal.warmth} proofOpen={proofOpen} toggleProof={() => setProofOpen((value) => !value)} />
-      <div className="beh-read">
-        <div className="circ-cap"><b>{summaryText ?? 'Synthèse en attente de preuves convergentes.'}</b>{behavior.cognitiveMode && <> Mode dominant observé : {behavior.cognitiveMode}.</>}</div>
-        <div className="beh-slabel">Style d’échange</div>
-        <div className="beh-sliders">{sliders.map((slider) => <BehaviorSlider key={slider.label} {...slider} />)}</div>
-      </div>
-    </div>
-    <div className="obs-div" />
-    <button type="button" className={`obs-toggle ${markersOpen ? 'open' : ''}`} aria-expanded={markersOpen} aria-controls="obsCollapse" onClick={() => setMarkersOpen((value) => !value)}>
-      <div className="obs-toggle-l">
-        <span className="obs-toggle-ic" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="1.8" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h10" /><circle cx="18.5" cy="18" r="2.3" fill="#6E50C8" stroke="none" /></svg></span>
-        <div>
-          <div className="obs-toggle-t">Marqueurs observables · 7 faits de langage</div>
-          <div className="obs-toggle-s">Temps de réponse, synchronie, pronoms, registre, auto-divulgation… les preuves derrière le profil.</div>
-        </div>
-      </div>
-      <span className="obs-toggle-btn"><span className="obs-toggle-txt">{markersOpen ? 'Replier' : 'Déplier'}</span><span className="obs-chev">▾</span></span>
-    </button>
-    <div className="obs-collapse" id="obsCollapse" style={markersOpen ? { maxHeight: 3200 } : undefined}>
-      <div className="obs-acts-h">Actes de langage · registre présent</div>
-      <div className="speech-bands">
-        {speechActs.map((act) => {
-          const present = act.theme.status === 'observed'
-          return <span className={`sband ${present ? 'on' : 'rare'}`} key={act.id} title={act.theme.observation ?? 'Non observable à ce stade'}><span className="sdot" /><b>{act.label}</b><span className="srole">{act.role}</span><span className="sstatus">{present ? 'présent' : act.theme.status === 'emerging' ? 'émergent' : 'à confirmer'}</span></span>
-        })}
-      </div>
-      <div className="kobs-grid">
-        {markerCards.map((marker) => <div className={`kobs-card ${marker.theme.status === 'insufficient' ? 'locked' : ''}`} key={marker.id}>
-          <div className="kobs-top">
-            <span className="kobs-n">{marker.title}<span className="ktip">ⓘ<span className="ktip-pop">{marker.hint}</span></span></span>
-            <span className="kobs-src">{marker.theme.sourceTypes.length ? behaviorSourceBadge(marker.theme.sourceTypes.join(' + ')) : 'À confirmer'}</span>
-          </div>
-          <div className="kobs-v">{marker.theme.observation ?? 'Non observable à ce stade.'}</div>
-          <div className="kobs-foot"><span className="kdots" aria-label={confidenceLevel(marker.theme.confidence) ? `Confiance ${confidenceLevel(marker.theme.confidence)}` : 'Confiance à confirmer'}>{[1, 2, 3].map((dot) => <span key={dot} className={`kdot ${dot <= confidenceDots(marker.theme.confidence) ? 'on' : ''}`} />)}</span></div>
-        </div>)}
-        <div className={`kobs-card kobs-nps behavior-posture-card ${postureText ? '' : 'locked'}`}>
-          <div className="kobs-top"><span className="kobs-n">Posture</span><span className="kobs-src">synthèse ↦ Contexte</span></div>
-          <div className="kobs-v">{postureText ?? 'Non observable à ce stade.'}</div>
-          <div className="kobs-foot"><span className="knps prom">● {profile.posture.label ?? 'À confirmer'}</span></div>
-        </div>
-      </div>
-    </div>
-    </>}
-  </Csec>
+/** Traduit la confiance 0-100 en nombre de points pleins (échelle à 3 points),
+ *  réutilisé par les cartes d'axes du profil comportemental V57. */
+export function confidenceDots(confidence: number | null): number {
+  if (confidence === null) return 0
+  const level = confidenceLevel(confidence)
+  return level === 'élevé' ? 3 : level === 'moyen' ? 2 : 1
 }

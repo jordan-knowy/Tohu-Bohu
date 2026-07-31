@@ -46,18 +46,20 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.relationship.confidence).toBeNull()
     expect(data.relationship.phase).toBe('unknown')
     expect(data.relationship.dimensions.intensity).toBeNull()
+    expect(data.relationship.relationshipAgeDays).toBeNull()
     expect(data.scoreHistory).toEqual([])
     expect(data.summary).toBeNull()
   })
 
   it('le snapshot canonique prime sur l’historique hérité', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', intensity_score: 90, reciprocity_score: 70, longevity_score: 60, recency_score: 25, model_version: 'relationship-score-v2' }],
+      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', intensity_score: 90, reciprocity_score: 70, longevity_score: 60, recency_score: 25, relationship_age_days: 62, model_version: 'relationship-score-v2' }],
       legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_intensite: 10, score_reciprocite: 10, score_longevite: 10 }],
     }))
     expect(data.relationship.score).toBe(81)
     expect(data.relationship.phase).toBe('growing')
-    expect(data.relationship.dimensions).toEqual({ intensity: 90, reciprocity: 70, longevity: 60 })
+    expect(data.relationship.dimensions).toEqual({ intensity: 90, reciprocity: 70, recency: 25, longevity: 60 })
+    expect(data.relationship.relationshipAgeDays).toBe(62)
   })
 
   it('ne confond pas la récence canonique avec la longévité', () => {
@@ -84,7 +86,7 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     }))
     expect(data.relationship.score).toBe(72)
     expect(data.relationship.phase).toBe('stable')
-    expect(data.relationship.dimensions).toEqual({ intensity: 80, reciprocity: 64, longevity: 55 })
+    expect(data.relationship.dimensions).toEqual({ intensity: 80, reciprocity: 64, recency: null, longevity: 55 })
     expect(data.scoreHistory.map((point) => point.score)).toEqual([60, 72])
   })
 
@@ -140,30 +142,54 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.behavior.insights).toHaveLength(1)
   })
 
-  it('profil cognitif : conserve le référentiel fixe et mappe uniquement les observations structurées', () => {
+  it('profil cognitif v3 : conserve le référentiel fixe des 6+4 axes et mappe les observations structurées', () => {
     const data = buildPersonDetail(raw({ cognitiveProfile: {
       source_interaction_count: 14,
       cognitive_profile_data: {
-        schema_version: 2,
+        schema_version: 3,
         interpersonal: {
           assertiveness: { status: 'observed', score: 78, label: 'Assertivité marquée', observation: 'Cadre régulièrement les prochaines étapes.', confidence: 81, evidence_count: 9, source_types: ['email'], evolution: 'stable' },
           warmth: { status: 'insufficient', score: 90, observation: 'Ce texte ne doit pas être affiché.' },
         },
-        exchange_styles: {
-          tempo: { status: 'observed', score: 22, label: 'Rapide', observation: 'Réponses généralement rapprochées.', confidence: 74, evidence_count: 7, source_types: ['email'] },
+        primary_axes: {
+          rythme: { status: 'observed', raw_score: 78, margin_pts: 8, trend_pts: 5, trend_label: 'rising', observation: 'Répond vite, souvent dans l’heure.', confidence: 74, evidence: ['Relance sous 20 min le 12/07'], evidence_count: 6, source_types: ['email'] },
         },
-        observable_markers: {
-          response_time: { status: 'observed', score: 20, label: 'Réactif', observation: 'Répond le plus souvent dans la journée.', confidence: 76, evidence_count: 8, source_types: ['email'] },
+        secondary_axes: {
+          initiative: { status: 'observed', score: 66, observation: 'Propose spontanément la prochaine étape.', confidence: 70, evidence_count: 5, source_types: ['email'] },
         },
       },
     } }))
     expect(data.behavior.cognitiveProfile.maturity).toBe('usable')
-    expect(data.behavior.cognitiveProfile.exchangeStyles.map((theme) => theme.id)).toEqual(['tempo', 'openness', 'orientation', 'certainty'])
-    expect(data.behavior.cognitiveProfile.observableMarkers.map((theme) => theme.id)).toEqual([
-      'response_time', 'dominance_listening_speaking', 'linguistic_synchrony', 'pronouns_status', 'register_distance', 'self_disclosure',
+    expect(data.behavior.cognitiveProfile.primaryAxes.map((axis) => axis.id)).toEqual([
+      'rythme', 'argumentation', 'engagement', 'registre', 'tonalite', 'espace_parole',
     ])
-    expect(data.behavior.cognitiveProfile.exchangeStyles[0]).toMatchObject({ label: 'Rapide', score: 22, evidenceCount: 7 })
+    expect(data.behavior.cognitiveProfile.secondaryAxes.map((axis) => axis.id)).toEqual([
+      'orientation', 'certainty', 'novelty', 'initiative',
+    ])
+    const rythme = data.behavior.cognitiveProfile.primaryAxes[0]
+    expect(rythme).toMatchObject({ label: 'Rythme', poleLeft: 'Posé', poleRight: 'Rapide', rawScore: 78, marginPts: 8, trendPts: 5, trendLabel: 'rising', activePole: 'right', evidenceCount: 6 })
+    expect(rythme?.predominancePct).toBe(56)
+    expect(rythme?.evidence).toEqual(['Relance sous 20 min le 12/07'])
+    // Axe non renvoyé par l'analyse (argumentation) : dégrade proprement, jamais de valeur inventée.
+    expect(data.behavior.cognitiveProfile.primaryAxes[1]).toMatchObject({ status: 'insufficient', rawScore: null, activePole: null, evidence: [] })
+    const initiative = data.behavior.cognitiveProfile.secondaryAxes[3]
+    expect(initiative).toMatchObject({ label: 'Initiative', poleLeft: 'Suit', poleRight: 'Mène', score: 66, activePole: 'right' })
     expect(data.behavior.cognitiveProfile.interpersonal.warmth).toMatchObject({ status: 'insufficient', score: null, observation: null })
+  })
+
+  it('profil cognitif v2 (legacy) : dégrade gracieusement en axes « insuffisant », jamais d’exception', () => {
+    const data = buildPersonDetail(raw({ cognitiveProfile: {
+      source_interaction_count: 14,
+      cognitive_profile_data: {
+        schema_version: 2,
+        exchange_styles: { tempo: { status: 'observed', score: 22 } },
+        observable_markers: { response_time: { status: 'observed', score: 20 } },
+      },
+    } }))
+    expect(data.behavior.cognitiveProfile.primaryAxes).toHaveLength(6)
+    expect(data.behavior.cognitiveProfile.secondaryAxes).toHaveLength(4)
+    expect(data.behavior.cognitiveProfile.primaryAxes.every((axis) => axis.status === 'insufficient' && axis.rawScore === null)).toBe(true)
+    expect(data.behavior.cognitiveProfile.secondaryAxes.every((axis) => axis.status === 'insufficient' && axis.score === null)).toBe(true)
   })
 
   it('profil cognitif : 0 à 2 interactions ne produisent aucun profil', () => {

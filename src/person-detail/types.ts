@@ -79,6 +79,45 @@ export type PersonCognitiveTheme = {
   evolution: CognitiveEvolution
 }
 
+export type PrimaryAxisId = 'rythme' | 'argumentation' | 'engagement' | 'registre' | 'tonalite' | 'espace_parole'
+export type SecondaryAxisId = 'orientation' | 'certainty' | 'novelty' | 'initiative'
+export type AxisPole = 'left' | 'right'
+export type AxisTrend = 'rising' | 'stable' | 'declining' | null
+
+export type PersonPrimaryAxis = {
+  id: PrimaryAxisId
+  label: string
+  poleLeft: string
+  poleRight: string
+  status: CognitiveThemeStatus
+  rawScore: number | null
+  marginPts: number | null
+  trendPts: number | null
+  trendLabel: AxisTrend
+  predominancePct: number | null
+  activePole: AxisPole | null
+  observation: string | null
+  confidence: number | null
+  evidence: string[]
+  evidenceCount: number
+  sourceTypes: string[]
+}
+
+export type PersonSecondaryAxis = {
+  id: SecondaryAxisId
+  label: string
+  poleLeft: string
+  poleRight: string
+  status: CognitiveThemeStatus
+  score: number | null
+  predominancePct: number | null
+  activePole: AxisPole | null
+  observation: string | null
+  confidence: number | null
+  evidenceCount: number
+  sourceTypes: string[]
+}
+
 export type PersonCognitiveProfile = {
   schemaVersion: number
   maturity: 'none' | 'emerging' | 'usable' | 'consolidated' | 'refined'
@@ -86,9 +125,8 @@ export type PersonCognitiveProfile = {
     assertiveness: PersonCognitiveTheme
     warmth: PersonCognitiveTheme
   }
-  exchangeStyles: PersonCognitiveTheme[]
-  speechActs: PersonCognitiveTheme[]
-  observableMarkers: PersonCognitiveTheme[]
+  primaryAxes: PersonPrimaryAxis[]
+  secondaryAxes: PersonSecondaryAxis[]
   posture: PersonCognitiveTheme
 }
 
@@ -226,9 +264,13 @@ export interface PersonDetailData {
     meetingInteractions: number
     firstInteractionAt: string | null
     lastInteractionAt: string | null
+    // Ancienneté observée en jours (fait) — depuis V57, ne pondère plus le score
+    // composite (voir dimensions.longevity, conservé pour compatibilité d'affichage).
+    relationshipAgeDays: number | null
     dimensions: {
       intensity: number | null
       reciprocity: number | null
+      recency: number | null
       longevity: number | null
     }
   }

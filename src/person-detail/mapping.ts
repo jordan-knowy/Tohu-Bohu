@@ -6,6 +6,8 @@ import { signalTitle } from '../services/signal-labels'
 import {
   MIN_COGNITIVE_PROFILE_INTERACTIONS,
   MIN_BEHAVIOR_INTERACTIONS,
+  type AxisPole,
+  type AxisTrend,
   type DataSourceReference,
   type PersonBehavioralInsight,
   type PersonCareerEntry,
@@ -18,11 +20,15 @@ import {
   type PersonMemoryEntry,
   type PersonMergeSuggestion,
   type PersonNameSuggestion,
+  type PersonPrimaryAxis,
   type PersonRecommendation,
   type PersonScorePoint,
+  type PersonSecondaryAxis,
   type PersonSignal,
   type PersonSourceStatus,
+  type PrimaryAxisId,
   type RelationshipPhase,
+  type SecondaryAxisId,
 } from './types'
 
 export type Row = Record<string, unknown>
@@ -33,39 +39,53 @@ export const text = (value: unknown): string | null => typeof value === 'string'
 export const num = (value: unknown): number | null => value === null || value === undefined || value === '' ? null : Number.isFinite(Number(value)) ? Number(value) : null
 export const bool = (value: unknown): boolean => value === true
 
-const COGNITIVE_THEME_DEFINITIONS = {
-  exchangeStyles: [
-    ['tempo', 'Tempo'],
-    ['openness', 'Ouverture'],
-    ['orientation', 'Orientation'],
-    ['certainty', 'Certitude'],
-  ],
-  speechActs: [
-    ['directive', 'Directif'],
-    ['commissive', 'Commissif'],
-    ['assertive', 'Assertif'],
-    ['interrogative', 'Interrogatif'],
-    ['expressive', 'Expressif'],
-  ],
-  observableMarkers: [
-    ['response_time', 'Temps de réponse'],
-    ['dominance_listening_speaking', 'Dominance · écoute ↔ parole'],
-    ['linguistic_synchrony', 'Synchronie linguistique'],
-    ['pronouns_status', 'Pronoms & statut'],
-    ['register_distance', 'Registre & distance'],
-    ['self_disclosure', 'Auto-divulgation'],
-  ],
-} as const
+type AxisDefinition<Id extends string> = { id: Id; label: string; poleLeft: string; poleRight: string }
+
+const PRIMARY_AXIS_DEFINITIONS: ReadonlyArray<AxisDefinition<PrimaryAxisId>> = [
+  { id: 'rythme', label: 'Rythme', poleLeft: 'Posé', poleRight: 'Rapide' },
+  { id: 'argumentation', label: 'Argumentation', poleLeft: 'Récit', poleRight: 'Chiffré' },
+  { id: 'engagement', label: 'Engagement', poleLeft: 'Implicite', poleRight: 'Explicite' },
+  { id: 'registre', label: 'Registre', poleLeft: 'Formel', poleRight: 'Direct' },
+  { id: 'tonalite', label: 'Tonalité', poleLeft: 'Sobre', poleRight: 'Chaleureux' },
+  { id: 'espace_parole', label: 'Espace de parole', poleLeft: 'Écoute', poleRight: 'Occupe' },
+]
+
+const SECONDARY_AXIS_DEFINITIONS: ReadonlyArray<AxisDefinition<SecondaryAxisId>> = [
+  { id: 'orientation', label: 'Orientation', poleLeft: 'Tâche', poleRight: 'Relation' },
+  { id: 'certainty', label: 'Certitude', poleLeft: 'Prudent', poleRight: 'Affirmatif' },
+  { id: 'novelty', label: 'Nouveauté', poleLeft: 'Éprouvé', poleRight: 'Exploratoire' },
+  { id: 'initiative', label: 'Initiative', poleLeft: 'Suit', poleRight: 'Mène' },
+]
 
 function boundedScore(value: unknown): number | null {
   const parsed = num(value)
   return parsed === null ? null : Math.max(0, Math.min(100, Math.round(parsed)))
 }
 
+function nonNegativeRound(value: unknown): number | null {
+  const parsed = num(value)
+  return parsed === null ? null : Math.max(0, Math.round(parsed))
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []
+}
+
+function sourceTypesOf(row: Row): string[] {
+  return Array.isArray(row.source_types) ? row.source_types.filter((source): source is string => typeof source === 'string') : []
+}
+
+function axisPoleOf(score: number | null): AxisPole | null {
+  return score === null ? null : score >= 50 ? 'right' : 'left'
+}
+
+function predominanceOf(score: number | null): number | null {
+  return score === null ? null : Math.round(Math.abs(score - 50) * 2)
+}
+
 function cognitiveTheme(id: string, label: string, value: unknown): PersonCognitiveTheme {
   const row = object(value)
   const status = row.status === 'observed' || row.status === 'emerging' ? row.status : 'insufficient'
-  const sourceTypes = Array.isArray(row.source_types) ? row.source_types.filter((source): source is string => typeof source === 'string') : []
   const evolution = ['rising', 'stable', 'declining', 'mixed'].includes(String(row.evolution))
     ? row.evolution as PersonCognitiveTheme['evolution']
     : null
@@ -77,18 +97,65 @@ function cognitiveTheme(id: string, label: string, value: unknown): PersonCognit
     observation: status === 'insufficient' ? null : text(row.observation),
     confidence: status === 'insufficient' ? null : boundedScore(row.confidence),
     evidenceCount: Math.max(0, Math.round(num(row.evidence_count) ?? 0)),
-    sourceTypes,
+    sourceTypes: sourceTypesOf(row),
     evolution,
   }
 }
 
-function themeList(container: Row, definitions: readonly (readonly [string, string])[]): PersonCognitiveTheme[] {
-  return definitions.map(([id, label]) => cognitiveTheme(id, label, container[id]))
+function primaryAxis(definition: AxisDefinition<PrimaryAxisId>, value: unknown): PersonPrimaryAxis {
+  const row = object(value)
+  const status = row.status === 'observed' || row.status === 'emerging' ? row.status : 'insufficient'
+  const rawScore = status === 'insufficient' ? null : boundedScore(row.raw_score)
+  const trendLabelRaw = text(row.trend_label)
+  const trendLabel: AxisTrend = trendLabelRaw === 'rising' || trendLabelRaw === 'declining' || trendLabelRaw === 'stable' ? trendLabelRaw : null
+  return {
+    id: definition.id,
+    label: definition.label,
+    poleLeft: definition.poleLeft,
+    poleRight: definition.poleRight,
+    status,
+    rawScore,
+    marginPts: status === 'insufficient' ? null : nonNegativeRound(row.margin_pts),
+    trendPts: status === 'insufficient' ? null : num(row.trend_pts),
+    trendLabel: status === 'insufficient' ? null : trendLabel,
+    predominancePct: predominanceOf(rawScore),
+    activePole: axisPoleOf(rawScore),
+    observation: status === 'insufficient' ? null : text(row.observation),
+    confidence: status === 'insufficient' ? null : boundedScore(row.confidence),
+    evidence: status === 'insufficient' ? [] : stringList(row.evidence),
+    evidenceCount: Math.max(0, Math.round(num(row.evidence_count) ?? 0)),
+    sourceTypes: sourceTypesOf(row),
+  }
+}
+
+function secondaryAxis(definition: AxisDefinition<SecondaryAxisId>, value: unknown): PersonSecondaryAxis {
+  const row = object(value)
+  const status = row.status === 'observed' || row.status === 'emerging' ? row.status : 'insufficient'
+  const score = status === 'insufficient' ? null : boundedScore(row.score)
+  return {
+    id: definition.id,
+    label: definition.label,
+    poleLeft: definition.poleLeft,
+    poleRight: definition.poleRight,
+    status,
+    score,
+    predominancePct: predominanceOf(score),
+    activePole: axisPoleOf(score),
+    observation: status === 'insufficient' ? null : text(row.observation),
+    confidence: status === 'insufficient' ? null : boundedScore(row.confidence),
+    evidenceCount: Math.max(0, Math.round(num(row.evidence_count) ?? 0)),
+    sourceTypes: sourceTypesOf(row),
+  }
 }
 
 export function buildCognitiveProfile(profile: Row, analyzedInteractions: number): PersonCognitiveProfile {
   const structured = object(profile.cognitive_profile_data)
   const interpersonal = object(structured.interpersonal)
+  // schema_version < 3 (ou absent) : primary_axes/secondary_axes n'existent pas
+  // encore côté données — object({}) fait dégrader chaque axe en "insufficient"
+  // plutôt que de planter, en attendant la prochaine synchronisation réelle.
+  const primaryAxesData = object(structured.primary_axes)
+  const secondaryAxesData = object(structured.secondary_axes)
   const maturity = analyzedInteractions < MIN_COGNITIVE_PROFILE_INTERACTIONS ? 'none'
     : analyzedInteractions < MIN_BEHAVIOR_INTERACTIONS ? 'emerging'
       : analyzedInteractions < 25 ? 'usable'
@@ -101,9 +168,8 @@ export function buildCognitiveProfile(profile: Row, analyzedInteractions: number
       assertiveness: cognitiveTheme('assertiveness', 'Assertivité', interpersonal.assertiveness),
       warmth: cognitiveTheme('warmth', 'Chaleur relationnelle', interpersonal.warmth),
     },
-    exchangeStyles: themeList(object(structured.exchange_styles), COGNITIVE_THEME_DEFINITIONS.exchangeStyles),
-    speechActs: themeList(object(structured.speech_acts), COGNITIVE_THEME_DEFINITIONS.speechActs),
-    observableMarkers: themeList(object(structured.observable_markers), COGNITIVE_THEME_DEFINITIONS.observableMarkers),
+    primaryAxes: PRIMARY_AXIS_DEFINITIONS.map((definition) => primaryAxis(definition, primaryAxesData[definition.id])),
+    secondaryAxes: SECONDARY_AXIS_DEFINITIONS.map((definition) => secondaryAxis(definition, secondaryAxesData[definition.id])),
     posture: cognitiveTheme('posture', 'Posture', structured.posture),
   }
 }
@@ -569,9 +635,16 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       meetingInteractions: meetingCount,
       firstInteractionAt: allDates[0] ?? null,
       lastInteractionAt: allDates.at(-1) ?? text(relationshipSnapshot.last_contact_at),
+      // Ancienneté factuelle (jours) : uniquement disponible depuis relationship-score-v3
+      // (voir score-batch) — null pour les snapshots plus anciens, jamais inventée.
+      relationshipAgeDays: num(latestSnapshot.relationship_age_days),
       dimensions: {
         intensity: num(latestSnapshot.intensity_score) ?? num(latestHistory.score_intensite) ?? num(cognitiveProfile.score_intensite),
         reciprocity: num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite),
+        // Récence : uniquement le champ dédié (v2+) — les snapshots v1 stockaient
+        // la longévité sous ce nom, donc on ne les relit pas ici pour éviter de
+        // confondre les deux dimensions (voir plus bas pour ce cas historique).
+        recency: text(latestSnapshot.model_version) === 'relationship-score-v1' ? null : num(latestSnapshot.recency_score),
         // Depuis relationship-score-v2, récence et longévité sont deux champs
         // distincts. L'historique calculé reste prioritaire sur le recency_score
         // des anciens snapshots v1, où la longévité était stockée sous ce nom.

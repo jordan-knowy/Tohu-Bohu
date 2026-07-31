@@ -385,7 +385,7 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
       setBusy(false)
     }
   })()
-  return <button type="button" className="cognitive-sync-action" disabled={busy} title="Relire les échanges et recalculer le profil cognitif (super admin)" onClick={run}>
+  return <button type="button" className="cognitive-sync-action" disabled={busy} title="Relire les échanges et produire la carte comportementale à six dimensions" onClick={run}>
     <span aria-hidden="true">{busy ? '…' : '◉'}</span>
     {busy ? 'Analyse en cours…' : 'Synchroniser le profil cognitif'}
   </button>
@@ -397,6 +397,9 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
     setActiveTab('live')
     window.requestAnimationFrame(() => document.getElementById('person-contact-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
+  const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
+    && (data.behavior.cognitiveProfile.schemaVersion < 3
+      || data.behavior.cognitiveProfile.primaryAxes.every((axis) => axis.status === 'insufficient'))
   return <>
     <div className="pp-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Link to="/app/people">← Personnes</Link>
@@ -418,7 +421,12 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
       </button>}
     </nav>
     <Hero data={data} userId={userId} refresh={refresh} />
-    {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView data={data} userId={userId} refresh={refresh} /></div>}
+    {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView
+      data={data}
+      userId={userId}
+      refresh={refresh}
+      manualSyncAction={profileNeedsRebuild ? <CognitiveSyncButton data={data} userId={userId} refresh={refresh} /> : undefined}
+    /></div>}
     {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
     <V48PersonSourceNote data={data} />

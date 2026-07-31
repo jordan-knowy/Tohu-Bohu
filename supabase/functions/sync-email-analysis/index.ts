@@ -34,6 +34,87 @@ type Analysis = {
   cognitive_profile_data?: Record<string, unknown>
 }
 
+const STATUS_SCHEMA = { type: 'string', enum: ['observed', 'emerging', 'insufficient'] }
+const NULLABLE_NUMBER_SCHEMA = { type: ['number', 'null'] }
+const NULLABLE_STRING_SCHEMA = { type: ['string', 'null'] }
+const SOURCE_TYPES_SCHEMA = {
+  type: 'array',
+  items: { type: 'string', enum: ['email', 'meeting_transcript'] },
+}
+
+function strictObject(properties: Record<string, unknown>): Record<string, unknown> {
+  return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false }
+}
+
+const INTERPERSONAL_AXIS_SCHEMA = strictObject({
+  status: STATUS_SCHEMA,
+  score: NULLABLE_NUMBER_SCHEMA,
+  label: NULLABLE_STRING_SCHEMA,
+  observation: NULLABLE_STRING_SCHEMA,
+  confidence: NULLABLE_NUMBER_SCHEMA,
+  evidence_count: { type: 'integer', minimum: 0 },
+  source_types: SOURCE_TYPES_SCHEMA,
+  evolution: { type: ['string', 'null'], enum: ['rising', 'stable', 'declining', 'mixed', null] },
+})
+
+const PRIMARY_AXIS_SCHEMA = strictObject({
+  status: STATUS_SCHEMA,
+  raw_score: NULLABLE_NUMBER_SCHEMA,
+  margin_pts: NULLABLE_NUMBER_SCHEMA,
+  trend_pts: NULLABLE_NUMBER_SCHEMA,
+  trend_label: { type: ['string', 'null'], enum: ['rising', 'stable', 'declining', null] },
+  observation: NULLABLE_STRING_SCHEMA,
+  confidence: NULLABLE_NUMBER_SCHEMA,
+  evidence: { type: 'array', items: { type: 'string' } },
+  evidence_count: { type: 'integer', minimum: 0 },
+  source_types: SOURCE_TYPES_SCHEMA,
+})
+
+const SECONDARY_AXIS_SCHEMA = strictObject({
+  status: STATUS_SCHEMA,
+  score: NULLABLE_NUMBER_SCHEMA,
+  observation: NULLABLE_STRING_SCHEMA,
+  confidence: NULLABLE_NUMBER_SCHEMA,
+  evidence_count: { type: 'integer', minimum: 0 },
+  source_types: SOURCE_TYPES_SCHEMA,
+})
+
+const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'tohu_cognitive_profile_v3',
+    strict: true,
+    schema: strictObject({
+      executive_summary: NULLABLE_STRING_SCHEMA,
+      cognitive_mode: NULLABLE_STRING_SCHEMA,
+      cognitive_mode_confidence: { type: 'number', minimum: 0, maximum: 100 },
+      global_confidence: { type: 'number', minimum: 0, maximum: 100 },
+      cognitive_profile_data: strictObject({
+        schema_version: { type: 'integer', const: 3 },
+        interpersonal: strictObject({
+          assertiveness: INTERPERSONAL_AXIS_SCHEMA,
+          warmth: INTERPERSONAL_AXIS_SCHEMA,
+        }),
+        primary_axes: strictObject({
+          rythme: PRIMARY_AXIS_SCHEMA,
+          argumentation: PRIMARY_AXIS_SCHEMA,
+          engagement: PRIMARY_AXIS_SCHEMA,
+          registre: PRIMARY_AXIS_SCHEMA,
+          tonalite: PRIMARY_AXIS_SCHEMA,
+          espace_parole: PRIMARY_AXIS_SCHEMA,
+        }),
+        secondary_axes: strictObject({
+          orientation: SECONDARY_AXIS_SCHEMA,
+          certainty: SECONDARY_AXIS_SCHEMA,
+          novelty: SECONDARY_AXIS_SCHEMA,
+          initiative: SECONDARY_AXIS_SCHEMA,
+        }),
+        posture: INTERPERSONAL_AXIS_SCHEMA,
+      }),
+    }),
+  },
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
@@ -578,11 +659,45 @@ function pct(value: unknown): number {
 }
 
 function extractJson(value: string): Analysis {
-  try { return JSON.parse(value) } catch {
-    const match = value.match(/\{[\s\S]*\}/)
-    if (!match) throw new Error('Analyse IA non parsable')
-    return JSON.parse(match[0])
+  const normalized = value.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+
+  try { return JSON.parse(normalized) } catch {
+    // Certains modèles ajoutent une courte phrase avant/après le JSON. On
+    // cherche alors un objet complet en respectant les accolades présentes
+    // dans les chaînes, plutôt que de prendre aveuglément de la première à
+    // la dernière accolade.
+    for (let start = normalized.indexOf('{'); start >= 0; start = normalized.indexOf('{', start + 1)) {
+      let depth = 0
+      let inString = false
+      let escaped = false
+      for (let index = start; index < normalized.length; index++) {
+        const char = normalized[index]
+        if (inString) {
+          if (escaped) escaped = false
+          else if (char === '\\') escaped = true
+          else if (char === '"') inString = false
+          continue
+        }
+        if (char === '"') inString = true
+        else if (char === '{') depth++
+        else if (char === '}' && --depth === 0) {
+          try { return JSON.parse(normalized.slice(start, index + 1)) } catch { break }
+        }
+      }
+    }
+    throw new Error('Analyse IA non parsable')
   }
+}
+
+function openRouterContent(data: any): string {
+  const content = data?.choices?.[0]?.message?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content.map((part) => typeof part === 'string' ? part : String(part?.text ?? '')).join('')
+  }
+  return ''
 }
 
 function errorMessage(error: unknown): string {
@@ -606,23 +721,37 @@ function maturityFor(interactionCount: number): 'none' | 'emerging' | 'usable' |
   return 'refined'
 }
 
-const OBSERVABLE_MARKER_IDS = [
-  'response_time',
-  'dominance_listening_speaking',
-  'linguistic_synchrony',
-  'pronouns_status',
-  'register_distance',
-  'self_disclosure',
+const PRIMARY_AXIS_IDS = [
+  'rythme',
+  'argumentation',
+  'engagement',
+  'registre',
+  'tonalite',
+  'espace_parole',
 ] as const
 
 function structuredBehavioralSignals(profile: Record<string, unknown>): Array<{ trait: string; observation: string; confidence: number }> {
-  const markers = asRecord(profile.observable_markers)
-  return OBSERVABLE_MARKER_IDS.flatMap((trait) => {
-    const marker = asRecord(markers[trait])
-    const observation = typeof marker.observation === 'string' ? marker.observation.trim() : ''
-    if (!observation || marker.status === 'insufficient') return []
-    return [{ trait, observation, confidence: pct(marker.confidence) }]
+  const axes = asRecord(profile.primary_axes)
+  return PRIMARY_AXIS_IDS.flatMap((trait) => {
+    const axis = asRecord(axes[trait])
+    const observation = typeof axis.observation === 'string' ? axis.observation.trim() : ''
+    if (!observation || axis.status === 'insufficient') return []
+    return [{ trait, observation, confidence: pct(axis.confidence) }]
   })
+}
+
+function assertCurrentCognitiveSchema(profile: Record<string, unknown>): void {
+  if (Number(profile.schema_version) !== 3) throw new Error('Le moteur a retourné un profil comportemental dans un ancien format.')
+  const axes = asRecord(profile.primary_axes)
+  const missing = PRIMARY_AXIS_IDS.filter((axisId) => !axes[axisId] || typeof axes[axisId] !== 'object')
+  if (missing.length) throw new Error(`Profil comportemental incomplet : axes manquants (${missing.join(', ')}).`)
+}
+
+function isRetriableAnalysisError(error: unknown): boolean {
+  const message = errorMessage(error)
+  return message === 'Analyse IA non parsable'
+    || message === 'Le moteur a retourné un profil comportemental dans un ancien format.'
+    || message.startsWith('Profil comportemental incomplet :')
 }
 
 async function analyze(
@@ -635,21 +764,26 @@ async function analyze(
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
-  const previous = Object.keys(previousProfile).length ? JSON.stringify(previousProfile).slice(0, 8000) : '{}'
+  // Une fiche V1/V2 ne doit servir ni de contrat de sortie ni d'exemple au
+  // modèle : il avait tendance à en recopier la structure. Elle sera
+  // reconstruite depuis les preuves, puis les prochains calculs V3 pourront
+  // de nouveau utiliser la continuité statistique du profil précédent.
+  const compatiblePreviousProfile = Number(previousProfile.schema_version) === 3 ? previousProfile : {}
+  const previous = Object.keys(compatiblePreviousProfile).length ? JSON.stringify(compatiblePreviousProfile).slice(0, 8000) : '{}'
   const prompt = `Tu construis le profil comportemental évolutif de ${name}, ${role === 'responsable' ? 'responsable de compte connecté' : 'personne suivie'}.
 Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les emails ou prononcé dans les passages de réunion explicitement attribués. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
 
 Règles impératives :
 - aucune pathologie, donnée sensible ou personnalité essentialisée ;
-- aucune citation mot pour mot ni texte d'exemple ;
+- aucune citation mot pour mot ni texte d'exemple dans "observation" — seule "evidence" peut paraphraser un verbatim daté ;
 - chaque observation doit être une paraphrase propre à cette personne ;
-- les identifiants et thèmes du schéma sont fixes et doivent tous être présents ;
+- les identifiants et axes du schéma sont fixes et doivent tous être présents ;
 - status vaut "observed" si plusieurs preuves convergent, "emerging" si la tendance reste fragile, "insufficient" sans preuve ;
-- pour "insufficient", score, label et observation valent null ;
-- score et confidence sont compris entre 0 et 100 ;
-- evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript" ;
-- evolution vaut "rising", "stable", "declining", "mixed" ou null ;
-- le score des axes va du pôle gauche/bas (0) au pôle droit/haut (100) : assertiveness conciliant→assertif, warmth distant→chaleureux, tempo rapide→analytique, openness innovant→conforme, orientation tâche→relation, certainty nuancé→tranché.
+- pour "insufficient", tous les champs numériques et textuels de l'axe valent null et "evidence" est vide ;
+- pour interpersonal/posture (inchangés) : score et confidence entre 0 et 100, evolution vaut "rising"/"stable"/"declining"/"mixed"/null ; assertiveness conciliant(0)→assertif(100), warmth distant(0)→chaleureux(100) ;
+- pour chaque axe primaire (primary_axes) : "raw_score" est la position 0-100 sur l'axe du pôle gauche (0) vers le pôle droit (100) — rythme Posé(0)→Rapide(100), argumentation Récit(0)→Chiffré(100), engagement Implicite(0)→Explicite(100), registre Formel(0)→Direct(100), tonalité Sobre(0)→Chaleureux(100), espace_parole Écoute(0)→Occupe(100) ; "margin_pts" est TON incertitude estimée en points (peu de preuves → marge large, ex. 15-20 ; preuves nombreuses et convergentes → marge étroite, ex. 5-8) ; "trend_pts" est le delta signé de "raw_score" par rapport au profil précédent sur la période récente (null si aucun profil précédent ou axe alors insuffisant), "trend_label" vaut "rising"/"stable"/"declining" en cohérence avec le signe (stable si |trend_pts| <= 3) ; "evidence" contient 2 à 3 items COURTS mélangeant si possible un verbatim paraphrasé daté (jamais mot pour mot), une observation quantifiée (durée, fréquence), et un ratio/compte ;
+- pour chaque axe secondaire (secondary_axes) : "score" suit la même échelle 0-100 pôle gauche→droit (orientation Tâche(0)→Relation(100), certainty Prudent(0)→Affirmatif(100), novelty Éprouvé(0)→Exploratoire(100), initiative Suit(0)→Mène(100)) ; pas de champ "evidence" ici, seulement "observation" ;
+- evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript".
 
 Réponds uniquement avec ce JSON strict :
 {
@@ -658,31 +792,24 @@ Réponds uniquement avec ce JSON strict :
   "cognitive_mode_confidence": 0,
   "global_confidence": 0,
   "cognitive_profile_data": {
-    "schema_version": 2,
+    "schema_version": 3,
     "interpersonal": {
       "assertiveness": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
       "warmth": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
     },
-    "exchange_styles": {
-      "tempo": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "openness": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "orientation": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "certainty": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    "primary_axes": {
+      "rythme": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+      "argumentation": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+      "engagement": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+      "registre": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+      "tonalite": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+      "espace_parole": {"status":"insufficient","raw_score":null,"margin_pts":null,"trend_pts":null,"trend_label":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]}
     },
-    "speech_acts": {
-      "directive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "commissive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "assertive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "interrogative": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "expressive": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
-    },
-    "observable_markers": {
-      "response_time": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "dominance_listening_speaking": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "linguistic_synchrony": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "pronouns_status": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "register_distance": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
-      "self_disclosure": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    "secondary_axes": {
+      "orientation": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]},
+      "certainty": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]},
+      "novelty": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]},
+      "initiative": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]}
     },
     "posture": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
   }
@@ -690,14 +817,52 @@ Réponds uniquement avec ce JSON strict :
 
 Profil précédent : ${previous}
 Nouveaux extraits :\n${corpus}`
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Email Behavior Analysis' },
-    body: JSON.stringify({ model: Deno.env.get('OPENROUTER_MODEL') ?? 'google/gemini-2.5-flash-lite', temperature: 0.1, response_format: { type: 'json_object' }, max_tokens: 3600, messages: [{ role: 'user', content: prompt }] }),
-  })
-  if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
-  const data = await response.json()
-  return extractJson(String(data.choices?.[0]?.message?.content ?? ''))
+  const requestAnalysis = async (retry: boolean): Promise<Analysis> => {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Email Behavior Analysis' },
+      body: JSON.stringify({
+        model: Deno.env.get('OPENROUTER_MODEL') ?? 'google/gemini-2.5-flash-lite',
+        temperature: retry ? 0 : 0.1,
+        response_format: COGNITIVE_PROFILE_RESPONSE_FORMAT,
+        // Empêche OpenRouter de choisir un fournisseur qui ignorerait le
+        // JSON Schema et retomberait silencieusement sur l'ancien format.
+        provider: { require_parameters: true },
+        max_tokens: retry ? 7000 : 6000,
+        messages: [{
+          role: 'user',
+          content: retry
+            ? `${prompt}\n\nIMPORTANT : la tentative précédente a produit un JSON invalide, tronqué ou dans un ancien schéma. Repars exclusivement du contrat ci-dessus : cognitive_profile_data.schema_version doit valoir 3 et les six primary_axes doivent tous être présents. Réponds de façon compacte, sans Markdown ni commentaire avant ou après l'objet JSON, et ferme impérativement toutes les structures JSON.`
+            : prompt,
+        }],
+      }),
+    })
+    if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
+    const data = await response.json()
+    const content = openRouterContent(data)
+    try {
+      const result = extractJson(content)
+      assertCurrentCognitiveSchema(asRecord(result.cognitive_profile_data))
+      return result
+    } catch (error) {
+      // Ne jamais journaliser `content` : il peut contenir des paraphrases
+      // issues des emails. Les métadonnées suffisent au diagnostic.
+      console.warn('Réponse comportementale invalide', {
+        retry,
+        finishReason: data?.choices?.[0]?.finish_reason ?? null,
+        contentLength: content.length,
+        validationError: errorMessage(error),
+      })
+      throw error
+    }
+  }
+
+  try {
+    return await requestAnalysis(false)
+  } catch (error) {
+    if (!isRetriableAnalysisError(error)) throw error
+    return await requestAnalysis(true)
+  }
 }
 
 /** Priorité garantie à toute relation déjà suivie (personne OU entreprise) —
@@ -995,7 +1160,27 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     if (!manualContactId && responsibleCorpus.length >= 3) {
       try {
         const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', actingUserId).single()).data?.full_name ?? actingUserEmail ?? 'Responsable', 'responsable', responsibleCorpus)
-        await supabase.from('user_behavioral_profiles').upsert({ organization_id: organizationId, user_id: actingUserId, global_confidence: pct(result.global_confidence), executive_summary: result.executive_summary ?? null, cognitive_mode: result.cognitive_mode ?? null, cognitive_mode_confidence: pct(result.cognitive_mode_confidence), behavioral_analysis_data: result.behavioral_analysis_data ?? [], communication_style_data: result.communication_style_data ?? {}, source_message_count: responsibleCorpus.length, updated_from: [provider, 'email'], updated_at: new Date().toISOString() }, { onConflict: 'organization_id,user_id' })
+        const cognitiveProfileData = asRecord(result.cognitive_profile_data)
+        assertCurrentCognitiveSchema(cognitiveProfileData)
+        const now = new Date().toISOString()
+        await supabase.from('user_behavioral_profiles').upsert({
+          organization_id: organizationId,
+          user_id: actingUserId,
+          global_confidence: pct(result.global_confidence),
+          executive_summary: result.executive_summary ?? null,
+          cognitive_mode: result.cognitive_mode ?? null,
+          cognitive_mode_confidence: pct(result.cognitive_mode_confidence),
+          behavioral_analysis_data: structuredBehavioralSignals(cognitiveProfileData),
+          communication_style_data: asRecord(cognitiveProfileData.secondary_axes),
+          cognitive_profile_data: cognitiveProfileData,
+          source_message_count: responsibleCorpus.length,
+          source_interaction_count: responsibleCorpus.length,
+          maturity_level: maturityFor(responsibleCorpus.length),
+          analysis_version: 3,
+          last_analyzed_at: now,
+          updated_from: [provider, 'email'],
+          updated_at: now,
+        }, { onConflict: 'organization_id,user_id' })
         responsibleAnalyzed = true
       } catch (error) {
         analysisErrors.push(`responsable: ${errorMessage(error)}`)
@@ -1056,6 +1241,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
         const cognitiveProfileData = asRecord(result.cognitive_profile_data)
+        // Ne jamais remplacer un profil existant par une réponse ancienne ou
+        // tronquée : le front V57 exige les six axes fixes de schema_version 3.
+        assertCurrentCognitiveSchema(cognitiveProfileData)
         const structuredSignals = structuredBehavioralSignals(cognitiveProfileData)
         const now = new Date().toISOString()
         const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({
@@ -1068,7 +1256,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           cognitive_mode: result.cognitive_mode ?? null,
           cognitive_mode_confidence: pct(result.cognitive_mode_confidence),
           behavioral_analysis_data: structuredSignals,
-          communication_style_data: asRecord(cognitiveProfileData.exchange_styles),
+          communication_style_data: asRecord(cognitiveProfileData.secondary_axes),
           cognitive_profile_data: cognitiveProfileData,
           source_message_count: messageCount,
           source_meeting_count: attributedMeetingCount,
@@ -1371,8 +1559,6 @@ Deno.serve(async (request) => {
   const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
   if (!membership) return json({ error: 'Accès refusé' }, 403)
   if (contactId) {
-    const { data: superAdmin } = await supabase.from('super_admins').select('user_id').eq('user_id', user.id).maybeSingle()
-    if (!superAdmin) return json({ error: 'Synchronisation cognitive manuelle réservée aux super admins' }, 403)
     const { data: target } = await supabase.from('contacts').select('id').eq('organization_id', organizationId).eq('id', contactId).is('merged_into_contact_id', null).maybeSingle()
     if (!target) return json({ error: 'Personne introuvable dans cet espace' }, 404)
   }

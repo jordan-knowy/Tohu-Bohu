@@ -246,6 +246,20 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
   if (error) throw error
 }
 
+export type RelationshipNarrative = { narrative: string; generatedAt: string | null; cached: boolean }
+
+/** Phrase de justification mensuelle du score — générée à la demande (à l'ouverture
+ *  de l'onglet Relation), mise en cache côté serveur par mois : un seul appel IA
+ *  par mois et par fiche réellement consultée, jamais dans la boucle cron. */
+export async function fetchRelationshipNarrative(workspaceId: string, personId: string): Promise<RelationshipNarrative> {
+  const { data, error } = await getSupabase().functions.invoke('generate-relationship-narrative', {
+    body: { organizationId: workspaceId, subjectType: 'person', subjectId: personId },
+  })
+  if (error) throw await invokeError(error, 'Génération de la synthèse impossible.')
+  if (data?.error) throw new Error(String(data.error))
+  return { narrative: String(data.narrative ?? ''), generatedAt: data.generatedAt ?? null, cached: Boolean(data.cached) }
+}
+
 export type PersonEnrichmentResult = { scanned: number; enriched: number; failed: number }
 export type PersonCognitiveSyncResult = {
   providers: string[]
@@ -279,9 +293,9 @@ export async function triggerPersonEnrichment(contactId: string): Promise<Person
   return data as PersonEnrichmentResult
 }
 
-/** Relecture ciblée des échanges et recalcul du profil cognitif. Le contrôle
- * super-admin est répété dans l'edge function : masquer le bouton ne constitue
- * jamais le mécanisme d'autorisation. */
+/** Relecture ciblée des échanges et recalcul du profil cognitif. L'edge
+ * function vérifie l'appartenance à l'organisation, la fiche cible et impose
+ * l'utilisation d'un connecteur appartenant à l'utilisateur connecté. */
 export async function triggerPersonCognitiveSync(data: PersonDetailData, userId: string): Promise<PersonCognitiveSyncResult> {
   const client = getSupabase()
   if (!userId) throw new Error('Session utilisateur introuvable.')

@@ -223,12 +223,30 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
   const peak = monthly.reduce<[string, number] | null>((best, item) => best && best[1] >= item[1] ? best : item, null)
   const max = peak?.[1] ?? 1
 
-  const groups: Array<{ year: string; events: PersonHistoryEvent[] }> = []
-  for (const event of events.slice(0, limit)) {
-    const year = event.occurredAt.slice(0, 4)
+  // Silence détecté entre deux événements consécutifs de la chronologie réelle
+  // (jamais une catégorie de sentiment inventée — seulement un écart de dates).
+  const GAP_THRESHOLD_DAYS = 30
+  type TimelineRow = { kind: 'event'; event: PersonHistoryEvent } | { kind: 'gap'; days: number; year: string }
+  const rows = useMemo(() => {
+    const sliced = events.slice(0, limit)
+    const result: TimelineRow[] = []
+    for (const [index, event] of sliced.entries()) {
+      result.push({ kind: 'event', event })
+      const next = sliced[index + 1]
+      if (next) {
+        const days = Math.round((new Date(event.occurredAt).getTime() - new Date(next.occurredAt).getTime()) / 86_400_000)
+        if (days >= GAP_THRESHOLD_DAYS) result.push({ kind: 'gap', days, year: event.occurredAt.slice(0, 4) })
+      }
+    }
+    return result
+  }, [events, limit])
+
+  const groups: Array<{ year: string; rows: TimelineRow[] }> = []
+  for (const row of rows) {
+    const year = row.kind === 'event' ? row.event.occurredAt.slice(0, 4) : row.year
     const group = groups.at(-1)
-    if (group && group.year === year) group.events.push(event)
-    else groups.push({ year, events: [event] })
+    if (group && group.year === year) group.rows.push(row)
+    else groups.push({ year, rows: [row] })
   }
 
   return <div className={`feed-card relhist ${open ? '' : 'collapsed'}`} style={{ marginTop: 14 }}>
@@ -261,17 +279,19 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
           <div className="rh-tl" data-gran="mois">
             {groups.map((group) => <div key={group.year}>
               <div className="rh-year">{group.year}</div>
-              {group.events.map((event) => <div className="rh-ev detail" data-type={EVENT_TAGS[event.type].tone} key={event.id}>
-                <span className="rh-dot" />
-                <div className="rh-ev-b">
-                  <div className="rh-ev-h">
-                    <span className="rh-mo">{formatDate(event.occurredAt)}</span>
-                    <span className={`rh-tag ${EVENT_TAGS[event.type].tone}`}>{EVENT_TAGS[event.type].label}</span>
+              {group.rows.map((row, index) => row.kind === 'gap'
+                ? <div className="rh-gap" key={`gap-${group.year}-${index}`}><span>{row.days} j de silence</span></div>
+                : <div className="rh-ev detail" data-type={EVENT_TAGS[row.event.type].tone} key={row.event.id}>
+                  <span className="rh-dot" />
+                  <div className="rh-ev-b">
+                    <div className="rh-ev-h">
+                      <span className="rh-mo">{formatDate(row.event.occurredAt)}</span>
+                      <span className={`rh-tag ${EVENT_TAGS[row.event.type].tone}`}>{EVENT_TAGS[row.event.type].label}</span>
+                    </div>
+                    <div className="rh-ev-t">{row.event.title}{row.event.description ? ` — ${row.event.description}` : ''}</div>
+                    <div className="rh-ev-src">↳ {row.event.sourceLabel}</div>
                   </div>
-                  <div className="rh-ev-t">{event.title}{event.description ? ` — ${event.description}` : ''}</div>
-                  <div className="rh-ev-src">↳ {event.sourceLabel}</div>
-                </div>
-              </div>)}
+                </div>)}
             </div>)}
           </div>
           {events.length > limit && <button type="button" className="cv-more" onClick={() => setLimit((value) => value + 12)}>Charger plus ({events.length - limit} restants) ↓</button>}

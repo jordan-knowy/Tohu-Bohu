@@ -69,7 +69,12 @@ export type UserBehaviorProfile = {
   cognitive_mode_confidence: number | null
   behavioral_analysis_data: Array<{ trait?: string; observation?: string; confidence?: number }>
   communication_style_data: Record<string, unknown>
+  cognitive_profile_data: Record<string, unknown>
   source_message_count: number
+  source_interaction_count: number
+  maturity_level: 'none' | 'emerging' | 'usable' | 'consolidated' | 'refined'
+  analysis_version: number
+  last_analyzed_at: string | null
   updated_from: string[]
   updated_at: string
 }
@@ -329,12 +334,30 @@ export async function getProfile(userId: string): Promise<ProfileRow> {
 }
 
 export async function getResponsibleBehaviorProfile(userId: string, organizationId: string): Promise<UserBehaviorProfile | null> {
-  const { data, error } = await getSupabase()
+  const client = getSupabase()
+  const { data, error } = await client
     .from('user_behavioral_profiles')
-    .select('global_confidence,executive_summary,cognitive_mode,cognitive_mode_confidence,behavioral_analysis_data,communication_style_data,source_message_count,updated_from,updated_at')
+    .select('global_confidence,executive_summary,cognitive_mode,cognitive_mode_confidence,behavioral_analysis_data,communication_style_data,cognitive_profile_data,source_message_count,source_interaction_count,maturity_level,analysis_version,last_analyzed_at,updated_from,updated_at')
     .eq('user_id', userId)
     .eq('organization_id', organizationId)
     .maybeSingle()
+  if (error && (['42703', 'PGRST204'].includes(error.code ?? '') || /cognitive_profile_data|source_interaction_count|maturity_level|analysis_version|last_analyzed_at/i.test(error.message))) {
+    const legacy = await client.from('user_behavioral_profiles')
+      .select('global_confidence,executive_summary,cognitive_mode,cognitive_mode_confidence,behavioral_analysis_data,communication_style_data,source_message_count,updated_from,updated_at')
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (legacy.error) throw legacy.error
+    if (!legacy.data) return null
+    return {
+      ...legacy.data,
+      cognitive_profile_data: {},
+      source_interaction_count: legacy.data.source_message_count ?? 0,
+      maturity_level: 'none',
+      analysis_version: 2,
+      last_analyzed_at: legacy.data.updated_at ?? null,
+    } as UserBehaviorProfile
+  }
   if (error) throw error
   return data as UserBehaviorProfile | null
 }
