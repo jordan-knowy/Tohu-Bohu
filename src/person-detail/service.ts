@@ -265,6 +265,12 @@ export type PersonCognitiveSyncResult = {
   providers: string[]
   messages: number
   peopleAnalyzed: number
+  messagesScanned: number
+  inboundMessages: number
+  emailExcerpts: number
+  meetingExcerpts: number
+  attributedInteractions: number
+  automatedMessagesIgnored: number
   errors: string[]
 }
 
@@ -312,7 +318,18 @@ export async function triggerPersonCognitiveSync(data: PersonDetailData, userId:
   if (connectorError) throw connectorError
   if (!connectors?.length) throw new Error('Aucun connecteur Gmail ou Microsoft 365 actif pour ce compte.')
 
-  const result: PersonCognitiveSyncResult = { providers: [], messages: 0, peopleAnalyzed: 0, errors: [] }
+  const result: PersonCognitiveSyncResult = {
+    providers: [],
+    messages: 0,
+    peopleAnalyzed: 0,
+    messagesScanned: 0,
+    inboundMessages: 0,
+    emailExcerpts: 0,
+    meetingExcerpts: 0,
+    attributedInteractions: 0,
+    automatedMessagesIgnored: 0,
+    errors: [],
+  }
   for (const connector of connectors) {
     const provider = String(connector.provider)
     const { data: response, error } = await client.functions.invoke('sync-email-analysis', {
@@ -332,6 +349,12 @@ export async function triggerPersonCognitiveSync(data: PersonDetailData, userId:
     result.providers.push(provider)
     result.messages += Number(response?.messages ?? 0)
     result.peopleAnalyzed += Number(response?.peopleAnalyzed ?? 0)
+    result.messagesScanned += Number(response?.messagesScanned ?? 0)
+    result.inboundMessages += Number(response?.inboundMessages ?? 0)
+    result.emailExcerpts += Number(response?.emailExcerpts ?? 0)
+    result.meetingExcerpts += Number(response?.meetingExcerpts ?? 0)
+    result.attributedInteractions += Number(response?.attributedInteractions ?? 0)
+    result.automatedMessagesIgnored += Number(response?.automatedMessagesIgnored ?? 0)
     if (Array.isArray(response?.analysisErrors)) result.errors.push(...response.analysisErrors.map(String))
   }
   if (!result.providers.length) throw new Error(result.errors.join(' · ') || 'Synchronisation cognitive impossible.')

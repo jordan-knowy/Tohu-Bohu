@@ -248,6 +248,8 @@ const PER_CONTACT_MAX_MESSAGES = positiveIntegerEnv('EMAIL_PER_CONTACT_MAX_MESSA
  * correspondant dans la fenêtre autorisée. Elle a son propre plafond, plus
  * élevé que le budget partagé d'une synchronisation globale. */
 const TARGET_CONTACT_MAX_MESSAGES = positiveIntegerEnv('EMAIL_TARGET_CONTACT_MAX_MESSAGES', 2000)
+const PROFILE_ANALYSIS_MAX_CONTACTS = positiveIntegerEnv('EMAIL_PROFILE_ANALYSIS_MAX_CONTACTS', 24)
+const MEETING_CORPUS_MAX_CONTACTS = positiveIntegerEnv('EMAIL_MEETING_CORPUS_MAX_CONTACTS', 200)
 const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
 /** Nombre de connecteurs traités par tick du cron de reprise du backfill —
  *  reste faible pour que le temps d'exécution total du tick reste borné,
@@ -869,6 +871,7 @@ Nouveaux extraits :\n${corpus}`
  *  dépasse largement tout score organique pour ne jamais être évincée par le
  *  volume d'un tiers non suivi, même très actif. */
 const TRACKED_RELEVANCE_BOOST = 100_000
+const MISSING_V3_PROFILE_BOOST = 200_000
 
 type RelevanceStat = { inbound: number; outbound: number; lastSentAt: string; messages: Mail[] }
 
@@ -881,8 +884,10 @@ function selectMessagesByRelevance(
   ownEmail: string,
   contactByEmail: Map<string, any>,
   trackedDomains: Set<string>,
+  trackedCompanyIds: Set<string>,
+  currentV3ProfileContactIds: Set<string>,
   budget: number,
-): { selectedIds: Set<string>; contactsPrioritized: number } {
+): { selectedIds: Set<string>; contactsPrioritized: number; missingProfileContactIds: Set<string> } {
   const statsByEmail = new Map<string, RelevanceStat>()
   for (const message of messages) {
     const externals = (message.direction === 'inbound' ? [message.from] : message.to)
@@ -910,14 +915,22 @@ function selectMessagesByRelevance(
   const ranked = [...statsByEmail.entries()].map(([email, stat]) => {
     const contact = contactByEmail.get(email)
     const domain = corporateDomain(email)
-    const tracked = contact?.is_tracked === true || (domain !== null && trackedDomains.has(domain))
+    const tracked = contact?.is_tracked === true
+      || trackedCompanyIds.has(String(contact?.company_id ?? ''))
+      || (domain !== null && trackedDomains.has(domain))
+    const missingCurrentProfile = tracked && contact?.id && !currentV3ProfileContactIds.has(String(contact.id))
     const total = stat.inbound + stat.outbound
     const reciprocityBonus = stat.inbound > 0 && stat.outbound > 0 ? total * 0.5 : 0
     const recencyDays = (now - new Date(stat.lastSentAt).getTime()) / 86_400_000
     const recencyBonus = Math.max(0, 60 - recencyDays)
-    const score = (tracked ? TRACKED_RELEVANCE_BOOST : 0) + total + reciprocityBonus + recencyBonus
-    return { email, score, stat }
+    const score = (missingCurrentProfile ? MISSING_V3_PROFILE_BOOST : tracked ? TRACKED_RELEVANCE_BOOST : 0)
+      + total + reciprocityBonus + recencyBonus
+    return { email, score, stat, contactId: contact?.id ? String(contact.id) : null, missingCurrentProfile }
   }).sort((a, b) => b.score - a.score)
+
+  const missingProfileContactIds = new Set(ranked
+    .filter((entry) => entry.missingCurrentProfile && entry.contactId && entry.stat.inbound >= 3)
+    .map((entry) => entry.contactId as string))
 
   const selectedIds = new Set<string>()
   let remaining = budget
@@ -935,7 +948,7 @@ function selectMessagesByRelevance(
     }
     if (addedForThisContact) contactsPrioritized++
   }
-  return { selectedIds, contactsPrioritized }
+  return { selectedIds, contactsPrioritized, missingProfileContactIds }
 }
 
 type SyncParams = {
@@ -1038,11 +1051,20 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       : rawScan
     const messages = scan.messages
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
-    const [{ data: existingContacts }, { data: identityAliases, error: identityAliasError }] = await Promise.all([
-      supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked').eq('organization_id', organizationId).is('merged_into_contact_id', null),
+    const [
+      { data: existingContacts },
+      { data: identityAliases, error: identityAliasError },
+      { data: trackedCompanyRows, error: trackedCompaniesError },
+      { data: existingProfileRows, error: existingProfilesError },
+    ] = await Promise.all([
+      supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked,company_id').eq('organization_id', organizationId).is('merged_into_contact_id', null),
       supabase.from('contact_identity_aliases').select('contact_id,identity_value').eq('organization_id', organizationId).eq('identity_type', 'email'),
+      supabase.from('companies').select('id,domain').eq('organization_id', organizationId).eq('is_tracked', true),
+      supabase.from('cognitive_profiles').select('contact_id,cognitive_profile_data').eq('organization_id', organizationId).eq('profile_version', 1),
     ])
     if (identityAliasError) throw identityAliasError
+    if (trackedCompaniesError) throw trackedCompaniesError
+    if (existingProfilesError) throw existingProfilesError
     const contactByEmail = new Map<string, any>()
     const contactById = new Map<string, any>()
     for (const item of existingContacts ?? []) {
@@ -1057,16 +1079,28 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       const normalized = cleanEmail(alias.identity_value)
       if (contact && normalized) contactByEmail.set(normalized, contact)
     }
+    // En relecture ciblée, la fiche explicitement demandée est autoritaire.
+    // Une ancienne identité alias peut encore pointer vers un doublon et ne
+    // doit jamais détourner ses messages vers une autre fiche.
+    if (manualContactId) {
+      const targetContact = contactById.get(manualContactId)
+      if (targetContact) {
+        for (const email of targetEmails) contactByEmail.set(email, targetContact)
+      }
+    }
 
     // Qui a droit au traitement complet (corps + stockage) se décide par
     // pertinence de la relation sur toute la fenêtre découverte, pas par
     // simple position chronologique — une boîte très bruitée noierait sinon
     // les vraies relations derrière du volume automatisé récent.
-    const { data: trackedCompanyRows } = await supabase.from('companies').select('domain').eq('organization_id', organizationId).eq('is_tracked', true)
     const trackedDomains = new Set((trackedCompanyRows ?? []).map((row: any) => String(row.domain ?? '').toLowerCase().trim()).filter(Boolean))
+    const trackedCompanyIds = new Set((trackedCompanyRows ?? []).map((row: any) => String(row.id)))
+    const currentV3ProfileContactIds = new Set((existingProfileRows ?? [])
+      .filter((row: any) => Number(asRecord(row.cognitive_profile_data).schema_version) === 3)
+      .map((row: any) => String(row.contact_id)))
     const relevance = manualContactId
-      ? { selectedIds: new Set(messages.map((message) => message.id)), contactsPrioritized: targetEmails.length ? 1 : 0 }
-      : selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, ANALYSIS_MAX_MESSAGES)
+      ? { selectedIds: new Set(messages.map((message) => message.id)), contactsPrioritized: targetEmails.length ? 1 : 0, missingProfileContactIds: new Set<string>() }
+      : selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, trackedCompanyIds, currentV3ProfileContactIds, ANALYSIS_MAX_MESSAGES)
     for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
     if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
 
@@ -1102,7 +1136,8 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           body: message.body,
           headers: message.headers,
         })
-        if (classification.automated && !manuallyIntegrated) {
+        const explicitlyTargeted = Boolean(manualContactId && contact?.id === manualContactId)
+        if (classification.automated && !manuallyIntegrated && !explicitlyTargeted) {
           skippedAutomated++
           for (const reason of classification.reasons) skippedReasons[reason] = (skippedReasons[reason] ?? 0) + 1
           continue
@@ -1130,7 +1165,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
             p_source: `email_${provider}`,
           }).maybeSingle()
           if (error || !resolved?.contact_id) continue
-          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: actingUserId, is_tracked: false }
+          contact = { id: resolved.contact_id, email: external.email, full_name: cleanName(external.name, external.email), owner_user_id: actingUserId, is_tracked: false, company_id: companyId }
           contactByEmail.set(external.email, contact)
         } else if (!contact.owner_user_id) {
           await supabase.from('contacts').update({ owner_user_id: actingUserId }).eq('id', contact.id)
@@ -1148,7 +1183,12 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
-      else if (message.body && (primaryContact.is_tracked === true || primaryContact.id === manualContactId)) {
+      else if (message.body && (
+        primaryContact.is_tracked === true
+        || trackedCompanyIds.has(String(primaryContact.company_id ?? ''))
+        || trackedDomains.has(corporateDomain(String(primaryContact.email ?? '')) ?? '')
+        || primaryContact.id === manualContactId
+      )) {
         contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email]\n${message.body}`])
       }
     })
@@ -1189,14 +1229,25 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
 
     let peopleAnalyzed = 0
     const emailCandidateIds = [...contactCorpus.entries()]
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, manualContactId ? 1 : 24)
+      .sort((a, b) => {
+        const aMissing = currentV3ProfileContactIds.has(a[0]) ? 0 : 1
+        const bMissing = currentV3ProfileContactIds.has(b[0]) ? 0 : 1
+        return bMissing - aMissing || b[1].length - a[1].length
+      })
+      .slice(0, manualContactId ? 1 : PROFILE_ANALYSIS_MAX_CONTACTS)
       .map(([contactId]) => contactId)
     const meetingOnlyCandidateIds = manualContactId
       ? [manualContactId]
       : [...contactById.values()]
-        .filter((contact) => contact.is_tracked === true && !contactCorpus.has(String(contact.id)))
-        .slice(0, 24)
+        .filter((contact) => (
+          contact.is_tracked === true || trackedCompanyIds.has(String(contact.company_id ?? ''))
+        ) && !contactCorpus.has(String(contact.id)))
+        .sort((a, b) => {
+          const aMissing = currentV3ProfileContactIds.has(String(a.id)) ? 0 : 1
+          const bMissing = currentV3ProfileContactIds.has(String(b.id)) ? 0 : 1
+          return bMissing - aMissing
+        })
+        .slice(0, MEETING_CORPUS_MAX_CONTACTS)
         .map((contact) => String(contact.id))
     const meetingCandidateIds = [...new Set([
       ...emailCandidateIds,
@@ -1213,6 +1264,11 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     } catch (error) {
       analysisErrors.push(`transcriptions de réunion: ${errorMessage(error)}`)
     }
+    for (const [contactId, corpus] of meetingCorpus) {
+      if (corpus.meetingCount >= 3 && !currentV3ProfileContactIds.has(contactId)) {
+        relevance.missingProfileContactIds.add(contactId)
+      }
+    }
     const combinedCorpus = new Map<string, string[]>()
     for (const contactId of meetingCandidateIds) {
       const excerpts = [...(contactCorpus.get(contactId) ?? []), ...(meetingCorpus.get(contactId)?.excerpts ?? [])]
@@ -1222,8 +1278,13 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // porte sur le corpus attribué total, pas sur la seule passe courante.
     const candidates = [...combinedCorpus.entries()]
       .filter(([contactId, excerpts]) => excerpts.length > 0 && (!manualContactId || contactId === manualContactId))
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, manualContactId ? 1 : 24)
+      .sort((a, b) => {
+        const aMissing = currentV3ProfileContactIds.has(a[0]) ? 0 : 1
+        const bMissing = currentV3ProfileContactIds.has(b[0]) ? 0 : 1
+        return bMissing - aMissing || b[1].length - a[1].length
+      })
+      .slice(0, manualContactId ? 1 : PROFILE_ANALYSIS_MAX_CONTACTS)
+    let targetInteractionCount = 0
     for (let i = 0; i < candidates.length; i++) {
       const [contactId, excerpts] = candidates[i]
       try {
@@ -1237,6 +1298,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         if (previousError) throw previousError
         const messageCount = interactionCountRaw ?? 0
         const interactionCount = messageCount + attributedMeetingCount
+        if (manualContactId && contactId === manualContactId) targetInteractionCount = interactionCount
         if (interactionCount < 3) continue
         const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
@@ -1274,6 +1336,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           const { error: signalsError } = await supabase.from('behavioral_signals').insert(signals)
           if (signalsError) throw signalsError
         }
+        currentV3ProfileContactIds.add(contactId)
         peopleAnalyzed++
       } catch (error) {
         analysisErrors.push(`contact ${contactId}: ${errorMessage(error)}`)
@@ -1316,6 +1379,8 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       }
     }
 
+    const profilesPending = [...relevance.missingProfileContactIds]
+      .filter((contactId) => !currentV3ProfileContactIds.has(contactId)).length
     const syncSummary = {
       messages: storedMessages,
       messages_scanned: messages.length,
@@ -1326,11 +1391,19 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       automated_messages_ignored: skippedAutomated,
       ignored_reasons: skippedReasons,
       relationships_prioritized: relevance.contactsPrioritized,
+      profiles_pending: profilesPending,
       backfill_complete: backfillComplete,
     }
+    const targetDiagnostics = manualContactId ? {
+      messagesScanned: messages.length,
+      inboundMessages: messages.filter((message) => message.direction === 'inbound' && targetEmails.includes(message.from.email)).length,
+      emailExcerpts: contactCorpus.get(manualContactId)?.length ?? 0,
+      meetingExcerpts: meetingCorpus.get(manualContactId)?.excerpts.length ?? 0,
+      attributedInteractions: targetInteractionCount,
+    } : {}
     const connectorMetadata = manualContactId
       ? { ...(connector.metadata ?? {}), last_manual_cognitive_sync: { contact_id: manualContactId, at: new Date().toISOString(), ...syncSummary } }
-      : { ...(connector.metadata ?? {}), last_sync: syncSummary, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
+      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
     await supabase.from('connectors').update({
       status: 'connected',
       last_synced_at: new Date().toISOString(),
@@ -1338,7 +1411,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       updated_at: new Date().toISOString(),
     }).eq('id', connector.id)
     if (syncJobId) await supabase.from('sync_jobs').update({ status: 'succeeded', current_step: 'Synchronisation terminée', progress: 100, completed_at: new Date().toISOString(), payload: { provider, contact_id: manualContactId, ...syncSummary, analysis_errors: analysisErrors.slice(0, 5) } }).eq('id', syncJobId)
-    return { success: true, contactId: manualContactId, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5), backfillComplete }
+    return { success: true, contactId: manualContactId, messages: storedMessages, responsibleAnalyzed, peopleAnalyzed, profilesPending, automatedMessagesIgnored: skippedAutomated, analysisErrors: analysisErrors.slice(0, 5), backfillComplete, ...targetDiagnostics }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Synchronisation impossible'
     if (syncJobId) {
@@ -1520,7 +1593,9 @@ Deno.serve(async (request) => {
       .order('last_synced_at', { ascending: true, nullsFirst: true })
     let pool = incremental
       ? (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete === true)
-      : (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete !== true)
+      : (candidates ?? []).filter((row: any) =>
+          (row.metadata as any)?.backfill_complete !== true
+          || Number((row.metadata as any)?.profile_backfill_pending ?? 0) > 0)
     if (body.organizationId) pool = pool.filter((row: any) => row.organization_id === body.organizationId)
     const selected = pool.slice(0, incremental ? INCREMENTAL_MAX_CONNECTORS_PER_RUN : BACKFILL_MAX_CONNECTORS_PER_RUN)
 

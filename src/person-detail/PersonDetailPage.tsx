@@ -376,8 +376,16 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
         toast('Profil cognitif recalculé à partir des emails et prises de parole attribuables retrouvés.')
       } else if (result.errors.length) {
         toast(`Échanges synchronisés, mais analyse incomplète : ${result.errors.join(' · ')}`, 'error')
+      } else if (result.messagesScanned === 0 && result.meetingExcerpts === 0) {
+        toast('Aucun email ni passage de réunion retrouvé pour les adresses enregistrées sur cette fiche.', 'error')
+      } else if (result.inboundMessages === 0 && result.meetingExcerpts === 0) {
+        toast('Des échanges ont été retrouvés, mais uniquement des messages que tu as envoyés. Il faut des propos rédigés ou prononcés par cette personne pour inférer son profil.', 'error')
+      } else if (result.attributedInteractions > 0 && result.attributedInteractions < data.behavior.profileMinimumInteractions) {
+        toast(`${result.attributedInteractions} interaction(s) attribuable(s) retrouvée(s) ; ${data.behavior.profileMinimumInteractions} sont nécessaires pour commencer le profil.`, 'error')
+      } else if (result.emailExcerpts === 0 && result.meetingExcerpts === 0) {
+        toast('Des messages ont été retrouvés, mais leur contenu textuel n’a pas pu être extrait ou attribué de manière fiable.', 'error')
       } else {
-        toast('Aucun nouvel extrait exploitable trouvé pour cette personne.', 'error')
+        toast('Les extraits ont été retrouvés, mais ils ne suffisent pas encore à produire un profil comportemental fiable.', 'error')
       }
     } catch (reason) {
       toast(reason instanceof Error ? reason.message : 'Synchronisation cognitive impossible.', 'error')

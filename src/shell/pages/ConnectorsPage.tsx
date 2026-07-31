@@ -74,7 +74,9 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation impossible.')
     await refresh()
     const meetSuffix = meetData && !meetData.error && meetData.meetings > 0 ? ` · ${meetData.meetings} réunion(s) Google Meet` : ''
-    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${meetSuffix}.`)
+    const pendingProfiles = Number(data.profilesPending ?? 0)
+    const pendingSuffix = pendingProfiles > 0 ? ` · ${pendingProfiles} profil(s) V3 restant(s), repris automatiquement` : ''
+    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}.`)
   }, [organizationId, refresh, toast])
 
   const syncHubspot = useCallback(async () => {
