@@ -16,8 +16,13 @@
   status = 200
 
 [[redirects]]
-  from = "/knowr-security"
-  to = "/knowr-security.html"
+  from = "/confidentialite"
+  to = "/confidentialite.html"
+  status = 200
+
+[[redirects]]
+  from = "/cgu"
+  to = "/cgu.html"
   status = 200
 
 [[redirects]]
