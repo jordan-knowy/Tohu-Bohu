@@ -10,6 +10,7 @@ export default defineConfig({
         const suffix = query ? `?${query}` : ''
         if (pathname === '/connexion') request.url = `/login.html${suffix}`
         else if (pathname === '/bienvenue') request.url = `/onboarding.html${suffix}`
+        else if (pathname === '/knowr-security') request.url = `/knowr-security.html${suffix}`
         else if (pathname === '/app' || pathname.startsWith('/app/') || pathname === '/super-admin' || pathname.startsWith('/super-admin/')) request.url = `/app.html${suffix}`
         next()
       })
@@ -21,6 +22,7 @@ export default defineConfig({
         landing: resolve(__dirname, 'index.html'),
         login: resolve(__dirname, 'login.html'),
         onboarding: resolve(__dirname, 'onboarding.html'),
+        legal: resolve(__dirname, 'knowr-security.html'),
         app: resolve(__dirname, 'tohu-app.html'),
         reactApp: resolve(__dirname, 'app.html'),
       },
