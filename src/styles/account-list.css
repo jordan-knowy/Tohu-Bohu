@@ -145,17 +145,24 @@ button.crm-mv-item{border:0;background:none;text-align:left;cursor:pointer;color
 .pa-pop .kp-cur{margin-left:auto;font-family:var(--mono);font-size:8px;font-weight:700;color:var(--sage);text-transform:uppercase;letter-spacing:.04em}
 
 /* ── Passation : sélection + barre d'action ── */
-.pa .psel{width:19px;height:19px;border-radius:6px;border:1.8px solid var(--violet-x);background:#fff;display:flex;align-items:center;justify-content:center;transition:.12s}
-.pa .dxa-row.is-sel{background:var(--violet-s)!important}
-.pa .dxa-row.is-sel .psel{background:var(--violet);border-color:var(--violet)}
-.pa .psel svg{width:12px;height:12px;stroke:#fff;stroke-width:3;fill:none;opacity:0;transition:.1s}
-.pa .dxa-row.is-sel .psel svg{opacity:1}
+.pa .psel{width:19px;height:19px;border-radius:6px;border:1.8px solid var(--violet-x);background:#fff;display:flex;align-items:center;justify-content:center;transition:background .14s,border-color .14s,transform .14s}
+.pa .psel svg{width:12px;height:12px;stroke:#fff;stroke-width:3;fill:none;opacity:0;transition:opacity .12s,transform .12s;transform:scale(.6)}
+/* Sélection (personne .dxpp-row ET compte .dxa-row partagent .dxp-row) */
+.pa .dxp-row.is-sel{background:var(--violet-s)!important}
+.pa .dxp-row.is-sel .psel{background:var(--violet);border-color:var(--violet);transform:scale(1.06);animation:psel-pop .22s var(--overshoot)}
+.pa .dxp-row.is-sel .psel svg{opacity:1;transform:scale(1)}
+.pa .dxp-row.is-sel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--violet)}
+@keyframes psel-pop{0%{transform:scale(.85)}60%{transform:scale(1.15)}100%{transform:scale(1.06)}}
 .pa-bar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:9990;background:var(--t1);color:#fff;border-radius:15px;box-shadow:0 18px 52px rgba(20,15,40,.42);padding:11px 14px 11px 20px;display:flex;align-items:center;gap:18px}
 .pa-bar .pb-n{font-family:var(--font);font-weight:600;font-size:13px;color:rgba(255,255,255,.85)}
 .pa-bar .pb-n b{color:#fff;font-weight:800}
 .pa-bar .pb-assign{display:inline-flex;align-items:center;gap:7px;background:var(--violet);color:#fff;border:none;border-radius:999px;padding:9px 16px;font-family:var(--font);font-weight:700;font-size:12px;cursor:pointer;transition:.12s}
 .pa-bar .pb-assign:hover{background:#7d63d6}
 .pa-bar .pb-assign:disabled{opacity:.4;cursor:not-allowed}
+.pa-bar .pb-delete{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:9px 16px;font-family:var(--font);font-weight:700;font-size:12px;cursor:pointer;transition:.12s}
+.pa-bar .pb-delete svg{width:15px;height:15px}
+.pa-bar .pb-delete:hover{background:var(--coral);border-color:var(--coral)}
+.pa-bar .pb-delete:disabled{opacity:.4;cursor:not-allowed}
 .pa-bar .pb-cancel{background:none;border:none;color:rgba(255,255,255,.55);font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.04em}
 .pa-bar .pb-cancel:hover{color:#fff}
 

@@ -134,6 +134,17 @@ export async function setListOwner(workspaceId: string, companyId: string, userI
   if (error) throw error
 }
 
+/** Suppression groupée : archive plusieurs comptes en une passe (réversible). */
+export async function archiveAccounts(workspaceId: string, userId: string, companyIds: string[]): Promise<void> {
+  if (!companyIds.length) return
+  const now = new Date().toISOString()
+  const { error } = await getSupabase().from('account_settings').upsert(
+    companyIds.map((companyId) => ({ organization_id: workspaceId, company_id: companyId, archived_at: now, updated_by: userId, updated_at: now })),
+    { onConflict: 'organization_id,company_id' },
+  )
+  if (error) throw error
+}
+
 /** Passation : réattribue l'owner des comptes sélectionnés et de leurs contacts,
  *  et historise chaque transfert de contact dans contact_transfers. */
 export async function reassignAccounts(workspaceId: string, accounts: AccountListRow[], toUserId: string, byUserId: string): Promise<{ transferred: number; logged: boolean }> {

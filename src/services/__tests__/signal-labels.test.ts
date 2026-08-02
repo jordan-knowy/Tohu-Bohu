@@ -22,3 +22,24 @@ describe('libellés des signaux recent_activity', () => {
     expect(signalTypeLabel('recent_activity')).toBe('Actualité')
   })
 })
+
+describe('libellés des signaux comportementaux', () => {
+  it('ne réaffiche jamais la clé technique comme titre (register_distance)', () => {
+    // En base, inference répète souvent la clé brute — on ne la montre jamais.
+    expect(signalTitle('register_distance', 'register_distance', 'Adopte un ton professionnel et direct.')).toBe('Registre & distance')
+  })
+
+  it('titre lisible même sans inférence (mobility)', () => {
+    expect(signalTitle('mobility', null, 'Changement de poste : Directrice générale.')).toBe('Mobilité professionnelle')
+  })
+
+  it('classe les traits comportementaux dans une catégorie lisible', () => {
+    expect(signalTypeLabel('register_distance')).toBe('Communication')
+    expect(signalTypeLabel('rythme')).toBe('Style d’échange')
+    expect(signalTypeLabel('engagement')).toBe('Posture')
+  })
+
+  it('ignore une inférence qui est une clé technique et humanise en dernier recours', () => {
+    expect(signalTitle('unknown_marker', 'unknown_marker', 'x')).toBe('Unknown marker')
+  })
+})

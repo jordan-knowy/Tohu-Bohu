@@ -59,6 +59,7 @@ function buildSelfDetail(profile: ProfileRow, behavior: Behavior, workspaceId: s
       jobTitle: profile.role_title, location: null, biography: profile.product_summary,
       relationshipType: 'Interne', decisionRole: null, relationshipRole: null,
       favorite: false, watchEnabled: false, archivedAt: null, primaryOwnerName: profile.full_name,
+      primaryOwnerUserId: null, visibility: 'workspace',
       createdAt: null, updatedAt, locked: false, lockedByMe: false,
     },
     summary: behavior?.executive_summary ? {
@@ -87,7 +88,7 @@ function buildSelfDetail(profile: ProfileRow, behavior: Behavior, workspaceId: s
       insights: [], evidences: [], updatedAt,
     },
     sources: sourceRows(behavior), recommendations: [], signals: [], contactDetails: [], careerEntries: [],
-    memoryEntries: [], history: [], nameSuggestion: null, mergeSuggestions: [],
+    memoryEntries: [], keyMoments: [], history: [], nameSuggestion: null, mergeSuggestions: [],
   }
 }
 

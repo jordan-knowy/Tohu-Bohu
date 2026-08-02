@@ -189,7 +189,7 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
           <span className="feed-it-ic">{entry.entryType === 'file' ? ClipIcon : entry.entryType === 'voice' ? MicIcon : PenIcon}</span>
           <div>
             <div className="feed-it-t">{entry.content}</div>
-            <div className="feed-it-m">{ENTRY_TYPES.find(([value]) => value === entry.entryType)?.[1] ?? entry.entryType} · {entry.authorName} · {formatDate(entry.createdAt)}{entry.processingStatus === 'pending_transcription' ? ' · transcription en attente' : ''}{entry.visibility === 'private' ? ' · privée' : ''}</div>
+            <div className="feed-it-m">{ENTRY_TYPES.find(([value]) => value === entry.entryType)?.[1] ?? entry.entryType} · {entry.sourceType === 'manual' ? entry.authorName : entry.sourceLabel ?? 'Tohu'} · {formatDate(entry.createdAt)}{entry.processingStatus === 'pending_transcription' ? ' · transcription en attente' : ''}{entry.visibility === 'private' ? ' · privée' : ''}</div>
           </div>
         </div>)}
     </div>
@@ -198,18 +198,81 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
 
 // ─── Historique relationnel ────────────────────────────────────────────────
 
-const EVENT_TYPES: Array<['all' | PersonHistoryEvent['type'], string]> = [['all', 'Tout'], ['meeting', 'Réunions'], ['email', 'Emails'], ['signal', 'Signaux'], ['note', 'Notes'], ['career', 'Parcours']]
-const EVENT_TAGS: Record<PersonHistoryEvent['type'], { label: string; tone: string }> = {
-  meeting: { label: 'Réunion', tone: 'jalon' }, email: { label: 'Email', tone: 'mouvement' },
-  signal: { label: 'Signal', tone: 'bascule' }, note: { label: 'Note', tone: 'jalon' },
-  career: { label: 'Parcours', tone: 'mouvement' }, score: { label: 'Score', tone: 'bascule' },
+type EventTag = 'neutre' | 'renforce' | 'friction' | 'silence' | 'jalon'
+const EVENT_TAG_LABEL: Record<EventTag, string> = { neutre: 'Neutre', renforce: 'Renforce', friction: 'Friction', silence: 'Silence', jalon: 'Jalon' }
+const IMPACT_TO_TAG: Record<'friction' | 'reinforce' | 'milestone' | 'silence', EventTag> = { friction: 'friction', reinforce: 'renforce', milestone: 'jalon', silence: 'silence' }
+
+type RelMomentImpact = 'friction' | 'reinforce' | 'milestone' | 'silence'
+type RelMoment = { id: string; occurredAt: string; title: string; summary: string | null; impact: RelMomentImpact }
+
+/** « Les moments qui comptent » : jalons extraits par l'analyse (friction/renforce/jalon)
+ *  + silences réellement observés (plus gros trous entre deux échanges). Jamais inventé. */
+function buildRelationalMoments(data: PersonDetailData): RelMoment[] {
+  const fromKey: RelMoment[] = data.keyMoments.map((moment) => ({ id: moment.id, occurredAt: moment.occurredAt, title: moment.title, summary: moment.summary, impact: moment.impact }))
+  const dated = data.history
+    .filter((event) => event.type === 'meeting' || event.type === 'email')
+    .map((event) => event.occurredAt)
+    .sort()
+  const silences: Array<RelMoment & { gap: number }> = []
+  for (let index = 1; index < dated.length; index++) {
+    const gap = Math.round((new Date(dated[index]!).getTime() - new Date(dated[index - 1]!).getTime()) / 86_400_000)
+    if (gap >= 30) silences.push({ id: `silence-${dated[index - 1]}`, occurredAt: dated[index - 1]!, title: `${gap} jours sans échange`, summary: 'Aucun échange sur cette période.', impact: 'silence', gap })
+  }
+  silences.sort((a, b) => b.gap - a.gap)
+  const topSilences: RelMoment[] = silences.slice(0, 2).map((item) => ({ id: item.id, occurredAt: item.occurredAt, title: item.title, summary: item.summary, impact: item.impact }))
+  return [...fromKey, ...topSilences].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+}
+
+function momentDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+}
+
+type ClassifiedEvent = { id: string; occurredAt: string; upcoming: boolean; title: string; detail: string; tag: EventTag }
+
+/** Cherche un moment analysé tombant à ±2 jours de la date d'un échange
+ *  (les dates extraites ne collent pas toujours au jour exact de l'email). */
+function nearbyMoment(momentByDay: Map<string, RelMoment>, iso: string): RelMoment | undefined {
+  const base = new Date(iso)
+  for (const offset of [0, -1, 1, -2, 2]) {
+    const day = new Date(base)
+    day.setUTCDate(day.getUTCDate() + offset)
+    const moment = momentByDay.get(day.toISOString().slice(0, 10))
+    if (moment) return moment
+  }
+  return undefined
+}
+
+/** Chronologie classée : chaque échange reçoit un type relationnel
+ *  (renforce/friction/jalon/silence/neutre), enrichi par un moment analysé proche. */
+function classifyTimeline(data: PersonDetailData, moments: RelMoment[]): ClassifiedEvent[] {
+  const now = Date.now()
+  const momentByDay = new Map<string, RelMoment>()
+  for (const moment of moments) momentByDay.set(moment.occurredAt.slice(0, 10), moment)
+  const used = new Set<string>()
+  const rows: ClassifiedEvent[] = data.history.map((event) => {
+    const moment = nearbyMoment(momentByDay, event.occurredAt)
+    let tag: EventTag = event.type === 'career' ? 'jalon' : 'neutre'
+    if (moment) { tag = IMPACT_TO_TAG[moment.impact]; used.add(moment.id) }
+    return {
+      id: event.id,
+      occurredAt: event.occurredAt,
+      upcoming: new Date(event.occurredAt).getTime() > now,
+      title: event.title,
+      detail: [event.description, event.sourceLabel].filter(Boolean).join(' · '),
+      tag,
+    }
+  })
+  for (const moment of moments) {
+    if (used.has(moment.id)) continue
+    rows.push({ id: moment.id, occurredAt: moment.occurredAt, upcoming: false, title: moment.title, detail: moment.summary ?? '', tag: IMPACT_TO_TAG[moment.impact] })
+  }
+  return rows.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 }
 
 export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
-  const [filter, setFilter] = useState<'all' | PersonHistoryEvent['type']>('all')
+  const [filter, setFilter] = useState<'all' | EventTag>('all')
   const [limit, setLimit] = useState(12)
-  const events = filter === 'all' ? data.history : data.history.filter((event) => event.type === filter)
 
   const monthly = useMemo(() => {
     const counts = new Map<string, number>()
@@ -220,34 +283,12 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
     }
     return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-16)
   }, [data.history])
-  const peak = monthly.reduce<[string, number] | null>((best, item) => best && best[1] >= item[1] ? best : item, null)
-  const max = peak?.[1] ?? 1
-
-  // Silence détecté entre deux événements consécutifs de la chronologie réelle
-  // (jamais une catégorie de sentiment inventée — seulement un écart de dates).
-  const GAP_THRESHOLD_DAYS = 30
-  type TimelineRow = { kind: 'event'; event: PersonHistoryEvent } | { kind: 'gap'; days: number; year: string }
-  const rows = useMemo(() => {
-    const sliced = events.slice(0, limit)
-    const result: TimelineRow[] = []
-    for (const [index, event] of sliced.entries()) {
-      result.push({ kind: 'event', event })
-      const next = sliced[index + 1]
-      if (next) {
-        const days = Math.round((new Date(event.occurredAt).getTime() - new Date(next.occurredAt).getTime()) / 86_400_000)
-        if (days >= GAP_THRESHOLD_DAYS) result.push({ kind: 'gap', days, year: event.occurredAt.slice(0, 4) })
-      }
-    }
-    return result
-  }, [events, limit])
-
-  const groups: Array<{ year: string; rows: TimelineRow[] }> = []
-  for (const row of rows) {
-    const year = row.kind === 'event' ? row.event.occurredAt.slice(0, 4) : row.year
-    const group = groups.at(-1)
-    if (group && group.year === year) group.rows.push(row)
-    else groups.push({ year, rows: [row] })
-  }
+  const max = monthly.reduce((best, [, count]) => Math.max(best, count), 1)
+  const commitmentCount = data.memoryEntries.filter((entry) => entry.entryType === 'commitment').length
+  const moments = useMemo(() => buildRelationalMoments(data), [data])
+  const classified = useMemo(() => classifyTimeline(data, moments), [data, moments])
+  const filtered = filter === 'all' ? classified : classified.filter((event) => event.tag === filter)
+  const firstMonth = data.relationship.firstInteractionAt ? formatMonth(data.relationship.firstInteractionAt.slice(0, 7)) : '—'
 
   return <div className={`feed-card relhist ${open ? '' : 'collapsed'}`} style={{ marginTop: 14 }}>
     <div className="feed-head">
@@ -256,50 +297,62 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
         <div className="feed-ttl">{memory ? 'Historique & mémoire relationnelle' : 'Historique relationnel'}</div>
         {!memory && <div className="feed-sub">Chronologie unifiée — interactions, signaux, notes et parcours, tous sourcés.</div>}
       </div>
+      {memory && <span className={`memc ${commitmentCount ? 'on' : ''}`}>{commitmentCount} engagement{commitmentCount > 1 ? 's' : ''} en mémoire</span>}
     </div>
-    {memory}
-    <div className="rh-synth">
-      {monthly.length > 0 && <div className="rh-spark" title="échanges par mois" role="img" aria-label={`Échanges par mois : ${monthly.map(([key, count]) => `${formatMonth(key)} ${count}`).join(', ')}`}>
-        {monthly.map(([key, count]) => <i key={key} className={count === max ? 'hi' : count <= max / 4 ? 'lo' : ''} style={{ height: Math.max(4, Math.round(count / max * 44)) }} />)}
-      </div>}
-      <div className="rh-stats">
-        <div className="rh-stat"><div className="v">{data.relationship.firstInteractionAt ? formatDate(data.relationship.firstInteractionAt) : '—'}</div><div className="l">Premier échange</div></div>
-        <div className="rh-stat"><div className="v">{data.relationship.totalInteractions || '—'}</div><div className="l">Échanges au total</div></div>
-        <div className="rh-stat"><div className="v">{relativeDate(data.relationship.lastInteractionAt).toLowerCase()}</div><div className="l">Dernier contact</div></div>
-        {peak && <div className="rh-stat"><div className="v">{peak[1]} / mois</div><div className="l">Pic ({formatMonth(peak[0])})</div></div>}
+    {memory && data.person.primaryOwnerName && <div className="rl">
+      <p className="rl-l">Qui a porté la relation</p>
+      <div className="rl-t"><div className="rl-s cur">
+        <span className="rl-a">{initials(data.person.primaryOwnerName)}</span>
+        <div className="rl-c"><p className="rl-n">{data.person.primaryOwnerName}<i className="rl-d" /></p><p className="rl-p">{data.relationship.firstInteractionAt ? `depuis le ${formatDate(data.relationship.firstInteractionAt)}` : 'porteur actuel'}</p></div>
+      </div></div>
+      <span className="rl-k">1 porteur</span>
+    </div>}
+    <div className="hm-s">
+      {monthly.length > 0 && <span className="hm-sp" role="img" aria-label={`Échanges par mois : ${monthly.map(([key, count]) => `${formatMonth(key)} ${count}`).join(', ')}`}>
+        {monthly.map(([key, count]) => <i key={key} style={{ height: Math.max(5, Math.round(count / max * 44)), background: count === max ? 'var(--violet)' : count <= max / 4 ? '#EBE7F6' : '#C9BEEC' }} />)}
+      </span>}
+      <div className="hm-k"><p className="hm-kv">{firstMonth}</p><p className="hm-kl">Premier échange</p></div>
+      <div className="hm-k"><p className="hm-kv">{data.relationship.totalInteractions || '—'}</p><p className="hm-kl">Échanges au total</p></div>
+      <div className="hm-k"><p className="hm-kv">{firstMonth}</p><p className="hm-kl">Début collaboration</p></div>
+    </div>
+
+    {memory && (moments.length > 0
+      ? <div className="km-block">
+        <p className="km-l">Les moments qui comptent<span className="km-n">{moments.length}</span></p>
+        <div className="km">
+          {moments.map((moment) => { const tag = IMPACT_TO_TAG[moment.impact]; return <div key={moment.id} className={`kmi ${tag}`}>
+            <span className="kmi-d">{momentDate(moment.occurredAt)}</span>
+            <span className="kmi-p" aria-hidden="true" />
+            <div className="kmi-c"><p className="kmi-t">{moment.title}</p>{moment.summary && <p className="kmi-s">{moment.summary}</p>}</div>
+            <span className="kmi-e">{EVENT_TAG_LABEL[tag]}</span>
+          </div> })}
+        </div>
       </div>
-    </div>
-    {open && (
-      !data.history.length
-        ? <Empty title="Aucune interaction détectée">Aucune interaction n’a encore été détectée avec cette personne. Connecte une source ou ajoute une note pour démarrer la mémoire.</Empty>
-        : <>
-          <div className="krs-pills" role="tablist" aria-label="Filtrer l’historique">
-            {EVENT_TYPES.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={filter === value} className={`krs-pill ${filter === value ? 'on' : ''}`} onClick={() => { setFilter(value); setLimit(12) }}>{label}</button>)}
-          </div>
-          <div className="rh-tl" data-gran="mois">
-            {groups.map((group) => <div key={group.year}>
-              <div className="rh-year">{group.year}</div>
-              {group.rows.map((row, index) => row.kind === 'gap'
-                ? <div className="rh-gap" key={`gap-${group.year}-${index}`}><span>{row.days} j de silence</span></div>
-                : <div className="rh-ev detail" data-type={EVENT_TAGS[row.event.type].tone} key={row.event.id}>
-                  <span className="rh-dot" />
-                  <div className="rh-ev-b">
-                    <div className="rh-ev-h">
-                      <span className="rh-mo">{formatDate(row.event.occurredAt)}</span>
-                      <span className={`rh-tag ${EVENT_TAGS[row.event.type].tone}`}>{EVENT_TAGS[row.event.type].label}</span>
-                    </div>
-                    <div className="rh-ev-t">{row.event.title}{row.event.description ? ` — ${row.event.description}` : ''}</div>
-                    <div className="rh-ev-src">↳ {row.event.sourceLabel}</div>
-                  </div>
-                </div>)}
-            </div>)}
-          </div>
-          {events.length > limit && <button type="button" className="cv-more" onClick={() => setLimit((value) => value + 12)}>Charger plus ({events.length - limit} restants) ↓</button>}
-        </>
-    )}
+      : <p className="km-empty">Les moments clés (jalons, frictions, silences) apparaîtront après l’analyse du contenu des échanges.</p>)}
+
     <button type="button" className="rh-expand" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      {open ? 'Réduire l’historique' : 'Déplier l’historique'} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      {open ? 'Réduire les échanges' : 'En savoir + · voir tous les échanges'} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
     </button>
+
+    {open && (classified.length === 0
+      ? <Empty title="Aucune interaction détectée">Aucune interaction n’a encore été détectée avec cette personne. Connecte une source ou ajoute une note pour démarrer la mémoire.</Empty>
+      : <>
+        <div className="hm-flt" role="tablist" aria-label="Filtrer les échanges par type">
+          <button type="button" role="tab" aria-selected={filter === 'all'} className={`krs-pill ${filter === 'all' ? 'on' : ''}`} onClick={() => { setFilter('all'); setLimit(12) }}>Tout</button>
+          {(['renforce', 'friction'] as EventTag[]).map((tag) => <button key={tag} type="button" role="tab" aria-selected={filter === tag} className={`krs-pill ${filter === tag ? 'on' : ''}`} onClick={() => { setFilter(tag); setLimit(12) }}>{EVENT_TAG_LABEL[tag]}</button>)}
+        </div>
+        <div className="km hm-tl">
+          {filtered.slice(0, limit).map((event) => <div key={event.id} className={`kmi ${event.tag}`}>
+            <span className="kmi-d">{event.upcoming ? 'à venir' : momentDate(event.occurredAt)}</span>
+            <span className="kmi-p" aria-hidden="true" />
+            <div className="kmi-c"><p className="kmi-t">{event.title}</p>{event.detail && <p className="kmi-s">{event.detail}</p>}</div>
+            <span className="kmi-e">{EVENT_TAG_LABEL[event.tag]}</span>
+          </div>)}
+        </div>
+        {filtered.length > limit && <button type="button" className="cv-more" onClick={() => setLimit((value) => value + 12)}>Charger plus ({filtered.length - limit} restants) ↓</button>}
+      </>)}
+
+    {memory && <div className="hm-note">{memory}</div>}
   </div>
 }
 

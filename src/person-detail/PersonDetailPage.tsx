@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { verifySuperAdmin } from '../super-admin/service'
-import { getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonRoles, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment } from './service'
+import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
-import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonDetailData } from './types'
+import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
 
 type PageContext = { workspaceId: string; userId: string }
@@ -71,6 +71,79 @@ function ChipMenu({ label, value, color, options, onSelect, icon }: {
   </span>
 }
 
+/** Affectation de la fiche : owner (assigné depuis les membres du workspace) +
+ *  visibilité organisation / restreinte. Persisté dans person_settings. */
+function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const person = data.person
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const [visOpen, setVisOpen] = useState(false)
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) { setOwnerOpen(false); setVisOpen(false) } }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [])
+
+  const openOwner = () => {
+    setOwnerOpen((value) => !value); setVisOpen(false)
+    if (members === null) void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([]))
+  }
+  const chooseOwner = (ownerUserId: string | null, name: string) => void run('owner', async () => {
+    await setPersonOwner(data, userId, ownerUserId)
+    setOwnerOpen(false)
+    toast(ownerUserId ? `Fiche affectée à ${name}.` : 'Owner retiré.')
+    await refresh()
+  })
+  const chooseVisibility = (visibility: 'workspace' | 'restricted') => void run('vis', async () => {
+    await setPersonVisibility(data, userId, visibility)
+    setVisOpen(false)
+    toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe.')
+    await refresh()
+  })
+
+  return <div className="v48-owner-card v48-affect" ref={rootRef}>
+    <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
+    <div className="v48-affect-body">
+      <span className="v48-owner-l">Owner de la fiche</span>
+      <strong>{person.primaryOwnerName ?? 'Non affecté'}</strong>
+      <div className="v48-affect-actions">
+        <span className="v48-affect-menu">
+          <button type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
+          {ownerOpen && <div className="v48-affect-pop" role="menu">
+            {members === null
+              ? <div className="v48-affect-loading">Chargement…</div>
+              : members.length === 0
+                ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
+                : <>
+                  {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === person.primaryOwnerUserId} className={member.id === person.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
+                    <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
+                  </button>)}
+                  {person.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
+                </>}
+          </div>}
+        </span>
+        <span className="v48-affect-menu">
+          <button type="button" className={`v48-affect-vis vis-${person.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={() => { setVisOpen((value) => !value); setOwnerOpen(false) }}>
+            {person.visibility === 'restricted' ? 'Restreint' : 'Organisation'} <span aria-hidden="true">▾</span>
+          </button>
+          {visOpen && <div className="v48-affect-pop wide" role="menu">
+            <button type="button" role="menuitemradio" aria-checked={person.visibility === 'workspace'} className={`vo ${person.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
+              <div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div>
+            </button>
+            <button type="button" role="menuitemradio" aria-checked={person.visibility === 'restricted'} className={`vo ${person.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
+              <div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe restreinte.</div>
+            </button>
+          </div>}
+        </span>
+      </div>
+    </div>
+  </div>
+}
+
 function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, run] = useBusy()
@@ -108,7 +181,7 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
           <i aria-hidden="true" />
         </div>
         <div className="v48-identity-copy">
-          <div className="v48-eyebrow">Personnes / {person.fullName}</div>
+          <div className="v48-eyebrow"><Link to="/app/people" className="v48-eyebrow-back">← Personnes</Link> / {person.fullName}</div>
           <div className="v48-name-row">
             <div className="hero-name">
             {editingName
@@ -161,14 +234,7 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
             <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''} retrouvé{relation.totalInteractions > 1 ? 's' : ''}</span>
           </div>
         </div>
-        <div className="v48-owner-card">
-          <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
-          <div>
-            <span>Owner de la fiche</span>
-            <strong>{person.primaryOwnerName ?? 'À confirmer'}</strong>
-            <small>Organisation</small>
-          </div>
-        </div>
+        <OwnerAffectation data={data} userId={userId} refresh={refresh} />
       </div>
     </div>
   </div>
@@ -399,35 +465,191 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
   </button>
 }
 
+const CONTACT_ROW_ICON: Record<'phone' | 'email' | 'linkedin' | 'website', React.ReactNode> = {
+  phone: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7.6 4.4l2.4 3.4-1.9 1.9a11 11 0 0 0 4.8 4.8l1.9-1.9 3.4 2.4-.6 2.6a1.7 1.7 0 0 1-1.9 1.3C10.4 18 6 13.6 4.7 7.1a1.7 1.7 0 0 1 1.3-1.9z" /></svg>,
+  email: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3.4" y="5.6" width="17.2" height="12.8" rx="2" /><path d="M3.9 7l8.1 6 8.1-6" /></svg>,
+  linkedin: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3" /><path d="M8 10.6v6" /><circle cx="8" cy="7.6" r="1.1" fill="currentColor" /><path d="M12 16.6v-3.4a2.2 2.2 0 0 1 4.4 0v3.4" /><path d="M12 16.6v-6" /></svg>,
+  website: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" /></svg>,
+}
+const ContactPinIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6.4-5.8 6.4-10.2a6.4 6.4 0 1 0-12.8 0C5.6 15.2 12 21 12 21z" /><circle cx="12" cy="10.6" r="2.3" /></svg>
+const ContactSearchIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.2-3.2" /></svg>
+const CONTACT_ROW_LABEL: Record<'phone' | 'email' | 'linkedin' | 'website', string> = { phone: 'Téléphone', email: 'Email principal', linkedin: 'LinkedIn', website: 'Site' }
+const CONTACT_ADD_PLACEHOLDER: Record<'phone' | 'email' | 'linkedin' | 'website', string> = { phone: '+33 …', email: 'prenom@domaine.fr', linkedin: '/in/… ou URL', website: 'https://…' }
+
+/** Action ouvrable (jamais un « Ajouter » qui ne fait rien) — mailto / tel / lien. */
+function contactAction(detail: PersonContactDetail): { href: string; label: string; external: boolean } | null {
+  const value = detail.value.trim()
+  if (!value) return null
+  switch (detail.type) {
+    case 'email': return { href: `mailto:${value}`, label: 'Écrire', external: false }
+    case 'phone': return { href: `tel:${value.replace(/[^\d+]/g, '')}`, label: 'Appeler', external: false }
+    case 'linkedin': return { href: /^https?:/i.test(value) ? value : `https://www.linkedin.com/${value.replace(/^\/+/, '')}`, label: 'Ouvrir', external: true }
+    case 'website': return { href: /^https?:/i.test(value) ? value : `https://${value}`, label: 'Ouvrir', external: true }
+    default: return null
+  }
+}
+
+function PersonContactDialog({ data, userId, refresh, onClose }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; onClose: () => void }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const [adding, setAdding] = useState<'phone' | 'email' | 'linkedin' | 'website' | null>(null)
+  const [addValue, setAddValue] = useState('')
+  const [searching, setSearching] = useState(false)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // Recherche web (agent d'enrichissement) : profil LinkedIn PUBLIC, poste, localisation,
+  // actualité — via recherche web, jamais un scraping du réseau privé LinkedIn.
+  const searchWeb = () => void (async () => {
+    setSearching(true)
+    toast('Recherche web en cours…')
+    try {
+      const result = await triggerPersonEnrichment(data.person.id)
+      await refresh()
+      toast(result.enriched > 0 ? 'Profil enrichi via la recherche web (LinkedIn public, poste, localisation).' : 'Recherche terminée — aucune nouvelle donnée fiable trouvée.')
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Recherche impossible.', 'error')
+    } finally {
+      setSearching(false)
+    }
+  })()
+
+  const pick = (type: PersonContactDetail['type']) =>
+    data.contactDetails.find((detail) => detail.type === type && detail.primary)
+    ?? data.contactDetails.find((detail) => detail.type === type)
+  const reachTypes: Array<'phone' | 'email' | 'linkedin' | 'website'> = ['phone', 'email', 'linkedin']
+  if (pick('website')) reachTypes.push('website')
+  const identifiers = data.contactDetails.filter((detail) => detail.type === 'email' || detail.type === 'other')
+  const connected = data.sources.filter((source) => source.status === 'connected')
+  const verifiedAt = data.contactDetails.map((detail) => detail.provenance?.lastVerifiedAt).filter(Boolean).sort().at(-1) ?? null
+
+  const saveAdd = (type: 'phone' | 'email' | 'linkedin' | 'website') => run('add', async () => {
+    const value = addValue.trim()
+    const invalid = validateContactDetail(type, value)
+    if (invalid) { toast(invalid, 'error'); return }
+    await addPersonContactDetail(data, userId, { type, value })
+    setAdding(null); setAddValue('')
+    toast('Coordonnée ajoutée.')
+    await refresh()
+  })
+
+  return createPortal(
+    <div className="pp">
+    <div className="pc-mask" role="presentation" onClick={onClose}>
+      <aside className="pc-panel" role="dialog" aria-label="Contact" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="pc-h">
+          <div><p className="pc-title">Contact</p><p className="pc-who">{data.person.fullName}</p></div>
+          <button type="button" className="pc-x" onClick={onClose} aria-label="Fermer">×</button>
+        </div>
+        <div className="pc-b">
+          <p className="pc-l">Joindre</p>
+          <div className="pc-g">
+            {reachTypes.map((type) => {
+              const detail = pick(type)
+              const action = detail ? contactAction(detail) : null
+              if (detail && action) return <a key={type} className="pc-row" href={action.href} {...(action.external ? { target: '_blank', rel: 'noreferrer' } : {})}>
+                <span className="pc-i">{CONTACT_ROW_ICON[type]}</span>
+                <div className="pc-c"><p className="pc-rl">{CONTACT_ROW_LABEL[type]}</p><p className="pc-v">{detail.value}</p></div>
+                <span className="pc-a">{action.label}</span>
+              </a>
+              return <div key={type} className="pc-row">
+                <span className="pc-i">{CONTACT_ROW_ICON[type]}</span>
+                <div className="pc-c">
+                  <p className="pc-rl">{CONTACT_ROW_LABEL[type]}</p>
+                  {adding === type
+                    ? <form className="pc-add" onSubmit={(event) => { event.preventDefault(); void saveAdd(type) }}>
+                      <input className="pc-add-input" autoFocus value={addValue} onChange={(event) => setAddValue(event.target.value)} placeholder={CONTACT_ADD_PLACEHOLDER[type]} aria-label={`Ajouter ${CONTACT_ROW_LABEL[type]}`} />
+                      <button className="pc-add-ok" disabled={busy !== null} aria-label="Enregistrer">✓</button>
+                      <button type="button" className="pc-add-no" onClick={() => setAdding(null)} aria-label="Annuler">✕</button>
+                    </form>
+                    : <p className="pc-v na">à confirmer</p>}
+                </div>
+                {adding !== type && <button type="button" className="pc-a pc-a-btn" onClick={() => { setAdding(type); setAddValue('') }}>Ajouter</button>}
+              </div>
+            })}
+          </div>
+
+          <p className="pc-l">Réseau</p>
+          <div className="pc-g">
+            {data.employment && <Link className="pc-row" to={`/app/accounts/${data.employment.accountId}`} onClick={onClose}>
+              <span className="pc-i">{initials(data.employment.accountName)}</span>
+              <div className="pc-c"><p className="pc-rl">Entreprise</p><p className="pc-v">{data.employment.accountName}</p>{data.employment.jobTitle && <p className="pc-s">{data.employment.jobTitle}</p>}</div>
+              <span className="pc-a">Ouvrir</span>
+            </Link>}
+            {data.person.location && <div className="pc-row">
+              <span className="pc-i">{ContactPinIcon}</span>
+              <div className="pc-c"><p className="pc-rl">Localisation</p><p className="pc-v">{data.person.location}</p></div>
+            </div>}
+            <button type="button" className="pc-row pc-search" disabled={searching} onClick={searchWeb}>
+              <span className="pc-i">{searching ? <span className="pc-spin" aria-hidden="true" /> : ContactSearchIcon}</span>
+              <div className="pc-c"><p className="pc-rl">Recherche web</p><p className="pc-v">{searching ? 'Recherche en cours…' : 'Trouver / rafraîchir le profil LinkedIn public'}</p><p className="pc-s">Poste, localisation, actualité — via recherche web publique, jamais scrapé.</p></div>
+            </button>
+          </div>
+
+          {identifiers.length > 0 && <>
+            <p className="pc-l">Identifiants rattachés<span className="pc-n">{identifiers.length}</span></p>
+            <div className="pc-ids">
+              {identifiers.map((detail) => <div key={detail.id} className={`pc-id ${detail.primary ? 'ok' : ''}`}>
+                <span>{detail.value}</span>
+                <em>{detail.primary ? 'principal' : detail.provenance?.sourceLabel ?? detail.label ?? 'alias'}</em>
+              </div>)}
+            </div>
+          </>}
+
+          {connected.length > 0 && <p className="pc-src"><i />{connected.map((source) => source.label).join(' · ')}{verifiedAt ? ` · vérifié ${relativeDate(verifiedAt).toLowerCase()}` : ''}</p>}
+        </div>
+      </aside>
+    </div>
+    </div>,
+    document.body,
+  )
+}
+
+/** Actions de gestion de la fiche (verrou, suppression, enrichissement) —
+ *  regroupées dans un menu ⋯ discret, hors de la maquette « démo ». */
+function PersonActionsMenu({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+  return <span className="v48-actions" ref={rootRef}>
+    <button type="button" className="v48-tabs-action v48-actions-trigger" aria-haspopup="menu" aria-expanded={open} aria-label="Actions de la fiche" onClick={() => setOpen((value) => !value)}>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+    </button>
+    {open && <div className="v48-actions-pop" role="menu">
+      {isSuperAdmin && <EnrichPersonButton data={data} />}
+      <LockIconButton data={data} userId={userId} refresh={refresh} />
+      <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
+    </div>}
+  </span>
+}
+
 function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
   const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
-  const showContact = () => {
-    setActiveTab('live')
-    window.requestAnimationFrame(() => document.getElementById('person-contact-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }
+  const [contactOpen, setContactOpen] = useState(false)
   const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
     && (data.behavior.cognitiveProfile.schemaVersion < 3
       || data.behavior.cognitiveProfile.primaryAxes.every((axis) => axis.status === 'insufficient'))
   return <>
-    <div className="pp-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Link to="/app/people">← Personnes</Link>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {isSuperAdmin && <EnrichPersonButton data={data} />}
-        <LockIconButton data={data} userId={userId} refresh={refresh} />
-        <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
-      </div>
-    </div>
-    {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
-    {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>CV Live &amp; Signaux</button>
-      {activeTab === 'live' && <button type="button" className="v48-tabs-action" onClick={showContact}>
+      <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setContactOpen(true)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
         Contact
-      </button>}
+      </button>
+      <PersonActionsMenu data={data} userId={userId} refresh={refresh} isSuperAdmin={isSuperAdmin} />
     </nav>
+    {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
+    {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
     <Hero data={data} userId={userId} refresh={refresh} />
     {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView
       data={data}
@@ -438,6 +660,7 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
     {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
     <V48PersonSourceNote data={data} />
+    {contactOpen && <PersonContactDialog data={data} userId={userId} refresh={refresh} onClose={() => setContactOpen(false)} />}
   </>
 }
 

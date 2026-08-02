@@ -154,6 +154,17 @@ export async function setPersonArchived(workspaceId: string, contactId: string, 
   if (error) throw error
 }
 
+/** Suppression groupée : archive plusieurs personnes en une passe (réversible). */
+export async function archivePeople(workspaceId: string, userId: string, contactIds: string[]): Promise<void> {
+  if (!contactIds.length) return
+  const now = new Date().toISOString()
+  const { error } = await getSupabase().from('person_settings').upsert(
+    contactIds.map((contactId) => ({ organization_id: workspaceId, contact_id: contactId, archived_at: now, updated_by: userId, updated_at: now })),
+    { onConflict: 'organization_id,contact_id' },
+  )
+  if (error) throw error
+}
+
 /** Passation : réattribue l'owner des personnes sélectionnées et historise
  *  chaque transfert dans contact_transfers. */
 export async function reassignPeople(workspaceId: string, people: PersonListRow[], toUserId: string, byUserId: string): Promise<{ transferred: number; logged: boolean }> {

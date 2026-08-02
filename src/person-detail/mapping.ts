@@ -17,6 +17,7 @@ import {
   type PersonDetailData,
   type PersonEvidence,
   type PersonHistoryEvent,
+  type PersonKeyMoment,
   type PersonMemoryEntry,
   type PersonMergeSuggestion,
   type PersonNameSuggestion,
@@ -295,7 +296,9 @@ export function sourceTypeLabel(sourceType: string | null): string {
   if (/transcript|meeting|read/i.test(sourceType)) return 'Transcription'
   if (/manual|note/i.test(sourceType)) return 'Note interne'
   if (/email/i.test(sourceType)) return 'Emails'
-  return sourceType
+  if (/monitoring|^ai_|veille/i.test(sourceType)) return 'Veille IA'
+  if (/enrich|web|search/i.test(sourceType)) return 'Recherche web'
+  return sourceType.replaceAll('_', ' ')
 }
 
 export function buildRecommendations(recRows: Row[]): PersonRecommendation[] {
@@ -390,6 +393,11 @@ export function buildContactDetails(detailRows: Row[], contact: Row): PersonCont
   if (phone && !persisted.some((detail) => detail.type === 'phone' && detail.value === phone)) {
     legacy.push({ id: 'legacy-phone', type: 'phone', value: phone, label: null, primary: !persisted.some((detail) => detail.type === 'phone' && detail.primary), verificationStatus: 'unverified', visibility: 'workspace', provenance: { sourceType: 'crm', sourceId: null, sourceLabel: 'Base contacts Tohu', sourceUrl: null, observedAt: text(contact.updated_at), importedAt: null, lastVerifiedAt: null, confidence: null, inferenceLevel: 'observed' } })
   }
+  // Profil LinkedIn trouvé par la recherche web (agent d'enrichissement) — jamais scrapé.
+  const linkedin = text(contact.linkedin_url)
+  if (linkedin && !/^(to_confirm|n\/a|null)$/i.test(linkedin.trim()) && !persisted.some((detail) => detail.type === 'linkedin')) {
+    legacy.push({ id: 'legacy-linkedin', type: 'linkedin', value: linkedin, label: null, primary: !persisted.some((detail) => detail.type === 'linkedin' && detail.primary), verificationStatus: 'unverified', visibility: 'workspace', provenance: { sourceType: 'enrichment', sourceId: null, sourceLabel: 'Recherche web', sourceUrl: linkedin, observedAt: text(contact.updated_at), importedAt: null, lastVerifiedAt: null, confidence: null, inferenceLevel: 'inferred' } })
+  }
   return [...persisted, ...legacy]
 }
 
@@ -439,9 +447,28 @@ export function buildMemoryEntries(memoryRows: Row[], profileNames: Map<string, 
     transcription: text(row.transcription),
     processingStatus: text(row.processing_status) ?? 'ready',
     authorName: profileNames.get(String(row.author_user_id)) ?? 'Membre Tohu',
+    sourceType: text(row.source_type) ?? 'manual',
+    sourceLabel: text(row.source_label),
     visibility: text(row.visibility) ?? 'workspace',
+    resolvedAt: text(row.resolved_at),
     createdAt: text(row.created_at) ?? new Date().toISOString(),
   }))
+}
+
+export function buildKeyMoments(momentRows: Row[]): PersonKeyMoment[] {
+  const impacts = new Set(['friction', 'reinforce', 'milestone'])
+  return momentRows.map((row) => {
+    const impact = String(row.impact ?? 'milestone')
+    return {
+      id: String(row.id),
+      occurredAt: text(row.occurred_at) ?? text(row.created_at) ?? new Date().toISOString(),
+      title: text(row.title) ?? 'Moment',
+      summary: text(row.summary),
+      impact: (impacts.has(impact) ? impact : 'milestone') as PersonKeyMoment['impact'],
+      confidence: num(row.confidence),
+      sourceLabel: text(row.source_label) ?? 'Tohu',
+    }
+  })
 }
 
 export function buildSources(connectorRows: Row[], counts: Map<string, number>): PersonSourceStatus[] {
@@ -539,6 +566,7 @@ export type PersonDetailRaw = {
   contactDetails: Row[]
   careerEntries: Row[]
   memoryEntries: Row[]
+  keyMoments: Row[]
   meetings: Row[]
   messages: Row[]
   meetingCount?: number
@@ -611,6 +639,8 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       watchEnabled: bool(userSettings.watch_enabled),
       archivedAt: text(settings.archived_at),
       primaryOwnerName: raw.profileNames.get(String(settings.primary_owner_user_id)) ?? raw.profileNames.get(String(contact.owner_user_id)) ?? null,
+      primaryOwnerUserId: text(settings.primary_owner_user_id) ?? text(contact.owner_user_id),
+      visibility: text(settings.visibility) === 'restricted' ? 'restricted' : 'workspace',
       createdAt: text(contact.created_at),
       updatedAt: text(contact.updated_at),
       locked: raw.lockedBy !== null,
@@ -676,6 +706,7 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     contactDetails: buildContactDetails(raw.contactDetails, contact),
     careerEntries,
     memoryEntries,
+    keyMoments: buildKeyMoments(raw.keyMoments),
     history: buildHistory(raw.meetings, raw.messages, signals, memoryEntries, careerEntries),
     nameSuggestion: buildNameSuggestion(raw.nameSuggestion),
     mergeSuggestions: buildMergeSuggestions(raw.mergeSuggestions, raw.personId),

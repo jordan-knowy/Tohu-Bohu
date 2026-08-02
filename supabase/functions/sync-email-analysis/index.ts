@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classifyEmailAutomation } from './email-classification.ts'
+import { reciprocalExternalEmails, relationshipEvidenceByEmail } from './relationship-eligibility.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,6 +124,13 @@ function cleanEmail(value: string | null | undefined): string {
   return String(value ?? '').trim().toLowerCase()
 }
 
+function isManuallyIntegrated(contact: any): boolean {
+  const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
+  return ['manual', 'manual_integration'].includes(String(
+    sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
+  ))
+}
+
 function cleanName(value: string | null | undefined, email: string): string {
   const name = String(value ?? '').replace(/["<>]/g, '').trim()
   if (name && !name.includes('@')) return name.slice(0, 120)
@@ -167,6 +175,20 @@ function parseAddressList(value: string): Address[] {
     const email = cleanEmail(match[2] ?? match[3])
     return { email, name: cleanName(match[1], email) }
   }).filter((item) => item.email)
+}
+
+function graphRecipients(message: any): Address[] {
+  const recipients = [
+    ...(message.toRecipients ?? []),
+    ...(message.ccRecipients ?? []),
+    ...(message.bccRecipients ?? []),
+  ]
+  const byEmail = new Map<string, Address>()
+  for (const recipient of recipients) {
+    const email = cleanEmail(recipient.emailAddress?.address)
+    if (email) byEmail.set(email, { email, name: cleanName(recipient.emailAddress?.name, email) })
+  }
+  return [...byEmail.values()]
 }
 
 function stripHtml(value: string): string {
@@ -315,7 +337,7 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
     hasMore = Boolean(pageToken)
   } while (pageToken && ids.length < DISCOVERY_MAX_MESSAGES)
 
-  const detailParams = 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
+  const detailParams = 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
   const output: Mail[] = []
   for (let index = 0; index < ids.length; index += 20) {
     const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }) => {
@@ -324,7 +346,7 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
       const message = await response.json()
       const headers = message.payload?.headers ?? []
       const from = parseAddress(header(headers, 'From'))
-      const to = parseAddressList(header(headers, 'To'))
+      const to = parseAddressList([header(headers, 'To'), header(headers, 'Cc'), header(headers, 'Bcc')].filter(Boolean).join(','))
       const direction = from.email === ownEmail ? 'outbound' as const : 'inbound' as const
       return {
         id,
@@ -359,7 +381,7 @@ async function hydrateGmailBodies(token: string, mails: Mail[], selected: Set<st
 }
 
 async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, maximum: number, beforeIso?: string | null): Promise<MailScan> {
-  const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview'
+  const select = 'id,conversationId,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,bodyPreview'
   const filterParam = beforeIso ? `&$filter=${encodeURIComponent(`receivedDateTime lt ${beforeIso}`)}` : ''
   let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$orderby=receivedDateTime%20desc&$select=${select}${filterParam}`
   const raw: any[] = []
@@ -373,10 +395,7 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
   const messages = raw.slice(0, maximum).map((message: any) => {
     const fromEmail = cleanEmail(message.from?.emailAddress?.address)
     const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
-    const to = (message.toRecipients ?? []).map((recipient: any) => {
-      const email = cleanEmail(recipient.emailAddress?.address)
-      return { email, name: cleanName(recipient.emailAddress?.name, email) }
-    }).filter((item: Address) => item.email)
+    const to = graphRecipients(message)
     return {
       id: message.id,
       threadId: message.conversationId ?? message.id,
@@ -410,7 +429,7 @@ async function microsoftMessages(token: string, ownEmail: string, beforeIso?: st
  * chemin borné évite les interruptions Edge 546 observées sur les grosses
  * boîtes et ne modifie aucun deltaLink. */
 async function microsoftTargetMessages(token: string, ownEmail: string, targetEmails: string[]): Promise<MailScan> {
-  const select = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview'
+  const select = 'id,conversationId,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,bodyPreview'
   const byId = new Map<string, any>()
   let truncated = false
   for (const targetEmail of targetEmails) {
@@ -429,10 +448,7 @@ async function microsoftTargetMessages(token: string, ownEmail: string, targetEm
   const messages: Mail[] = [...byId.values()].map((message: any) => {
     const fromEmail = cleanEmail(message.from?.emailAddress?.address)
     const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
-    const to = (message.toRecipients ?? []).map((recipient: any) => {
-      const email = cleanEmail(recipient.emailAddress?.address)
-      return { email, name: cleanName(recipient.emailAddress?.name, email) }
-    }).filter((item: Address) => item.email)
+    const to = graphRecipients(message)
     return {
       id: String(message.id),
       threadId: message.conversationId ?? message.id,
@@ -446,6 +462,60 @@ async function microsoftTargetMessages(token: string, ownEmail: string, targetEm
   })
   const oldestSentAt = messages.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
   return { messages, truncated, oldestSentAt }
+}
+
+/** Vérification légère utilisée par l'ingestion incrémentale. Les deux appels
+ * ne téléchargent aucun corps : ils prouvent seulement qu'il existe au moins
+ * un message dans chaque sens, y compris si l'autre moitié de l'échange est
+ * antérieure au curseur incrémental courant. */
+async function providerHasReciprocalExchange(
+  provider: 'google' | 'microsoft',
+  token: string,
+  externalEmail: string,
+): Promise<boolean> {
+  const email = cleanEmail(externalEmail)
+  if (!email) return false
+
+  try {
+    if (provider === 'google') {
+      const exists = async (query: string): Promise<boolean> => {
+        const params = new URLSearchParams({ q: query, maxResults: '1' })
+        const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) return false
+        const data = await response.json()
+        return Array.isArray(data.messages) && data.messages.length > 0
+      }
+      const [inbound, outbound] = await Promise.all([
+        exists(`from:${email} to:me`),
+        exists(`from:me to:${email}`),
+      ])
+      return inbound && outbound
+    }
+
+    const existsInFolder = async (folder: 'Inbox' | 'SentItems'): Promise<boolean> => {
+      const params = new URLSearchParams({
+        '$top': '1',
+        '$search': `"participants:${email}"`,
+        '$select': 'id',
+      })
+      const response = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?${params}`, {
+        headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' },
+      })
+      if (!response.ok) return false
+      const data = await response.json()
+      return Array.isArray(data.value) && data.value.length > 0
+    }
+    const [inbound, outbound] = await Promise.all([
+      existsInFolder('Inbox'),
+      existsInFolder('SentItems'),
+    ])
+    return inbound && outbound
+  } catch {
+    // En cas d'incertitude fournisseur, on préfère ne rien créer.
+    return false
+  }
 }
 
 type MeetingCorpus = { excerpts: string[]; meetingCount: number }
@@ -583,7 +653,7 @@ async function gmailIncrementalMessages(token: string, ownEmail: string, history
       const message = await response.json()
       const headers = message.payload?.headers ?? []
       const from = parseAddress(header(headers, 'From'))
-      const to = parseAddressList(header(headers, 'To'))
+      const to = parseAddressList([header(headers, 'To'), header(headers, 'Cc'), header(headers, 'Bcc')].filter(Boolean).join(','))
       const direction = from.email === ownEmail ? 'outbound' as const : 'inbound' as const
       return {
         id,
@@ -602,7 +672,7 @@ async function gmailIncrementalMessages(token: string, ownEmail: string, history
   return { messages: output, newHistoryId, expired: false }
 }
 
-const MS_DELTA_SELECT = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,body'
+const MS_DELTA_SELECT = 'id,conversationId,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,body'
 
 /** Capture un deltaLink Microsoft Graph « à partir de maintenant » sans
  *  énumérer l'historique existant — `$deltatoken=latest` est le mécanisme
@@ -634,10 +704,7 @@ async function graphDeltaMessages(token: string, folder: 'Inbox' | 'SentItems', 
   const messages = raw.filter((message: any) => !message['@removed']).map((message: any) => {
     const fromEmail = cleanEmail(message.from?.emailAddress?.address)
     const from = { email: fromEmail, name: cleanName(message.from?.emailAddress?.name, fromEmail) }
-    const to = (message.toRecipients ?? []).map((recipient: any) => {
-      const email = cleanEmail(recipient.emailAddress?.address)
-      return { email, name: cleanName(recipient.emailAddress?.name, email) }
-    }).filter((item: Address) => item.email)
+    const to = graphRecipients(message)
     return {
       id: message.id,
       threadId: message.conversationId ?? message.id,
@@ -824,7 +891,9 @@ Nouveaux extraits :\n${corpus}`
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Email Behavior Analysis' },
       body: JSON.stringify({
-        model: Deno.env.get('OPENROUTER_MODEL') ?? 'google/gemini-2.5-flash-lite',
+        // Modèle dédié à l'analyse comportementale (découplé du chat Ask Tohu).
+        // Surchargable via OPENROUTER_ANALYSIS_MODEL sans toucher aux autres fonctions.
+        model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
         temperature: retry ? 0 : 0.1,
         response_format: COGNITIVE_PROFILE_RESPONSE_FORMAT,
         // Empêche OpenRouter de choisir un fournisseur qui ignorerait le
@@ -867,6 +936,115 @@ Nouveaux extraits :\n${corpus}`
   }
 }
 
+// ── Contexte relationnel (engagements + moments) ──────────────────────────
+// En UN seul appel (pour limiter le coût/latence par contact) : les engagements
+// datés « de part et d'autre » (→ « Engagements pris ») et les moments qui
+// comptent, jalons typés friction/reinforce/milestone (→ historique enrichi).
+
+type ExtractedEngagement = { text: string; owner: 'contact' | 'nous'; due_date: string | null; confidence: number }
+type ExtractedMoment = { title: string; summary: string | null; occurred_date: string | null; impact: 'friction' | 'reinforce' | 'milestone'; confidence: number }
+type ExtractedContext = { engagements: ExtractedEngagement[]; moments: ExtractedMoment[] }
+
+const CONTEXT_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'tohu_relationship_context',
+    strict: true,
+    schema: strictObject({
+      engagements: {
+        type: 'array',
+        items: strictObject({
+          text: { type: 'string' },
+          owner: { type: 'string', enum: ['contact', 'nous'] },
+          due_date: NULLABLE_STRING_SCHEMA,
+          confidence: { type: 'number', minimum: 0, maximum: 100 },
+        }),
+      },
+      moments: {
+        type: 'array',
+        items: strictObject({
+          title: { type: 'string' },
+          summary: NULLABLE_STRING_SCHEMA,
+          occurred_date: NULLABLE_STRING_SCHEMA,
+          impact: { type: 'string', enum: ['friction', 'reinforce', 'milestone'] },
+          confidence: { type: 'number', minimum: 0, maximum: 100 },
+        }),
+      },
+    }),
+  },
+}
+
+/** Clé de déduplication : minuscule, sans préfixe « nous », sans échéance ni ponctuation. */
+function normalizeCommitment(value: string): string {
+  return value.toLowerCase().replace(/^nous\s*:\s*/, '').replace(/\s+—\s+échéance.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+async function extractContext(name: string, excerpts: string[]): Promise<ExtractedContext> {
+  const empty: ExtractedContext = { engagements: [], moments: [] }
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+  if (!apiKey || !excerpts.length) return empty
+  const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
+  const prompt = `À partir des échanges (emails et passages de réunion) avec ${name}, relève deux choses, uniquement à partir de faits réellement présents dans les extraits (jamais inventé, jamais une généralité, jamais de citation mot pour mot).
+
+1) ENGAGEMENTS ("engagements") — promesses/actions datées que ${name} ("contact") OU nous ("nous") s'est engagé à faire :
+- "text" : reformulation courte et actionnable (ex. « Envoyer le devis mis à jour », « Rappeler jeudi pour valider le périmètre ») ;
+- "owner" : "contact" ou "nous" ;
+- "due_date" : échéance AAAA-MM-JJ si mentionnée, sinon null ;
+- "confidence" : 0 à 100.
+
+2) MOMENTS QUI COMPTENT ("moments") — les jalons observables de la relation, en couvrant AUTANT les avancées que les tensions (ne te limite pas aux moments positifs). Vise 6 à 12 moments quand le corpus le permet, répartis dans le temps :
+- cherche ACTIVEMENT les frictions, souvent sous-détectées : échéance manquée, relance restée sans réponse, délai, désaccord, insatisfaction exprimée, engagement non tenu, ton qui se tend ;
+- et les renforcements : accord obtenu, livraison, signe de confiance, avancée concrète, échange dense et productif ;
+- "title" : intitulé court et factuel (ex. « Lancement produit validé », « Échéance dépassée sur le devis ») ;
+- "summary" : une phrase de contexte, ou null ;
+- "occurred_date" : date AAAA-MM-JJ de l'échange concerné — renseigne-la dès qu'un email ou une réunion permet de la situer ; null seulement si vraiment introuvable ;
+- "impact" : "friction" (tension, échéance manquée, désaccord, silence subi), "reinforce" (avancée, accord, confiance) ou "milestone" (jalon structurant neutre) ;
+- "confidence" : 0 à 100.
+
+S'il n'y a rien de clair pour une catégorie, renvoie une liste vide pour celle-ci.
+
+Réponds uniquement avec ce JSON strict : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
+
+Extraits :\n${corpus}`
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Relationship Context Extraction' },
+    body: JSON.stringify({
+      model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
+      temperature: 0,
+      response_format: CONTEXT_RESPONSE_FORMAT,
+      provider: { require_parameters: true },
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+  if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
+  const data = await response.json()
+  const parsed = JSON.parse(openRouterContent(data)) as { engagements?: unknown; moments?: unknown }
+  const engagements = (Array.isArray(parsed.engagements) ? parsed.engagements : [])
+    .map((raw) => asRecord(raw))
+    .filter((item) => typeof item.text === 'string' && String(item.text).trim().length > 3)
+    .slice(0, 20)
+    .map((item) => ({
+      text: String(item.text).trim().slice(0, 300),
+      owner: item.owner === 'nous' ? 'nous' as const : 'contact' as const,
+      due_date: typeof item.due_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(item.due_date) ? String(item.due_date).slice(0, 10) : null,
+      confidence: Number.isFinite(Number(item.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : 50,
+    }))
+  const moments = (Array.isArray(parsed.moments) ? parsed.moments : [])
+    .map((raw) => asRecord(raw))
+    .filter((item) => typeof item.title === 'string' && String(item.title).trim().length > 3)
+    .slice(0, 12)
+    .map((item) => ({
+      title: String(item.title).trim().slice(0, 200),
+      summary: typeof item.summary === 'string' && String(item.summary).trim() ? String(item.summary).trim().slice(0, 400) : null,
+      occurred_date: typeof item.occurred_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(item.occurred_date) ? String(item.occurred_date).slice(0, 10) : null,
+      impact: item.impact === 'friction' ? 'friction' as const : item.impact === 'reinforce' ? 'reinforce' as const : 'milestone' as const,
+      confidence: Number.isFinite(Number(item.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : 50,
+    }))
+  return { engagements, moments }
+}
+
 /** Priorité garantie à toute relation déjà suivie (personne OU entreprise) —
  *  dépasse largement tout score organique pour ne jamais être évincée par le
  *  volume d'un tiers non suivi, même très actif. */
@@ -882,6 +1060,7 @@ type RelevanceStat = { inbound: number; outbound: number; lastSentAt: string; me
 function selectMessagesByRelevance(
   messages: Mail[],
   ownEmail: string,
+  eligibleEmails: Set<string>,
   contactByEmail: Map<string, any>,
   trackedDomains: Set<string>,
   trackedCompanyIds: Set<string>,
@@ -891,13 +1070,10 @@ function selectMessagesByRelevance(
   const statsByEmail = new Map<string, RelevanceStat>()
   for (const message of messages) {
     const externals = (message.direction === 'inbound' ? [message.from] : message.to)
-      .filter((item) => item.email && item.email !== ownEmail)
+      .filter((item) => item.email && item.email !== ownEmail && eligibleEmails.has(cleanEmail(item.email)))
     for (const external of externals) {
       const contact = contactByEmail.get(external.email)
-      const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
-      const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
-        sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
-      ))
+      const manuallyIntegrated = isManuallyIntegrated(contact)
       const classification = classifyEmailAutomation({
         email: external.email, name: external.name, subject: message.subject, body: message.body, headers: message.headers,
       })
@@ -937,7 +1113,18 @@ function selectMessagesByRelevance(
   let contactsPrioritized = 0
   for (const entry of ranked) {
     if (remaining <= 0) break
-    const topMessages = [...entry.stat.messages].sort((a, b) => b.sentAt.localeCompare(a.sentAt)).slice(0, PER_CONTACT_MAX_MESSAGES)
+    const orderedMessages = [...entry.stat.messages].sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+    // Réserve d'abord une preuve persistée dans chaque sens. Sans cela, une
+    // relation très active dont les 150 messages les plus récents sont tous
+    // entrants pourrait être correctement reconnue ici mais rejetée ensuite
+    // par le garde-fou SQL faute d'un ancien message sortant stocké.
+    const requiredEvidence = [
+      orderedMessages.find((message) => message.direction === 'inbound'),
+      orderedMessages.find((message) => message.direction === 'outbound'),
+    ].filter((message): message is Mail => Boolean(message))
+    if (requiredEvidence.length === 2 && remaining < 2) break
+    const topMessages = [...new Map([...requiredEvidence, ...orderedMessages]
+      .map((message) => [message.id, message])).values()].slice(0, PER_CONTACT_MAX_MESSAGES)
     let addedForThisContact = false
     for (const message of topMessages) {
       if (remaining <= 0) break
@@ -1089,6 +1276,16 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       }
     }
 
+    // Garde-fou de création : une identité issue de la messagerie n'existe
+    // dans Tohu qu'après preuve d'un échange dans les deux sens. Les fiches
+    // saisies manuellement et la relecture ciblée d'une fiche existante restent
+    // utilisables sans être transformées en « découverte automatique ».
+    const eligibleEmails = reciprocalExternalEmails(messages, ownEmail)
+    for (const [email, contact] of contactByEmail) {
+      if (isManuallyIntegrated(contact)) eligibleEmails.add(email)
+    }
+    for (const email of targetEmails) eligibleEmails.add(email)
+
     // Qui a droit au traitement complet (corps + stockage) se décide par
     // pertinence de la relation sur toute la fenêtre découverte, pas par
     // simple position chronologique — une boîte très bruitée noierait sinon
@@ -1100,7 +1297,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       .map((row: any) => String(row.contact_id)))
     const relevance = manualContactId
       ? { selectedIds: new Set(messages.map((message) => message.id)), contactsPrioritized: targetEmails.length ? 1 : 0, missingProfileContactIds: new Set<string>() }
-      : selectMessagesByRelevance(messages, ownEmail, contactByEmail, trackedDomains, trackedCompanyIds, currentV3ProfileContactIds, ANALYSIS_MAX_MESSAGES)
+      : selectMessagesByRelevance(messages, ownEmail, eligibleEmails, contactByEmail, trackedDomains, trackedCompanyIds, currentV3ProfileContactIds, ANALYSIS_MAX_MESSAGES)
     for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
     if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
 
@@ -1124,11 +1321,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       const messageContacts: any[] = []
 
       for (const external of externalByEmail.values()) {
+        if (!eligibleEmails.has(cleanEmail(external.email))) continue
         let contact = contactByEmail.get(external.email)
-        const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
-        const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
-          sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
-        ))
+        const manuallyIntegrated = isManuallyIntegrated(contact)
         const classification = classifyEmailAutomation({
           email: external.email,
           name: external.name,
@@ -1180,7 +1375,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       if (!primaryContact || message.discoveryOnly) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id, analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
       else if (message.body && (
@@ -1336,6 +1531,61 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           const { error: signalsError } = await supabase.from('behavioral_signals').insert(signals)
           if (signalsError) throw signalsError
         }
+        // Contexte relationnel : engagements pris + moments qui comptent, extraits
+        // du contenu en un seul appel puis dédupliqués sur les entrées déjà connues.
+        try {
+          const context = await extractContext(contact?.full_name ?? 'Contact', excerpts)
+          if (context.engagements.length) {
+            const { data: existingRows } = await supabase.from('person_memory_entries')
+              .select('content').eq('organization_id', organizationId).eq('contact_id', contactId).eq('entry_type', 'commitment')
+            const seen = new Set((existingRows ?? []).map((row) => normalizeCommitment(String(row.content ?? ''))))
+            const fresh = context.engagements
+              .map((item) => ({ item, content: item.owner === 'nous' ? `Nous : ${item.text}` : item.text }))
+              .filter(({ content }) => { const key = normalizeCommitment(content); if (seen.has(key)) return false; seen.add(key); return true })
+              .map(({ item, content }) => ({
+                organization_id: organizationId,
+                contact_id: contactId,
+                author_user_id: actingUserId,
+                entry_type: 'commitment',
+                content: item.due_date ? `${content} — échéance ${item.due_date}` : content,
+                visibility: 'workspace',
+                processing_status: 'ready',
+                source_type: 'email_analysis',
+                source_label: 'Tohu · engagement détecté',
+                confidence: item.confidence,
+                inference_level: 'strong_inference',
+                observed_at: now,
+              }))
+            if (fresh.length) {
+              const { error: memoryError } = await supabase.from('person_memory_entries').insert(fresh)
+              if (memoryError) analysisErrors.push(`engagements ${contactId}: ${memoryError.message}`)
+            }
+          }
+          if (context.moments.length) {
+            const { data: existingMoments } = await supabase.from('person_key_moments')
+              .select('title').eq('organization_id', organizationId).eq('contact_id', contactId)
+            const seenMoments = new Set((existingMoments ?? []).map((row) => normalizeCommitment(String(row.title ?? ''))))
+            const freshMoments = context.moments
+              .filter((item) => { const key = normalizeCommitment(item.title); if (seenMoments.has(key)) return false; seenMoments.add(key); return true })
+              .map((item) => ({
+                organization_id: organizationId,
+                contact_id: contactId,
+                occurred_at: item.occurred_date ? new Date(item.occurred_date).toISOString() : now,
+                title: item.title,
+                summary: item.summary,
+                impact: item.impact,
+                confidence: item.confidence,
+                source_type: 'email_analysis',
+                source_label: 'Tohu · moment détecté',
+              }))
+            if (freshMoments.length) {
+              const { error: momentError } = await supabase.from('person_key_moments').insert(freshMoments)
+              if (momentError) analysisErrors.push(`moments ${contactId}: ${momentError.message}`)
+            }
+          }
+        } catch (error) {
+          analysisErrors.push(`contexte ${contactId}: ${errorMessage(error)}`)
+        }
         currentV3ProfileContactIds.add(contactId)
         peopleAnalyzed++
       } catch (error) {
@@ -1347,7 +1597,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Mise à jour des profils comportementaux', progress: 90 }).eq('id', syncJobId)
 
     const discoveredDomains = new Set(
-      [...contactByEmail.keys()].map(corporateDomain).filter((domain): domain is string => Boolean(domain)),
+      [...eligibleEmails].map(corporateDomain).filter((domain): domain is string => Boolean(domain)),
     ).size
 
     // Curseur de reprise : tant que la fenêtre découverte n'est pas
@@ -1389,6 +1639,8 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       people_analyzed: peopleAnalyzed,
       responsible_analyzed: responsibleAnalyzed,
       automated_messages_ignored: skippedAutomated,
+      one_way_addresses_ignored: [...relationshipEvidenceByEmail(messages, ownEmail).keys()]
+        .filter((email) => !eligibleEmails.has(email)).length,
       ignored_reasons: skippedReasons,
       relationships_prioritized: relevance.contactsPrioritized,
       profiles_pending: profilesPending,
@@ -1512,6 +1764,21 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (contact && normalized) contactByEmail.set(normalized, contact)
     }
 
+    const incrementalEvidence = relationshipEvidenceByEmail(messages, ownEmail)
+    const eligibleEmails = reciprocalExternalEmails(messages, ownEmail)
+    for (const [email, contact] of contactByEmail) {
+      if (isManuallyIntegrated(contact)) eligibleEmails.add(email)
+    }
+
+    // Un tick ne contient souvent qu'une moitié d'une nouvelle conversation.
+    // On vérifie alors l'autre sens directement chez le fournisseur, sans
+    // stocker l'adresse ni créer de fiche en attente dans notre base.
+    const addressesToVerify = [...incrementalEvidence.keys()]
+      .filter((email) => !eligibleEmails.has(email))
+    await runWithConcurrency(addressesToVerify, 6, async (email) => {
+      if (await providerHasReciprocalExchange(provider, accessToken, email)) eligibleEmails.add(email)
+    })
+
     let storedMessages = 0
     await runWithConcurrency(messages, MESSAGE_PROCESSING_CONCURRENCY, async (message) => {
       const externalByEmail = new Map(
@@ -1521,11 +1788,9 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       )
       const messageContacts: any[] = []
       for (const external of externalByEmail.values()) {
+        if (!eligibleEmails.has(cleanEmail(external.email))) continue
         let contact = contactByEmail.get(external.email)
-        const sourceSummary = contact?.source_summary as Record<string, unknown> | undefined
-        const manuallyIntegrated = ['manual', 'manual_integration'].includes(String(
-          sourceSummary?.last_identity_source ?? sourceSummary?.source ?? sourceSummary?.discovered_from ?? '',
-        ))
+        const manuallyIntegrated = isManuallyIntegrated(contact)
         const classification = classifyEmailAutomation({ email: external.email, name: external.name, subject: message.subject, body: message.body, headers: message.headers })
         if (classification.automated && !manuallyIntegrated) continue
         if (!contact) {
@@ -1549,7 +1814,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (!primaryContact) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id, analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
     })
 
@@ -1558,7 +1823,11 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       last_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq('id', connector.id)
-    return { success: true, messages: storedMessages }
+    return {
+      success: true,
+      messages: storedMessages,
+      oneWayAddressesIgnored: [...incrementalEvidence.keys()].filter((email) => !eligibleEmails.has(email)).length,
+    }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Ingestion incrémentale impossible' }
   }

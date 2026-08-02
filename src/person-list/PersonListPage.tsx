@@ -11,7 +11,7 @@ import {
   type PersonListRow, type TickerItem,
 } from './mapping'
 import {
-  detectPersonCandidates, getPeopleOverview, reassignPeople, setPersonFavorite, setPersonOwner,
+  archivePeople, detectPersonCandidates, getPeopleOverview, reassignPeople, setPersonFavorite, setPersonOwner,
   setPersonWatch, trackPersonCandidate, type PeopleOverview, type PersonCandidate,
 } from './service'
 
@@ -204,6 +204,19 @@ function PageBody({ context }: { context: PageContext }) {
       await refresh()
     })
   }
+  const deleteSelection = () => {
+    const ids = [...selection]
+    if (!ids.length) return
+    if (!window.confirm(`Supprimer ${ids.length} personne${ids.length > 1 ? 's' : ''} de Tohu ? Elles seront masquées des listes — l’historique réel (emails, réunions, signaux) est conservé et restaurable depuis chaque fiche.`)) return
+    void run('delete-selection', async () => {
+      await archivePeople(context.workspaceId, context.userId, ids)
+      window.dispatchEvent(new Event('tohu:workspace-updated'))
+      toast(`${ids.length} personne${ids.length > 1 ? 's' : ''} supprimée${ids.length > 1 ? 's' : ''}.`)
+      setPassation(false)
+      setSelection(new Set())
+      await refresh()
+    })
+  }
 
   return <div className="pa">
     <Ticker ticker={overview.ticker} />
@@ -219,7 +232,7 @@ function PageBody({ context }: { context: PageContext }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg> Intégrer des personnes
         </button>
         <button type="button" className={`kpass-btn ${passation ? 'on' : ''}`} aria-pressed={passation} onClick={() => { setPassation((value) => !value); setSelection(new Set()) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8M8 21l-4-4 4-4M4 17h12" /></svg> Passation
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8M8 21l-4-4 4-4M4 17h12" /></svg> Sélectionner
         </button>
       </div>
     </div>
@@ -272,10 +285,13 @@ function PageBody({ context }: { context: PageContext }) {
     {ownerPopup && <MemberPicker overview={overview} anchor={ownerPopup}
       currentId={overview.people.find((row) => row.id === ownerPopup.personId)?.ownerId ?? null}
       onPick={pickOwner(ownerPopup.personId)} onClose={() => setOwnerPopup(null)} />}
-    {passation && <div className="pa-bar" role="toolbar" aria-label="Passation d’équipe">
+    {passation && <div className="pa-bar" role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> personne{selection.size > 1 ? 's' : ''} sélectionnée{selection.size > 1 ? 's' : ''}</span>
       <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Réattribuer
+      </button>
+      <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer
       </button>
       <button type="button" className="pb-cancel" onClick={() => { setPassation(false); setSelection(new Set()) }}>Annuler</button>
     </div>}

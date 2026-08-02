@@ -26,7 +26,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     recommendationsResult, detailsResult, careerResult, memoryResult,
     participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
     nameSuggestionResult, mergeSuggestionsResult, participantCountResult,
-    messageCountResult, authoredMessageCountResult,
+    messageCountResult, authoredMessageCountResult, keyMomentsResult,
   ] = await Promise.all([
     client.from('contacts').select('*,companies(*)').eq('organization_id', workspaceId).eq('id', personId).is('merged_into_contact_id', null).maybeSingle(),
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
@@ -53,6 +53,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('meeting_participants').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('direction', 'inbound'),
+    client.from('person_key_moments').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('occurred_at', { ascending: false }).limit(12),
   ])
 
   if (contactResult.error) {
@@ -75,6 +76,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   const contactDetails = rows(optional(detailsResult, 'Coordonnées Personne', degradedReasons))
   const careerEntries = rows(optional(careerResult, 'Parcours Personne', degradedReasons))
   const memoryEntries = rows(optional(memoryResult, 'Mémoire Personne', degradedReasons))
+  const keyMoments = rows(optional(keyMomentsResult, 'Moments clés Personne', degradedReasons))
   const participants = rows(optional(participantsResult, 'Réunions', degradedReasons))
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const connectors = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
@@ -118,6 +120,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     contactDetails,
     careerEntries,
     memoryEntries,
+    keyMoments,
     meetings,
     messages,
     meetingCount: participantCountResult.error ? meetings.length : (participantCountResult.count ?? meetings.length),
@@ -244,6 +247,45 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
   if (values.relationshipRole !== undefined) payload.relationship_role = values.relationshipRole
   const { error } = await getSupabase().from('person_settings').upsert(payload, { onConflict: 'organization_id,contact_id' })
   if (error) throw error
+}
+
+/** Affectation : assigner la fiche à un owner du workspace (ou la désaffecter). */
+export async function setPersonOwner(data: PersonDetailData, userId: string, ownerUserId: string | null): Promise<void> {
+  const { error } = await getSupabase().from('person_settings').upsert({
+    organization_id: data.person.workspaceId,
+    contact_id: data.person.id,
+    primary_owner_user_id: ownerUserId,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,contact_id' })
+  if (error) throw error
+}
+
+/** Visibilité : « workspace » (toute l'organisation) ou « restricted » (équipe restreinte). */
+export async function setPersonVisibility(data: PersonDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
+  const { error } = await getSupabase().from('person_settings').upsert({
+    organization_id: data.person.workspaceId,
+    contact_id: data.person.id,
+    visibility,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,contact_id' })
+  if (error) throw error
+}
+
+export type WorkspaceMember = { id: string; fullName: string }
+
+/** Membres du workspace, pour le sélecteur d'owner. */
+export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const client = getSupabase()
+  const { data: memberships, error } = await client.from('memberships').select('user_id').eq('organization_id', workspaceId).limit(200)
+  if (error) throw error
+  const ids = [...new Set((memberships ?? []).map((row) => String(row.user_id)).filter(Boolean))]
+  if (!ids.length) return []
+  const { data: profiles } = await client.from('profiles').select('id,full_name').in('id', ids)
+  return (profiles ?? [])
+    .map((row) => ({ id: String(row.id), fullName: String(row.full_name ?? 'Membre') }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
 
 export type RelationshipNarrative = { narrative: string; generatedAt: string | null; cached: boolean }
@@ -477,6 +519,22 @@ export async function addPersonNote(data: PersonDetailData, userId: string, cont
     source_label: 'Note d’équipe',
     inference_level: 'manual',
   })
+  if (error) throw error
+}
+
+/** Engagement tenu : on le sort du suivi actif mais il reste en mémoire relationnelle. */
+export async function resolvePersonMemoryEntry(data: PersonDetailData, userId: string, entryId: string): Promise<void> {
+  const now = new Date().toISOString()
+  const { error } = await getSupabase().from('person_memory_entries')
+    .update({ resolved_at: now, resolved_by: userId, updated_at: now })
+    .eq('id', entryId).eq('organization_id', data.person.workspaceId)
+  if (error) throw error
+}
+
+/** Suppression définitive d'une entrée de mémoire (engagement écarté). */
+export async function deletePersonMemoryEntry(data: PersonDetailData, entryId: string): Promise<void> {
+  const { error } = await getSupabase().from('person_memory_entries')
+    .delete().eq('id', entryId).eq('organization_id', data.person.workspaceId)
   if (error) throw error
 }
 

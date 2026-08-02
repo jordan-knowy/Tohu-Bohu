@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
-import type { PersonDetailData, PersonPrimaryAxis, PersonScorePoint, PrimaryAxisId } from './types'
+import type { PersonDetailData, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
-import { RecommendationsSection } from './sections'
-import { fetchRelationshipNarrative } from './service'
-import { formatDate, formatMonth, relativeDate, scoreTone } from './ui'
+import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
+import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
+import { formatDate, formatMonth, relativeDate, scoreTone, useBusy, useToast } from './ui'
 
 type ViewProps = {
   data: PersonDetailData
@@ -438,11 +438,33 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
 const SCORE_PERIODS = [6, 12, 36] as const
 type ScorePeriod = (typeof SCORE_PERIODS)[number]
 
-function ScoreChart({ history }: { history: PersonScorePoint[] }) {
+function ScoreChart({ data }: { data: PersonDetailData }) {
   const [months, setMonths] = useState<ScorePeriod>(12)
-  const points = useMemo(() => scoreWindow(history, months, new Date()), [history, months])
+  const [hover, setHover] = useState<{ index: number; left: number } | null>(null)
+  const points = useMemo(() => scoreWindow(data.scoreHistory, months, new Date()), [data.scoreHistory, months])
+  const exchangesByMonth = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const event of data.history) {
+      if (event.type !== 'meeting' && event.type !== 'email') continue
+      const key = event.occurredAt.slice(0, 7)
+      map.set(key, (map.get(key) ?? 0) + 1)
+    }
+    return map
+  }, [data.history])
+  const momentByMonth = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const moment of data.keyMoments) { const key = moment.occurredAt.slice(0, 7); if (!map.has(key)) map.set(key, moment.title) }
+    return map
+  }, [data.keyMoments])
+  const firstMonthKey = data.relationship.firstInteractionAt?.slice(0, 7) ?? null
   const first = points[0]?.monthKey
   const last = points.at(-1)?.monthKey
+  const hovered = hover ? points[hover.index] : null
+  const previousScore = hover ? points.slice(0, hover.index).reverse().find((point) => point.score !== null)?.score ?? null : null
+  const delta = hovered && hovered.score !== null && previousScore !== null ? hovered.score - previousScore : null
+  const hoveredExchanges = hovered ? exchangesByMonth.get(hovered.monthKey) ?? 0 : 0
+  const hoveredMoment = hovered ? momentByMonth.get(hovered.monthKey) : undefined
+  const hoveredIsStart = hovered ? hovered.monthKey === firstMonthKey : false
   return <>
     <div className="seg" role="tablist" aria-label="Période affichée">
       {SCORE_PERIODS.map((period) => <span key={period} role="tab" aria-selected={months === period} className={months === period ? 'on' : ''} onClick={() => setMonths(period)}>{period} M</span>)}
@@ -450,9 +472,19 @@ function ScoreChart({ history }: { history: PersonScorePoint[] }) {
     <div className="chart" role="img" aria-label={points.map((point) => `${formatMonth(point.monthKey)} : ${point.score ?? 'sans donnée'}`).join(', ')}>
       {points.map((point, index) => <i
         key={point.monthKey}
+        tabIndex={0}
         style={{ height: point.score === null ? 8 : Math.max(6, Math.round(120 * point.score / 100)), background: point.score === null ? '#E3DEF2' : index === points.length - 1 ? 'linear-gradient(180deg,#2EA86A,#4FBD85)' : 'linear-gradient(180deg,#3FAEBE,#2896A8)' }}
-        title={point.score === null ? undefined : `${formatMonth(point.monthKey)} : ${point.score}`}
+        onMouseEnter={(event) => setHover({ index, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 })}
+        onMouseLeave={() => setHover(null)}
+        onFocus={(event) => setHover({ index, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 })}
+        onBlur={() => setHover(null)}
       />)}
+      {hover && hovered && <div className="ch-tip" style={{ left: hover.left }}>
+        <div className="ch-tip-m">{formatMonth(hovered.monthKey)}{hoveredIsStart ? ' · début' : ''}</div>
+        {hovered.score !== null && <div className="ch-tip-v">{hovered.score}<small>/100</small>{delta !== null && <span className={delta >= 0 ? 'up' : 'down'}>{delta >= 0 ? `↗ +${delta}` : `↘ ${delta}`} pts</span>}</div>}
+        <div className="ch-tip-s">{hoveredIsStart ? 'Début de la relation' : hoveredExchanges > 0 ? `${hoveredExchanges} échange${hoveredExchanges > 1 ? 's' : ''} ce mois` : 'Aucun échange ce mois'}</div>
+        {hoveredMoment && <div className="ch-tip-x">✦ {hoveredMoment}</div>}
+      </div>}
     </div>
     <div className="ch-x"><span>{first ? formatMonth(first) : ''}</span><span>{last ? formatMonth(last) : ''}</span></div>
   </>
@@ -485,10 +517,74 @@ function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: 
   </div>
 }
 
+const EG_CHECK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
+const EG_CROSS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+
+function engagementStatus(item: PersonRecommendation): { cls: 'late' | 'open' | 'done'; label: string } {
+  if (item.status === 'completed') return { cls: 'done', label: 'Tenu' }
+  if (item.dueAt && new Date(item.dueAt).getTime() < Date.now()) return { cls: 'late', label: 'En retard' }
+  return { cls: 'open', label: 'Ouvert' }
+}
+
+function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommendation; data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const status = engagementStatus(item)
+  const act = (next: 'completed' | 'dismissed') => run(item.id, async () => {
+    await updatePersonRecommendationStatus(data, item.id, userId, next)
+    toast(next === 'completed' ? 'Engagement tenu — historisé.' : 'Écarté.')
+    await refresh()
+  })
+  return <div className={`eg ${status.cls}`}>
+    <span className="eg-s">{status.label}</span>
+    <div className="eg-c">
+      <p className="eg-t">{item.title}</p>
+      <p className="eg-d">{item.recommendedAction || item.justification}</p>
+      <p className="eg-src">↳ {item.provenance.sourceLabel}</p>
+    </div>
+    <div className="eg-b">
+      <button type="button" className="ok" title="Tenu" disabled={busy !== null} onClick={() => void act('completed')}>{EG_CHECK}</button>
+      <button type="button" className="no" title="Écarter" disabled={busy !== null} onClick={() => void act('dismissed')}>{EG_CROSS}</button>
+    </div>
+  </div>
+}
+
+function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryEntry; data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const source = item.sourceType === 'manual' ? item.authorName : item.sourceLabel ?? 'Tohu'
+  const resolve = () => run(item.id, async () => {
+    await resolvePersonMemoryEntry(data, userId, item.id)
+    toast('Engagement tenu — conservé dans la mémoire relationnelle.')
+    await refresh()
+  })
+  const remove = () => run(item.id, async () => {
+    await deletePersonMemoryEntry(data, item.id)
+    toast('Engagement supprimé.')
+    await refresh()
+  })
+  return <div className="eg open">
+    <span className="eg-s">{item.sourceType === 'manual' ? 'Noté' : 'Détecté'}</span>
+    <div className="eg-c">
+      <p className="eg-t">{item.content}</p>
+      <p className="eg-src">↳ {source} · {formatDate(item.createdAt)}</p>
+    </div>
+    <div className="eg-b">
+      <button type="button" className="ok" title="Tenu — garder en mémoire" disabled={busy !== null} onClick={resolve}>{EG_CHECK}</button>
+      <button type="button" className="no" title="Supprimer" disabled={busy !== null} onClick={remove}>{EG_CROSS}</button>
+    </div>
+  </div>
+}
+
 export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   const relation = data.relationship
-  const commitments = data.memoryEntries.filter((item) => item.entryType === 'commitment')
-  const recommendations = data.recommendations.filter((item) => ['open', 'in_progress', 'postponed'].includes(item.status))
+  const commitments = data.memoryEntries.filter((item) => ['commitment', 'decision', 'engagement'].includes(item.entryType) && !item.resolvedAt)
+  const openRecos = data.recommendations.filter((item) => ['open', 'in_progress', 'postponed'].includes(item.status))
+  // Un engagement = promesse tirée des échanges (posture/coaching ou reco déclenchée par un
+  // signal de contenu). « Renouer le contact » (reco fondée sur le score, sans signal) n'en est pas un.
+  const engagementRecos = openRecos.filter((item) => item.kind === 'coaching' || item.triggerSignal !== null)
+  const nextActions = openRecos.filter((item) => !engagementRecos.includes(item))
+  const engagementCount = commitments.length + engagementRecos.length
   const delta = relation.phaseDelta
   const [methodologyOpen, setMethodologyOpen] = useState(false)
   const [narrative, setNarrative] = useState<string | null>(null)
@@ -525,35 +621,40 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
           {relation.score !== null && <p className="rel-narrative">
             {narrativeState === 'loading' ? 'Analyse de l’évolution en cours…' : narrativeState === 'error' ? 'Synthèse indisponible pour le moment.' : narrative}
           </p>}
-          <ScoreChart history={data.scoreHistory} />
+          <ScoreChart data={data} />
           <div className="lvs"><p className="lvs-h"><i className="lvs-i" />Dernière synchronisation : <b>{relativeDate(relation.computedAt).toLowerCase()}</b></p><span className="lvs-bar" /></div>
         </div>
       </section>
 
       <section className="sec">
-        <div className="sec-h"><V48Icon name="commitment" /><p className="sec-t">Engagements pris</p><span className="cnt"><b>{commitments.length + recommendations.length}</b> à suivre</span></div>
+        <div className="sec-h"><V48Icon name="commitment" /><p className="sec-t">Engagements pris</p><span className="cnt"><b>{engagementCount}</b> à suivre</span></div>
         <div className="sec-b">
-          <p className="hint-l">Ce qui a été promis ou recommandé de part et d’autre. Seuls les éléments persistés sont affichés.</p>
-          <div className="v48-commitment-list">
-            {commitments.map((item) => <article key={item.id}>
-              <span>Mémoire</span><h3>{item.content}</h3><small>{item.authorName} · {formatDate(item.createdAt)}</small>
-            </article>)}
-            {recommendations.slice(0, 5).map((item) => <article key={item.id}>
-              <span>Action P{item.priority}</span><h3>{item.title}</h3><p>{item.recommendedAction || item.justification}</p><small>{item.provenance.sourceLabel}</small>
-            </article>)}
-            {!commitments.length && !recommendations.length && <EmptyState>Aucun engagement ou action ouverte n’est actuellement enregistré.</EmptyState>}
-          </div>
+          <p className="hint-l">Ce qui a été promis dans les échanges. Garde ce qui compte, écarte le reste.</p>
+          {engagementCount > 0
+            ? <div className="eng">
+              {engagementRecos.map((item) => <EngagementReco key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}
+              {commitments.map((item) => <EngagementMemory key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}
+            </div>
+            : <EmptyState>Aucun engagement n’a encore été extrait des échanges. Ils apparaîtront après l’analyse du contenu des emails et réunions.</EmptyState>}
         </div>
       </section>
     </div>
+    {nextActions.length > 0 && <section className="sec">
+      <div className="sec-h"><V48Icon name="sparkle" /><p className="sec-t">Prochaine action recommandée</p><span className="cnt"><b>{nextActions.length}</b></span></div>
+      <div className="sec-b">
+        <p className="hint-l">Suggestions de Tohu à partir du score et de la dynamique relationnelle — à valider ou écarter.</p>
+        <div className="eng">{nextActions.map((item) => <EngagementReco key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}</div>
+      </div>
+    </section>}
     <HistoryCard data={data} memory={<MemoryCard data={data} userId={userId} refresh={refresh} embedded />} />
-    {recommendations.length > 0 && <RecommendationsSection data={data} userId={userId} refresh={refresh} />}
     {methodologyOpen && <MethodologyModal data={data} onClose={() => setMethodologyOpen(false)} />}
   </div>
 }
 
 function InsightBand({ data }: { data: PersonDetailData }) {
-  const signal = data.signals[0]
+  // Le spotlight « depuis votre dernier échange » privilégie une actualité réelle,
+  // pas un trait comportemental (registre, tonalité…) qui n'est pas un événement daté.
+  const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
   return <div className="v48-insight-grid">
     <article className="v48-insight">
       <span><V48Icon name="sparkle" /></span>
@@ -563,7 +664,7 @@ function InsightBand({ data }: { data: PersonDetailData }) {
     </article>
     <article className="v48-signal-spotlight">
       <small>Depuis votre dernier échange <b>{formatDate(data.relationship.lastInteractionAt)}</b></small>
-      {signal ? <><span>{signal.type}</span><strong>{signal.title}</strong><p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeDate(signal.provenance.observedAt).toLowerCase()}</em></>
+      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeDate(signal.provenance.observedAt).toLowerCase()}</em></>
         : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}
     </article>
   </div>

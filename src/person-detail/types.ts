@@ -165,8 +165,21 @@ export type PersonMemoryEntry = {
   transcription: string | null
   processingStatus: string
   authorName: string
+  sourceType: string
+  sourceLabel: string | null
   visibility: string
+  resolvedAt: string | null
   createdAt: string
+}
+
+export type PersonKeyMoment = {
+  id: string
+  occurredAt: string
+  title: string
+  summary: string | null
+  impact: 'friction' | 'reinforce' | 'milestone'
+  confidence: number | null
+  sourceLabel: string
 }
 
 export type PersonSourceStatus = {
@@ -232,6 +245,8 @@ export interface PersonDetailData {
     watchEnabled: boolean
     archivedAt: string | null
     primaryOwnerName: string | null
+    primaryOwnerUserId: string | null
+    visibility: 'workspace' | 'restricted'
     createdAt: string | null
     updatedAt: string | null
     locked: boolean
@@ -299,6 +314,7 @@ export interface PersonDetailData {
   contactDetails: PersonContactDetail[]
   careerEntries: PersonCareerEntry[]
   memoryEntries: PersonMemoryEntry[]
+  keyMoments: PersonKeyMoment[]
   history: PersonHistoryEvent[]
   nameSuggestion: PersonNameSuggestion | null
   mergeSuggestions: PersonMergeSuggestion[]

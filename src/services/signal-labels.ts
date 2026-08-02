@@ -26,15 +26,68 @@ export function recentActivityTitle(text: unknown): string {
   return 'Actualité récente'
 }
 
+/** Signaux issus de l'analyse comportementale (6 axes + marqueurs observables).
+ *  Leur `inference` répète souvent la clé technique (« register_distance »),
+ *  donc on ne fait jamais confiance à l'inférence brute pour ces types. */
+const BEHAVIORAL_SIGNAL_TITLES: Record<string, string> = {
+  rythme: 'Rythme d’échange',
+  argumentation: 'Style d’argumentation',
+  engagement: 'Engagements formulés',
+  registre: 'Registre de langage',
+  register_distance: 'Registre & distance',
+  tonalite: 'Tonalité relationnelle',
+  espace_parole: 'Espace de parole',
+  response_time: 'Temps de réponse',
+  dominance_listening_speaking: 'Écoute et prise de parole',
+  linguistic_synchrony: 'Synchronie linguistique',
+  pronouns_status: 'Usage des pronoms',
+  self_disclosure: 'Auto-divulgation',
+  mobility: 'Mobilité professionnelle',
+}
+
+const BEHAVIORAL_SIGNAL_CATEGORY: Record<string, string> = {
+  rythme: 'Style d’échange', espace_parole: 'Style d’échange', response_time: 'Style d’échange',
+  dominance_listening_speaking: 'Style d’échange', linguistic_synchrony: 'Style d’échange',
+  argumentation: 'Posture', engagement: 'Posture',
+  registre: 'Communication', register_distance: 'Communication', tonalite: 'Communication',
+  pronouns_status: 'Communication', self_disclosure: 'Communication',
+  mobility: 'Mouvement',
+}
+
+/** Vrai pour les signaux d'analyse comportementale (à ne pas afficher comme
+ *  « actualité depuis le dernier échange »). */
+export function isBehavioralSignal(signalType: unknown): boolean {
+  return String(signalType || '').toLowerCase() in BEHAVIORAL_SIGNAL_TITLES
+}
+
+/** « register_distance » n'est pas un titre lisible : capitalise et enlève les
+ *  underscores, en dernier recours seulement. */
+function humanize(value: string): string {
+  const spaced = value.replaceAll('_', ' ').trim()
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : 'Signal'
+}
+
+/** Une inférence n'est exploitable comme titre que si ce n'est pas une clé technique
+ *  (tout en minuscules/underscores, sans espace ni accent). */
+function isRawSlug(value: string): boolean {
+  return /^[a-z]+(_[a-z]+)*$/.test(value)
+}
+
 export function signalTitle(signalType: unknown, inference: unknown, text: unknown): string {
+  const type = String(signalType || '').toLowerCase()
+  if (type === 'recent_activity') {
+    const explicit = typeof inference === 'string' ? inference.trim() : ''
+    return explicit && explicit.toLowerCase() !== 'recent_activity' ? explicit : recentActivityTitle(text)
+  }
+  if (BEHAVIORAL_SIGNAL_TITLES[type]) return BEHAVIORAL_SIGNAL_TITLES[type]
   const explicit = typeof inference === 'string' ? inference.trim() : ''
-  if (explicit && explicit.toLowerCase() !== 'recent_activity') return explicit
-  if (String(signalType).toLowerCase() === 'recent_activity') return recentActivityTitle(text)
-  return String(signalType || 'Signal comportemental').replaceAll('_', ' ')
+  if (explicit && !isRawSlug(explicit)) return explicit
+  return humanize(String(signalType || 'Signal comportemental'))
 }
 
 export function signalTypeLabel(signalType: unknown): string {
   const value = String(signalType || '').toLowerCase()
+  if (BEHAVIORAL_SIGNAL_CATEGORY[value]) return BEHAVIORAL_SIGNAL_CATEGORY[value]
   const labels: Record<string, string> = {
     recent_activity: 'Actualité',
     job_change: 'Mouvement',
@@ -44,5 +97,5 @@ export function signalTypeLabel(signalType: unknown): string {
     news: 'Actualité',
     silence: 'Relation',
   }
-  return labels[value] ?? String(signalType || 'Signal').replaceAll('_', ' ')
+  return labels[value] ?? humanize(String(signalType || 'Signal'))
 }

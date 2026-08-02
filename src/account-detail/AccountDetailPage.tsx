@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
@@ -436,6 +437,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const [watchOpen, setWatchOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<AccountDetailTab>('relation')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [coordsOpen, setCoordsOpen] = useState(false)
   const refresh = useCallback(async () => {
     try { setError(null); setData(await getAccountDetail(context.workspaceId, accountId)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
@@ -459,10 +461,6 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     await setAccountLock(data, context.session.user.id, !account.lockedByMe)
     await refresh()
   }
-  const showDetails = () => {
-    setActiveTab('live')
-    window.requestAnimationFrame(() => document.getElementById('account-details-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }
   return <div className="pp account-pp">
     <div className="pp-back account-toolbar">
       <Link to="/app/accounts">← Comptes</Link>
@@ -479,16 +477,77 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Live &amp; Signaux</button>
-      {activeTab === 'live' && <button type="button" className="v48-tabs-action" onClick={showDetails}>
+      <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setCoordsOpen(true)}>
         <Icon name="building" /> Coordonnées
-      </button>}
+      </button>
     </nav>
     <AccountHero data={data} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} />
     {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><V48AccountRelationView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} /></main>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
     <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
+    {coordsOpen && <AccountContactDialog data={data} navigate={navigate} onClose={() => setCoordsOpen(false)} />}
   </div>
+}
+
+const AcctGlobeIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" /></svg>
+const AcctPinIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6.4-5.8 6.4-10.2a6.4 6.4 0 1 0-12.8 0C5.6 15.2 12 21 12 21z" /><circle cx="12" cy="10.6" r="2.3" /></svg>
+
+/** Panneau latéral « Coordonnées » du compte (site, localisation, interlocuteurs) —
+ *  glisse depuis la droite, réutilise le CSS .pc-* de la fiche personne via .pp. */
+function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetailData; navigate: (path: string) => void; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const account = data.account
+  const website = account.websiteUrl ?? (account.domain ? `https://${account.domain}` : null)
+  const people = [...data.people].sort((a, b) => (b.exchangeShare ?? 0) - (a.exchangeShare ?? 0))
+  const connected = data.sources.filter((source) => source.status === 'connected')
+
+  return createPortal(
+    <div className="pp">
+    <div className="pc-mask" role="presentation" onClick={onClose}>
+      <aside className="pc-panel" role="dialog" aria-label="Coordonnées du compte" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="pc-h">
+          <div><p className="pc-title">Coordonnées</p><p className="pc-who">{account.name}</p></div>
+          <button type="button" className="pc-x" onClick={onClose} aria-label="Fermer">×</button>
+        </div>
+        <div className="pc-b">
+          <p className="pc-l">Web</p>
+          <div className="pc-g">
+            {website
+              ? <a className="pc-row" href={website} target="_blank" rel="noreferrer">
+                <span className="pc-i">{AcctGlobeIcon}</span>
+                <div className="pc-c"><p className="pc-rl">Site web</p><p className="pc-v">{account.domain ?? website}</p></div>
+                <span className="pc-a">Ouvrir</span>
+              </a>
+              : <div className="pc-row"><span className="pc-i">{AcctGlobeIcon}</span><div className="pc-c"><p className="pc-rl">Site web</p><p className="pc-v na">à confirmer</p></div></div>}
+            {account.location && <div className="pc-row">
+              <span className="pc-i">{AcctPinIcon}</span>
+              <div className="pc-c"><p className="pc-rl">Localisation</p><p className="pc-v">{account.location}</p></div>
+            </div>}
+          </div>
+
+          {people.length > 0 && <>
+            <p className="pc-l">Interlocuteurs<span className="pc-n">{people.length}</span></p>
+            <div className="pc-g">
+              {people.map((person) => <Link key={person.id} className="pc-row" to={`/app/people/${person.id}`} onClick={onClose}>
+                <span className="pc-i">{person.avatarUrl ? <img src={person.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : initials(person.name)}</span>
+                <div className="pc-c"><p className="pc-rl">{person.jobTitle ?? person.organizationalRole ?? 'Interlocuteur'}</p><p className="pc-v">{person.name}</p>{person.email && <p className="pc-s">{person.email}</p>}</div>
+                <span className="pc-a">Ouvrir</span>
+              </Link>)}
+            </div>
+          </>}
+
+          {connected.length > 0 && <p className="pc-src"><i />{connected.map((source) => source.label).join(' · ')}</p>}
+        </div>
+      </aside>
+    </div>
+    </div>,
+    document.body,
+  )
 }
 
 function WatchDialog({ selected, onClose, onSave }: { selected: string[]; onClose: () => void; onSave: (families: string[]) => void }) {

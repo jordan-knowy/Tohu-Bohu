@@ -26,6 +26,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     contactDetails: [],
     careerEntries: [],
     memoryEntries: [],
+    keyMoments: [],
     meetings: [],
     messages: [],
     connectors: [],

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { initials } from '../lib/auth'
 import { saveSignalFeedback } from '../services/data'
+import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
 import { addAccountNote, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson } from './types'
 
@@ -168,7 +169,7 @@ export function V48AccountRelationView(props: ViewProps) {
 }
 
 function AccountInsight({ data }: { data: AccountDetailData }) {
-  const signal = data.signals[0]
+  const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
   const lead = [...data.people].sort((a, b) => (b.exchangeShare ?? 0) - (a.exchangeShare ?? 0))[0]
   const reading = data.account.description
     || (lead ? `La relation est principalement portée par ${lead.name}${lead.exchangeShare === null ? '' : `, qui représente ${lead.exchangeShare}% des échanges observés`}.` : null)
@@ -176,7 +177,7 @@ function AccountInsight({ data }: { data: AccountDetailData }) {
   return <div className="v48-insight-grid">
     <article className="v48-insight"><span><Icon name="sparkle" /></span><div><small>Ce que montrent les échanges</small><strong>{reading}</strong><p>Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {data.sources.map((source) => source.label).join(' + ') || 'sources à confirmer'}</p></div></article>
     <article className="v48-signal-spotlight"><small>Depuis votre dernier échange <b>{dateLabel(data.relationship.lastInteractionAt)}</b></small>
-      {signal ? <><span>{signal.type}</span><strong>{signal.title}</strong><p>{signal.summary || signal.impact || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeLabel(signal.provenance.observedAt)}</em></>
+      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || signal.impact || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeLabel(signal.provenance.observedAt)}</em></>
         : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}
     </article>
   </div>
