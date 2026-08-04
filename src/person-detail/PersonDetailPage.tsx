@@ -13,11 +13,11 @@ type PersonDetailTab = 'profile' | 'relation' | 'live'
 
 const RELATION_COLORS: Record<string, string> = {
   Prospect: '#2896A8', Client: '#2EA86A', Partenaire: '#6E50C8', 'Fournisseur / Prestataire': '#C97A20',
-  Investisseur: '#D94F63', Interne: '#8B83A8', 'Réseau': '#3C3489',
+  Investisseur: '#D94F63', 'Collègue': '#3D6FCC', Interne: '#8B83A8', 'Réseau': '#3C3489',
 }
 const RELATION_VERBS: Record<string, string> = {
   Prospect: 'convertir', Client: 'fidéliser', Partenaire: 'capitaliser', 'Fournisseur / Prestataire': 'entretenir',
-  Investisseur: 'rassurer', Interne: 'aligner', 'Réseau': 'cultiver',
+  Investisseur: 'rassurer', 'Collègue': 'coordonner', Interne: 'aligner', 'Réseau': 'cultiver',
 }
 const ROLE_POWER: Record<string, string> = {
   Initiateur: 'faible pouvoir', Utilisateur: 'faible pouvoir', Influenceur: 'moyen pouvoir',

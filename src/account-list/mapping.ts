@@ -43,7 +43,7 @@ export const TIER_COLORS: Record<AccountTier, string> = {
 
 export const RELATION_COLORS: Record<string, string> = {
   Prospect: '#2896A8', Client: '#2EA86A', Partenaire: '#6E50C8', 'Fournisseur / Prestataire': '#C97A20',
-  Investisseur: '#D94F63', Interne: '#8C86A8', 'Réseau': '#3B2E7E',
+  Investisseur: '#D94F63', 'Collègue': '#3D6FCC', Interne: '#8C86A8', 'Réseau': '#3B2E7E',
 }
 
 export const LOGO_COLORS = ['#D94F63', '#C97A20', '#2896A8', '#6E50C8', '#2EA86A', '#3B2E7E', '#5A3EAA']

@@ -22,7 +22,7 @@ type ConnectorDefinition =
   | { provider: string; label: string; description: string; icon: string; kind: 'edge'; functionSlug: string }
 
 export const connectorDefinitions: ConnectorDefinition[] = [
-  { provider: 'google', label: 'Google Workspace', description: 'Gmail, réunions et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly' },
+  { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly' },
   { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
@@ -65,18 +65,23 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     if (provider !== 'google' && provider !== 'microsoft') return
     toast(`Synchronisation ${provider === 'google' ? 'Google Workspace' : 'Microsoft 365'} lancée…`)
     const emailSync = getSupabase().functions.invoke('sync-email-analysis', { body: { organizationId, provider } })
-    // Google Meet est synchronisé dans la foulée du même bouton plutôt que d'ajouter
-    // une tuile séparée — un échec de ce côté ne doit pas faire échouer la synchro email.
+    // Google Meet et Google Chat sont synchronisés dans la foulée du même bouton plutôt
+    // que d'ajouter des tuiles séparées — un échec de ces côtés ne doit pas faire échouer
+    // la synchro email.
     const meetSync = provider === 'google'
       ? getSupabase().functions.invoke('sync-google-meet', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
       : Promise.resolve({ data: null, error: null })
-    const [{ data, error }, { data: meetData }] = await Promise.all([emailSync, meetSync])
+    const chatSync = provider === 'google'
+      ? getSupabase().functions.invoke('sync-google-chat', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
+      : Promise.resolve({ data: null, error: null })
+    const [{ data, error }, { data: meetData }, { data: chatData }] = await Promise.all([emailSync, meetSync, chatSync])
     if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation impossible.')
     await refresh()
     const meetSuffix = meetData && !meetData.error && meetData.meetings > 0 ? ` · ${meetData.meetings} réunion(s) Google Meet` : ''
+    const chatSuffix = chatData && !chatData.error && chatData.messages > 0 ? ` · ${chatData.messages} message(s) Google Chat` : ''
     const pendingProfiles = Number(data.profilesPending ?? 0)
     const pendingSuffix = pendingProfiles > 0 ? ` · ${pendingProfiles} profil(s) V3 restant(s), repris automatiquement` : ''
-    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}.`)
+    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}.`)
   }, [organizationId, refresh, toast])
 
   const syncHubspot = useCallback(async () => {

@@ -321,7 +321,7 @@ export interface PersonDetailData {
 }
 
 export const RELATIONSHIP_TYPES = [
-  'Prospect', 'Client', 'Partenaire', 'Fournisseur / Prestataire', 'Investisseur', 'Interne', 'Réseau',
+  'Prospect', 'Client', 'Partenaire', 'Fournisseur / Prestataire', 'Investisseur', 'Collègue', 'Interne', 'Réseau',
 ] as const
 
 export const DECISION_ROLES = [
