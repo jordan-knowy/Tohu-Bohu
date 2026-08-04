@@ -39,3 +39,78 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Read AI : logo de marque en pleine tuile (pas de fond violet ni contrainte 20px). */
+.connector-icon.connector-icon--brand {
+  background: transparent;
+  padding: 0;
+}
+.connector-icon.connector-icon--brand svg {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+/* Panneau révélant l'URL webhook Read AI, aligné sur la DA (violet Tohu). */
+.readai-hook {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--violet-s);
+  border: 1px solid rgba(110, 80, 200, .2);
+}
+.readai-hook-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--night);
+}
+.readai-hook-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--violet);
+  background: #fff;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.readai-hook-steps {
+  margin: 11px 0 13px;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--t2);
+}
+.readai-hook-field {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.readai-hook-field code {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  background: #fff;
+  border: 1px solid rgba(110, 80, 200, .18);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--night);
+}
+.readai-hook-copy {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.readai-hook-note {
+  margin: 11px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t3);
+}

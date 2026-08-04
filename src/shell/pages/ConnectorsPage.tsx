@@ -12,8 +12,9 @@ const MICROSOFT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden
 const TEAMS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M13.5 21v-2.5a3.5 3.5 0 0 1 3.5-3.5h2a3.5 3.5 0 0 1 3.5 3.5V21"/><path d="M9 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/><path d="M2 20v-2a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v2"/></svg>'
 const LINKEDIN_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>'
 const HUBSPOT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/></svg>'
-// Pictogramme générique « transcript + étincelle IA » (le logo Read AI n'est pas dans Simple Icons).
-const READAI_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h10a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2z"/><path d="M7 8h6M7 11h6M7 14h3"/><path d="M18.5 3.5l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z"/></svg>'
+// Logo officiel Read AI reproduit : carré indigo dégradé + visage souriant blanc.
+// Rendu en pleine tuile (voir .connector-icon--brand) plutôt que monochrome.
+const READAI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="readaiGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5C6BF0"/><stop offset="1" stop-color="#7E5BEC"/></linearGradient></defs><rect width="24" height="24" rx="6.8" fill="url(#readaiGrad)"/><circle cx="9" cy="10" r="1.25" fill="#fff"/><circle cx="15" cy="10" r="1.25" fill="#fff"/><path d="M8.3 13c1 1.8 2.3 2.7 3.7 2.7s2.7-.9 3.7-2.7" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>'
 
 // Deux mécanismes de connexion coexistent : les providers Supabase Auth
 // (identités liées au compte, token géré par Supabase) et les connecteurs CRM
@@ -232,7 +233,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
           ? `● Connecté${row?.last_synced_at ? ` · synchro ${formatDate(row.last_synced_at)}` : ''}`
           : row?.status === 'error' ? '● Erreur de connexion' : '○ Non connecté'
         return <article className="connector-card panel" key={definition.provider}>
-          <span className="connector-icon" dangerouslySetInnerHTML={{ __html: definition.icon }} />
+          <span className={`connector-icon${definition.provider === 'read_ai' ? ' connector-icon--brand' : ''}`} dangerouslySetInnerHTML={{ __html: definition.icon }} />
           <div>
             <h3>{definition.label}</h3>
             <p>{definition.description}</p>
@@ -246,13 +247,18 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
             {isConnected && definition.provider === 'read_ai' && <button type="button" className="btn-secondary" onClick={() => act(connectReadAi)}>Voir l’URL webhook</button>}
             <button type="button" className={isConnected ? 'btn-danger' : 'btn-secondary'} onClick={() => act(() => isConnected ? disconnectProvider(definition.provider) : connectProvider(definition.provider))}>{isConnected ? 'Déconnecter' : 'Connecter'}</button>
           </div>
-          {definition.provider === 'read_ai' && readAiInfo && <div className="connector-webhook" style={{ flexBasis: '100%', width: '100%', marginTop: 12, padding: 14, borderRadius: 12, background: 'rgba(60,52,137,0.06)', border: '1px solid rgba(60,52,137,0.15)' }}>
-            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>URL webhook à coller dans Read AI</p>
-            <p style={{ margin: '0 0 10px', fontSize: 13, opacity: 0.75 }}>Read AI → <b>Settings → Integrations → Webhooks</b> → « Add webhook » → colle cette URL. Chaque réunion transcrite sera alors envoyée à Tohu. Garde cette URL secrète.</p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
-              <code style={{ flex: '1 1 260px', minWidth: 0, overflowWrap: 'anywhere', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.06)', fontSize: 12 }}>{readAiInfo.webhookUrl}</code>
-              <button type="button" className="btn-secondary" onClick={() => { void navigator.clipboard?.writeText(readAiInfo.webhookUrl); toast('URL webhook copiée.') }}>Copier</button>
+          {definition.provider === 'read_ai' && readAiInfo && <div className="readai-hook">
+            <div className="readai-hook-head"><span className="readai-hook-badge">Webhook</span><b>URL à coller dans Read AI</b></div>
+            <ol className="readai-hook-steps">
+              <li>Read AI → <b>Integrations → Webhooks → Create webhook</b></li>
+              <li>Colle l’URL ci-dessous comme destination, puis valide</li>
+              <li>Chaque réunion transcrite arrivera dans Tohu (statut « Pending » jusqu’au 1<sup>er</sup> envoi)</li>
+            </ol>
+            <div className="readai-hook-field">
+              <code>{readAiInfo.webhookUrl}</code>
+              <button type="button" className="btn-primary readai-hook-copy" onClick={() => { void navigator.clipboard?.writeText(readAiInfo.webhookUrl); toast('URL webhook copiée.') }}>Copier</button>
             </div>
+            <p className="readai-hook-note">Cette URL contient ta clé d’accès : garde-la secrète. Tohu authentifie Read AI grâce à elle — le « Signing Key » affiché par Read AI est facultatif.</p>
           </div>}
         </article>
       })}

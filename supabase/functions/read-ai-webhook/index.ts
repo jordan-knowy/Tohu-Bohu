@@ -40,6 +40,19 @@ function asText(value: unknown): string | null {
   }
   return null
 }
+// Read AI envoie les dates en Unix millisecondes (parfois secondes ou ISO) : on normalise.
+function toIso(value: unknown): string | null {
+  if (value == null) return null
+  if (typeof value === 'number') {
+    const date = new Date(value < 1e12 ? value * 1000 : value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+  const raw = String(value).trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return toIso(Number(raw))
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
 
 type Participant = { email: string | null; name: string | null }
 
@@ -126,8 +139,8 @@ Deno.serve(async (req) => {
       organization_id: organizationId, owner_user_id: ownerUserId, company_id: companyId,
       external_event_id: `readai:${sessionId}`,
       title: asText(p.title ?? p.session_title) ?? 'Réunion Read AI',
-      starts_at: asText(p.start_time ?? p.session_start_time) ?? null,
-      ends_at: asText(p.end_time ?? p.session_end_time) ?? null,
+      starts_at: toIso(p.start_time ?? p.session_start_time),
+      ends_at: toIso(p.end_time ?? p.session_end_time),
       platform: 'read_ai',
       description: asText(p.summary),
       raw_payload: body,
