@@ -54,6 +54,23 @@ function toIso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+// Vérification de signature Read AI (en-tête X-Read-Signature = HMAC-SHA256 du body
+// brut). On calcule hex ET base64 pour être robuste à l'encodage exact de Read AI.
+async function hmacSignatures(body: string, key: string): Promise<{ hex: string; base64: string }> {
+  const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(body))
+  const bytes = new Uint8Array(signature)
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+  const base64 = btoa(String.fromCharCode(...bytes))
+  return { hex, base64 }
+}
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return result === 0
+}
+
 type Participant = { email: string | null; name: string | null }
 
 // Read AI a fait évoluer son format ; on lit défensivement les variantes connues.
@@ -113,7 +130,20 @@ Deno.serve(async (req) => {
     const organizationId = connector.organization_id as string
     const ownerUserId = connector.user_id as string
 
-    const body = await req.json().catch(() => null)
+    // Body brut lu AVANT parsing : nécessaire pour recalculer la signature à l'identique.
+    const rawBody = await req.text()
+
+    // Vérification de signature si une Signing Key est configurée (sécurité renforcée).
+    const signingKey = (connector.metadata as { signing_key?: string | null } | null)?.signing_key ?? null
+    if (signingKey) {
+      const provided = (req.headers.get('x-read-signature') ?? '').trim().replace(/^sha256=/i, '')
+      if (!provided) return json({ error: 'Signature manquante' }, 401)
+      const { hex, base64 } = await hmacSignatures(rawBody, signingKey)
+      if (!timingSafeEqual(provided, hex) && !timingSafeEqual(provided, base64)) return json({ error: 'Signature invalide' }, 401)
+    }
+
+    let body: unknown = null
+    try { body = JSON.parse(rawBody) } catch { body = null }
     if (!body || typeof body !== 'object') return json({ error: 'Payload invalide' }, 400)
     const p = ((body as any).session ?? (body as any).data ?? body) as Record<string, any>
 

@@ -12,9 +12,9 @@ const MICROSOFT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden
 const TEAMS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M13.5 21v-2.5a3.5 3.5 0 0 1 3.5-3.5h2a3.5 3.5 0 0 1 3.5 3.5V21"/><path d="M9 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/><path d="M2 20v-2a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v2"/></svg>'
 const LINKEDIN_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>'
 const HUBSPOT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/></svg>'
-// Logo officiel Read AI reproduit : carré indigo dégradé + visage souriant blanc.
-// Rendu en pleine tuile (voir .connector-icon--brand) plutôt que monochrome.
-const READAI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="readaiGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5C6BF0"/><stop offset="1" stop-color="#7E5BEC"/></linearGradient></defs><rect width="24" height="24" rx="6.8" fill="url(#readaiGrad)"/><circle cx="9" cy="10" r="1.25" fill="#fff"/><circle cx="15" cy="10" r="1.25" fill="#fff"/><path d="M8.3 13c1 1.8 2.3 2.7 3.7 2.7s2.7-.9 3.7-2.7" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>'
+// Logo officiel Read AI reproduit : carré dégradé bleu→violet, visage souriant blanc
+// et coins « scan » (haut-gauche / bas-droite). Rendu en pleine tuile (.connector-icon--brand).
+const READAI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="readaiGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5468F0"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs><rect width="24" height="24" rx="6.8" fill="url(#readaiGrad)"/><g fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 8.6V6.6a1.4 1.4 0 0 1 1.4-1.4h2"/><path d="M18.8 15.4v2a1.4 1.4 0 0 1-1.4 1.4h-2"/><circle cx="12" cy="11.6" r="4.1"/><path d="M10.1 11.2c.5.9 1.1 1.4 1.9 1.4s1.4-.5 1.9-1.4" stroke-width="1.5"/></g></svg>'
 
 // Deux mécanismes de connexion coexistent : les providers Supabase Auth
 // (identités liées au compte, token géré par Supabase) et les connecteurs CRM
@@ -25,7 +25,7 @@ type ConnectorDefinition =
   | { provider: string; label: string; description: string; icon: string; kind: 'edge'; functionSlug: string }
 
 export const connectorDefinitions: ConnectorDefinition[] = [
-  { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly' },
+  { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat, contacts et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/contacts.readonly' },
   { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
@@ -57,7 +57,8 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   const toast = useToast()
   const [rows, setRows] = useState<ConnectorRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [readAiInfo, setReadAiInfo] = useState<{ webhookUrl: string } | null>(null)
+  const [readAiInfo, setReadAiInfo] = useState<{ webhookUrl: string; hasSigningKey: boolean } | null>(null)
+  const [signingKeyInput, setSigningKeyInput] = useState('')
   const reconciled = useRef(false)
   const organizationId = context.workspaceId
 
@@ -79,14 +80,18 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const chatSync = provider === 'google'
       ? getSupabase().functions.invoke('sync-google-chat', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
       : Promise.resolve({ data: null, error: null })
-    const [{ data, error }, { data: meetData }, { data: chatData }] = await Promise.all([emailSync, meetSync, chatSync])
+    const photosSync = provider === 'google'
+      ? getSupabase().functions.invoke('sync-google-photos', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
+      : Promise.resolve({ data: null, error: null })
+    const [{ data, error }, { data: meetData }, { data: chatData }, { data: photosData }] = await Promise.all([emailSync, meetSync, chatSync, photosSync])
     if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation impossible.')
     await refresh()
     const meetSuffix = meetData && !meetData.error && meetData.meetings > 0 ? ` · ${meetData.meetings} réunion(s) Google Meet` : ''
     const chatSuffix = chatData && !chatData.error && chatData.messages > 0 ? ` · ${chatData.messages} message(s) Google Chat` : ''
+    const photosSuffix = photosData && !photosData.error && photosData.photos > 0 ? ` · ${photosData.photos} photo(s) de contact` : ''
     const pendingProfiles = Number(data.profilesPending ?? 0)
     const pendingSuffix = pendingProfiles > 0 ? ` · ${pendingProfiles} profil(s) V3 restant(s), repris automatiquement` : ''
-    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}.`)
+    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${photosSuffix}.`)
   }, [organizationId, refresh, toast])
 
   const syncHubspot = useCallback(async () => {
@@ -159,10 +164,11 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
 
   // Read AI : pas d'OAuth, on récupère l'URL webhook + secret à coller dans Read AI.
   // Idempotent (renvoie toujours le même secret), sert aussi de « Voir l'URL webhook ».
-  const connectReadAi = useCallback(async () => {
-    const { data, error } = await getSupabase().functions.invoke('connect-read-ai', { body: { organizationId } })
+  const connectReadAi = useCallback(async (signingKey?: string) => {
+    const body = signingKey === undefined ? { organizationId } : { organizationId, signingKey }
+    const { data, error } = await getSupabase().functions.invoke('connect-read-ai', { body })
     if (error || data?.error || !data?.webhookUrl) throw data?.error ? new Error(data.error) : await invokeError(error, 'Connexion Read AI impossible.')
-    setReadAiInfo({ webhookUrl: data.webhookUrl })
+    setReadAiInfo({ webhookUrl: data.webhookUrl, hasSigningKey: !!data.hasSigningKey })
     await refresh()
   }, [organizationId, refresh])
 
@@ -258,7 +264,23 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
               <code>{readAiInfo.webhookUrl}</code>
               <button type="button" className="btn-primary readai-hook-copy" onClick={() => { void navigator.clipboard?.writeText(readAiInfo.webhookUrl); toast('URL webhook copiée.') }}>Copier</button>
             </div>
-            <p className="readai-hook-note">Cette URL contient ta clé d’accès : garde-la secrète. Tohu authentifie Read AI grâce à elle — le « Signing Key » affiché par Read AI est facultatif.</p>
+            <p className="readai-hook-note">Cette URL contient ta clé d’accès : garde-la secrète. Tohu authentifie déjà Read AI grâce à elle.</p>
+            <div className="readai-hook-key">
+              <label>Signing Key Read AI <span>· sécurité renforcée (optionnel)</span></label>
+              <div className="readai-hook-field">
+                <input type="password" autoComplete="off" value={signingKeyInput} onChange={(event) => setSigningKeyInput(event.target.value)}
+                  placeholder={readAiInfo.hasSigningKey ? '•••••••••• (clé enregistrée)' : 'Colle la Signing Key affichée par Read AI'} />
+                <button type="button" className="btn-secondary" onClick={() => act(async () => {
+                  const value = signingKeyInput.trim()
+                  await connectReadAi(value)
+                  setSigningKeyInput('')
+                  toast(value ? 'Signing Key enregistrée — signatures vérifiées à chaque réception.' : 'Signing Key retirée.')
+                })}>{signingKeyInput.trim() ? 'Enregistrer' : (readAiInfo.hasSigningKey ? 'Retirer' : 'Enregistrer')}</button>
+              </div>
+              {readAiInfo.hasSigningKey
+                ? <p className="readai-hook-ok">✓ Signature vérifiée à chaque réception — tout envoi non signé par Read AI est rejeté.</p>
+                : <p className="readai-hook-note">Colle ici le « Signing Key » que Read AI affiche après création du webhook, pour que Tohu vérifie l’authenticité de chaque message.</p>}
+            </div>
           </div>}
         </article>
       })}

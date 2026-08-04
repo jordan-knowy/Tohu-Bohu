@@ -27,24 +27,30 @@ Deno.serve(async (req) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
     const { data: { user }, error: userError } = await supabase.auth.getUser(auth.replace('Bearer ', ''))
     if (userError || !user) return json({ error: 'Session invalide' }, 401)
-    const { organizationId } = await req.json().catch(() => ({}))
+    const { organizationId, signingKey } = await req.json().catch(() => ({}))
     if (!organizationId) return json({ error: 'organizationId requis' }, 400)
     const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
     if (!membership) return json({ error: 'Accès refusé' }, 403)
 
-    // Réutilise le secret existant s'il y en a un (idempotent).
+    // Réutilise le secret existant s'il y en a un (idempotent), et préserve les autres
+    // champs de metadata (dont la Signing Key déjà enregistrée).
     const { data: existing } = await supabase.from('connectors')
       .select('metadata').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', 'read_ai').maybeSingle()
-    const secret = (existing?.metadata as { webhook_secret?: string } | null)?.webhook_secret ?? newSecret()
+    const existingMeta = (existing?.metadata as Record<string, unknown> | null) ?? {}
+    const secret = (existingMeta.webhook_secret as string | undefined) ?? newSecret()
+    // signingKey fourni ('' = retirer, texte = enregistrer) ; absent = on garde l'existant.
+    const nextSigningKey = typeof signingKey === 'string'
+      ? (signingKey.trim() || null)
+      : ((existingMeta.signing_key as string | null | undefined) ?? null)
 
     const { error: upsertError } = await supabase.from('connectors').upsert({
       organization_id: organizationId, user_id: user.id, provider: 'read_ai', status: 'connected',
-      scopes: [], metadata: { webhook_secret: secret, connected_at: new Date().toISOString() }, updated_at: new Date().toISOString(),
+      scopes: [], metadata: { ...existingMeta, webhook_secret: secret, signing_key: nextSigningKey, connected_at: (existingMeta.connected_at as string | undefined) ?? new Date().toISOString() }, updated_at: new Date().toISOString(),
     }, { onConflict: 'organization_id,user_id,provider' })
     if (upsertError) return json({ error: upsertError.message }, 500)
 
     const webhookUrl = `${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/read-ai-webhook?token=${secret}`
-    return json({ webhookUrl, secret })
+    return json({ webhookUrl, secret, hasSigningKey: !!nextSigningKey })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Connexion impossible' }, 500)
   }
