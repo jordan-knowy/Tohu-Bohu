@@ -12,6 +12,8 @@ const MICROSOFT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden
 const TEAMS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M13.5 21v-2.5a3.5 3.5 0 0 1 3.5-3.5h2a3.5 3.5 0 0 1 3.5 3.5V21"/><path d="M9 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/><path d="M2 20v-2a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v2"/></svg>'
 const LINKEDIN_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>'
 const HUBSPOT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/></svg>'
+// Pictogramme générique « transcript + étincelle IA » (le logo Read AI n'est pas dans Simple Icons).
+const READAI_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h10a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2z"/><path d="M7 8h6M7 11h6M7 14h3"/><path d="M18.5 3.5l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z"/></svg>'
 
 // Deux mécanismes de connexion coexistent : les providers Supabase Auth
 // (identités liées au compte, token géré par Supabase) et les connecteurs CRM
@@ -27,6 +29,7 @@ export const connectorDefinitions: ConnectorDefinition[] = [
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
   { provider: 'teams', label: 'Microsoft Teams', description: 'Réunions et transcripts Teams — nécessite qu’un admin Microsoft 365 de votre organisation clique ci-dessous et valide le consentement.', icon: TEAMS_ICON, kind: 'edge', functionSlug: 'connect-teams' },
+  { provider: 'read_ai', label: 'Read AI', description: 'Transcripts et résumés de réunions Zoom, Teams et Meet. Read AI envoie chaque compte-rendu à Tohu via une URL webhook.', icon: READAI_ICON, kind: 'edge', functionSlug: 'connect-read-ai' },
 ]
 
 function identityProvider(connector: string): string {
@@ -53,6 +56,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   const toast = useToast()
   const [rows, setRows] = useState<ConnectorRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [readAiInfo, setReadAiInfo] = useState<{ webhookUrl: string } | null>(null)
   const reconciled = useRef(false)
   const organizationId = context.workspaceId
 
@@ -152,10 +156,24 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     void run().catch((reason) => { toast(reason instanceof Error ? reason.message : 'Action impossible.', 'error'); void refresh() })
   }, [context.session, persistEmailProvider, refresh, syncEmailProvider, toast])
 
+  // Read AI : pas d'OAuth, on récupère l'URL webhook + secret à coller dans Read AI.
+  // Idempotent (renvoie toujours le même secret), sert aussi de « Voir l'URL webhook ».
+  const connectReadAi = useCallback(async () => {
+    const { data, error } = await getSupabase().functions.invoke('connect-read-ai', { body: { organizationId } })
+    if (error || data?.error || !data?.webhookUrl) throw data?.error ? new Error(data.error) : await invokeError(error, 'Connexion Read AI impossible.')
+    setReadAiInfo({ webhookUrl: data.webhookUrl })
+    await refresh()
+  }, [organizationId, refresh])
+
   const connectProvider = async (provider: string) => {
     const definition = connectorDefinitions.find((item) => item.provider === provider)
     if (!definition) return
     if (definition.kind === 'edge') {
+      if (definition.provider === 'read_ai') {
+        await connectReadAi()
+        toast('Read AI connecté. Colle l’URL webhook ci-dessous dans Read AI → Settings → Integrations → Webhooks.')
+        return
+      }
       const { data, error } = await getSupabase().functions.invoke(definition.functionSlug, { body: { organizationId } })
       if (error || !data?.url) throw await invokeError(error, `Connexion ${definition.label} indisponible.`)
       window.location.href = data.url
@@ -225,8 +243,17 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
             {isConnected && definition.kind === 'supabase' && definition.provider !== 'linkedin' && <button type="button" className="btn-secondary" onClick={() => act(() => syncEmailProvider(definition.provider))}>Synchroniser</button>}
             {isConnected && definition.kind === 'edge' && definition.provider === 'hubspot' && <button type="button" className="btn-secondary" onClick={() => act(syncHubspot)}>Synchroniser</button>}
             {isConnected && definition.kind === 'edge' && definition.provider === 'teams' && <button type="button" className="btn-secondary" onClick={() => act(syncTeams)}>Synchroniser</button>}
+            {isConnected && definition.provider === 'read_ai' && <button type="button" className="btn-secondary" onClick={() => act(connectReadAi)}>Voir l’URL webhook</button>}
             <button type="button" className={isConnected ? 'btn-danger' : 'btn-secondary'} onClick={() => act(() => isConnected ? disconnectProvider(definition.provider) : connectProvider(definition.provider))}>{isConnected ? 'Déconnecter' : 'Connecter'}</button>
           </div>
+          {definition.provider === 'read_ai' && readAiInfo && <div className="connector-webhook" style={{ flexBasis: '100%', width: '100%', marginTop: 12, padding: 14, borderRadius: 12, background: 'rgba(60,52,137,0.06)', border: '1px solid rgba(60,52,137,0.15)' }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>URL webhook à coller dans Read AI</p>
+            <p style={{ margin: '0 0 10px', fontSize: 13, opacity: 0.75 }}>Read AI → <b>Settings → Integrations → Webhooks</b> → « Add webhook » → colle cette URL. Chaque réunion transcrite sera alors envoyée à Tohu. Garde cette URL secrète.</p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
+              <code style={{ flex: '1 1 260px', minWidth: 0, overflowWrap: 'anywhere', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.06)', fontSize: 12 }}>{readAiInfo.webhookUrl}</code>
+              <button type="button" className="btn-secondary" onClick={() => { void navigator.clipboard?.writeText(readAiInfo.webhookUrl); toast('URL webhook copiée.') }}>Copier</button>
+            </div>
+          </div>}
         </article>
       })}
     </div>
