@@ -183,6 +183,21 @@ export async function setSuperAdminRole(userId: string, makeAdmin: boolean): Pro
   if (error) throw error
 }
 
+export type EmailDispatchScope = 'global' | 'account_type' | 'user'
+export type EmailDispatchType = 'digest' | 'antiseche' | 'alerte' | 'nurturing'
+export type EmailDispatchRule = { scope: EmailDispatchScope; scope_ref: string; email_type: EmailDispatchType; enabled: boolean }
+
+export async function getEmailDispatchRules(): Promise<EmailDispatchRule[]> {
+  const { data, error } = await getSupabase().rpc('admin_get_email_dispatch_rules')
+  if (error) throw error
+  return (data ?? []).map((row: any) => ({ scope: row.scope, scope_ref: row.scope_ref, email_type: row.email_type, enabled: row.enabled }))
+}
+
+export async function setEmailDispatchRule(scope: EmailDispatchScope, scopeRef: string, emailType: EmailDispatchType, enabled: boolean): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_set_email_dispatch_rule', { p_scope: scope, p_scope_ref: scopeRef, p_email_type: emailType, p_enabled: enabled })
+  if (error) throw error
+}
+
 export async function updateAccountDeletionRequest(
   requestId: string,
   status: AccountDeletionRequestAdmin['status'],

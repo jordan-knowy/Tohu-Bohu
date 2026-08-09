@@ -3,6 +3,7 @@ import type { Provider, Session } from '@supabase/supabase-js'
 import { absoluteUrl, getSupabase } from '../../lib/supabase'
 import { listConnectors, setConnector, type ConnectorRow } from '../../services/data'
 import { useToast } from '../../person-detail/ui'
+import TranscriptImport from './TranscriptImport'
 
 // Logos officiels (Simple Icons, MIT) — monochrome, colorés via currentColor comme les autres icônes de l'app.
 const GOOGLE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/></svg>'
@@ -91,7 +92,12 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const photosSuffix = photosData && !photosData.error && photosData.photos > 0 ? ` · ${photosData.photos} photo(s) de contact` : ''
     const pendingProfiles = Number(data.profilesPending ?? 0)
     const pendingSuffix = pendingProfiles > 0 ? ` · ${pendingProfiles} profil(s) V3 restant(s), repris automatiquement` : ''
-    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${photosSuffix}.`)
+    // Photos des fiches Personne : Gravatar → logo d'entreprise → initiales.
+    // Lancé en arrière-plan (peut durer sur beaucoup de contacts) après la passe
+    // Google Photos, pour ne pas bloquer le retour de synchro.
+    const avatarsNote = provider === 'google' ? ' · récupération des photos de contacts en arrière-plan (rafraîchis la page Personnes dans un instant)' : ''
+    if (provider === 'google') void getSupabase().functions.invoke('enrich-contact-avatars', { body: { organizationId } }).catch(() => undefined)
+    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${photosSuffix}${avatarsNote}.`)
   }, [organizationId, refresh, toast])
 
   const syncHubspot = useCallback(async () => {
@@ -285,5 +291,6 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
         </article>
       })}
     </div>
+    <TranscriptImport organizationId={organizationId} userId={context.session.user.id} />
   </>
 }

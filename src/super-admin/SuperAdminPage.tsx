@@ -3,11 +3,88 @@ import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
 import { initials } from '../lib/auth'
 import {
-  getSuperAdminData, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
-  type AccountDeletionRequestAdmin, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
+  getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
+  type AccountDeletionRequestAdmin, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
-type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions'
+type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails'
+
+const EMAIL_TYPES: Array<{ id: EmailDispatchType; label: string; desc: string }> = [
+  { id: 'digest', label: 'Digest hebdo', desc: 'Lundi 8 h' },
+  { id: 'antiseche', label: 'Antisèche', desc: 'À chaque réunion (T−24 h)' },
+  { id: 'alerte', label: 'Alerte', desc: 'Signaux forts · max 3/sem' },
+  { id: 'nurturing', label: 'Nurturing', desc: 'J+0/3/7/14/21' },
+]
+
+function SaSwitch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return <button type="button" role="switch" aria-checked={on} disabled={disabled} onClick={() => onChange(!on)}
+    style={{ width: 42, height: 24, borderRadius: 999, border: 'none', cursor: disabled ? 'wait' : 'pointer', padding: 3, background: on ? 'linear-gradient(135deg,#6E50C8,#E14FA0)' : '#4a4363', transition: 'background .2s', opacity: disabled ? 0.6 : 1 }}>
+    <span style={{ display: 'block', width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: on ? 'translateX(18px)' : 'translateX(0)', transition: 'transform .2s' }} />
+  </button>
+}
+
+function EmailRuleGrid({ scope, refs, rules, onToggle, saving }: {
+  scope: EmailDispatchScope
+  refs: Array<{ ref: string; label: string }>
+  rules: EmailDispatchRule[]
+  onToggle: (scope: EmailDispatchScope, ref: string, type: EmailDispatchType, enabled: boolean) => void
+  saving: string | null
+}) {
+  const enabledFor = (ref: string, type: EmailDispatchType) => {
+    const rule = rules.find((r) => r.scope === scope && r.scope_ref === ref && r.email_type === type)
+    return rule ? rule.enabled : true // défaut = autorisé
+  }
+  return <div className="sa-email-grid">
+    <div className="sa-email-grid-head"><span /> {EMAIL_TYPES.map((t) => <span key={t.id}><strong>{t.label}</strong><small>{t.desc}</small></span>)}</div>
+    {refs.map((r) => <div className="sa-email-grid-row" key={r.ref || 'all'}>
+      <span className="sa-email-grid-label">{r.label}</span>
+      {EMAIL_TYPES.map((t) => <span key={t.id}><SaSwitch on={enabledFor(r.ref, t.id)} disabled={saving === `${scope}:${r.ref}:${t.id}`} onChange={(v) => onToggle(scope, r.ref, t.id, v)} /></span>)}
+    </div>)}
+  </div>
+}
+
+function NotificationsView() {
+  const [rules, setRules] = useState<EmailDispatchRule[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+  const load = useCallback(async () => { try { setRules(await getEmailDispatchRules()) } catch (e) { setError(e instanceof Error ? e.message : 'Chargement impossible') } }, [])
+  useEffect(() => { void load() }, [load])
+
+  const toggle = async (scope: EmailDispatchScope, ref: string, type: EmailDispatchType, enabled: boolean) => {
+    setSaving(`${scope}:${ref}:${type}`)
+    setError(null)
+    try { await setEmailDispatchRule(scope, ref, type, enabled); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : 'Enregistrement impossible') }
+    finally { setSaving(null) }
+  }
+
+  return <>
+    <div className="sa-view-heading"><div><p>Diffusion des e-mails</p><h1>E-mails</h1><span>Activer / couper chaque type d’e-mail — globalement ou par type de compte</span></div></div>
+    {error && <div className="sa-global-error">{error}</div>}
+    <section className="sa-email-block">
+      <header><h2>Tous les utilisateurs</h2><p>Interrupteur maître par type d’e-mail. « Off » coupe l’envoi pour tout le monde (sauf règle plus fine).</p></header>
+      <EmailRuleGrid scope="global" refs={[{ ref: '', label: 'Tous' }]} rules={rules} onToggle={toggle} saving={saving} />
+    </section>
+    <section className="sa-email-block">
+      <header><h2>Par type de compte</h2><p>Prioritaire sur le réglage global. Utile pour n’activer que sur les comptes payants, par exemple.</p></header>
+      <EmailRuleGrid scope="account_type" refs={[{ ref: 'free', label: 'Gratuit' }, { ref: 'paid', label: 'Payant' }, { ref: 'test', label: 'Test' }]} rules={rules} onToggle={toggle} saving={saving} />
+    </section>
+    <p className="sa-email-note">Résolution : réglage <strong>par utilisateur</strong> (fiche utilisateur) &gt; <strong>type de compte</strong> &gt; <strong>global</strong> &gt; défaut activé. L’utilisateur garde toujours son propre désabonnement.</p>
+  </>
+}
+
+function EmailUserRules({ userId }: { userId: string }) {
+  const [rules, setRules] = useState<EmailDispatchRule[]>([])
+  const [saving, setSaving] = useState<string | null>(null)
+  const load = useCallback(async () => { try { setRules(await getEmailDispatchRules()) } catch { /* silencieux */ } }, [])
+  useEffect(() => { void load() }, [load, userId])
+  const enabledFor = (type: EmailDispatchType) => { const r = rules.find((x) => x.scope === 'user' && x.scope_ref === userId && x.email_type === type); return r ? r.enabled : true }
+  const toggle = async (type: EmailDispatchType, enabled: boolean) => { setSaving(type); try { await setEmailDispatchRule('user', userId, type, enabled); await load() } finally { setSaving(null) } }
+  return <section className="sa-platform-editor">
+    <div><h3>E-mails de cet utilisateur</h3><p>Réglage individuel, prioritaire sur le type de compte et le global.</p></div>
+    <div className="sa-email-user-toggles">{EMAIL_TYPES.map((t) => <label key={t.id}><span>{t.label}</span><SaSwitch on={enabledFor(t.id)} disabled={saving === t.id} onChange={(v) => toggle(t.id, v)} /></label>)}</div>
+  </section>
+}
 type MetricFormat = 'number' | 'percent' | 'currency' | 'duration'
 
 const NAVIGATION: Array<{ id: Tab; label: string; copy: string; icon: string }> = [
@@ -16,6 +93,7 @@ const NAVIGATION: Array<{ id: Tab; label: string; copy: string; icon: string }> 
   { id: 'subscriptions', label: 'Abonnements', copy: 'Plans & revenus', icon: '◇' },
   { id: 'product', label: 'Usage produit', copy: 'Adoption & valeur', icon: '↗' },
   { id: 'operations', label: 'Opérations', copy: 'Sync & fiabilité', icon: '⎔' },
+  { id: 'emails', label: 'E-mails', copy: 'Digests, alertes & diffusion', icon: '✉' },
   { id: 'deletions', label: 'Suppressions', copy: 'Demandes utilisateurs', icon: '⌫' },
 ]
 
@@ -212,6 +290,7 @@ function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose
       <div><h3>Rôle plateforme</h3><p>Donne accès à la console et aux KPI. Cela ne change jamais l’abonnement du client.</p></div>
       <div className="sa-platform-state"><span className={user.is_super_admin ? 'active' : ''}>{user.is_super_admin ? 'Super Admin actif' : 'Utilisateur standard'}</span><button type="button" disabled={saving} className={user.is_super_admin ? 'danger' : ''} onClick={() => void onSaveRole(!user.is_super_admin)}>{user.is_super_admin ? 'Retirer le rôle' : 'Activer Super Admin'}</button></div>
     </section>
+    <EmailUserRules userId={user.user_id} />
     <section className="sa-history-block">
       <div><h3>Évolution de l’abonnement</h3><p>{user.plan_history.length} événement{user.plan_history.length > 1 ? 's' : ''} enregistré{user.plan_history.length > 1 ? 's' : ''}</p></div>
       <div className="sa-history-list">
@@ -537,6 +616,7 @@ export default function SuperAdminPage() {
         {activeTab === 'subscriptions' && <SubscriptionView kpis={kpis} users={consoleData.users} />}
         {activeTab === 'product' && <ProductView kpis={kpis} timeseries={consoleData.timeseries} />}
         {activeTab === 'operations' && <OperationsView kpis={kpis} timeseries={consoleData.timeseries} />}
+        {activeTab === 'emails' && <NotificationsView />}
         {activeTab === 'deletions' && <DeletionRequestsView requests={deletionRequests} refresh={load} />}
       </main>
     </div>

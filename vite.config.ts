@@ -12,7 +12,7 @@ export default defineConfig({
         else if (pathname === '/bienvenue') request.url = `/onboarding.html${suffix}`
         else if (pathname === '/confidentialite') request.url = `/confidentialite.html${suffix}`
         else if (pathname === '/cgu') request.url = `/cgu.html${suffix}`
-        else if (pathname === '/app' || pathname.startsWith('/app/') || pathname === '/super-admin' || pathname.startsWith('/super-admin/')) request.url = `/app.html${suffix}`
+        else if (pathname === '/app' || pathname.startsWith('/app/') || pathname === '/super-admin' || pathname.startsWith('/super-admin/') || pathname === '/preferences') request.url = `/app.html${suffix}`
         next()
       })
     },

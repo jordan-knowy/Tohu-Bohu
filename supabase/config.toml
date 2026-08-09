@@ -62,3 +62,9 @@ verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
+
+[functions.ingest-transcript]
+verify_jwt = true
+
+[functions.enrich-contact-avatars]
+verify_jwt = true

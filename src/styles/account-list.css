@@ -105,6 +105,7 @@ button.crm-mv-item{border:0;background:none;text-align:left;cursor:pointer;color
 .pa .dxp-hsort.asc .dxp-sar{border-left:3px solid transparent;border-right:3px solid transparent;border-bottom:4px solid var(--violet)}
 .pa .dxp-hsort.desc .dxp-sar{border-left:3px solid transparent;border-right:3px solid transparent;border-top:4px solid var(--violet)}
 .pa .dxa-logo{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font);font-weight:800;font-size:14px}
+.pa .dxa-logo>img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .pa .dxp-star{background:none;border:0;cursor:pointer;color:#CFC9DE;padding:0;display:flex}
 .pa .dxp-star svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6}
 .pa .dxp-star:hover{color:#E7B84C}.pa .dxp-star.on{color:#E7B84C}.pa .dxp-star.on svg{fill:#E7B84C;stroke:#E7B84C}

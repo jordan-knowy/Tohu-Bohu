@@ -44,3 +44,8 @@
   from = "/super-admin/*"
   to = "/app.html"
   status = 200
+
+[[redirects]]
+  from = "/preferences"
+  to = "/app.html"
+  status = 200

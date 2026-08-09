@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createPerson } from '../services/data'
 import { initials } from '../lib/auth'
+import { ContactAvatar } from '../components/ContactAvatar'
 import { ToastProvider, useBusy, useToast } from '../person-detail/ui'
 import {
   CHANNEL_ICONS, CheckIcon, DocIcon, FilterChip, LinkIcon, MailIcon, MemberPicker, StarIcon,
@@ -256,7 +257,7 @@ function PageBody({ context }: { context: PageContext }) {
           onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) toggleSelect(row.id); else navigate(`/app/people/${row.id}`) } }}>
           <span className="dxp-band" style={{ background: TIER_COLORS[row.tier] }} />
           {passation ? <span className="psel" aria-hidden="true">{CheckIcon}</span> : <span />}
-          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true">{row.avatarUrl ? <img src={row.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : initials(row.name)}</span>
+          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.avatarUrl} name={row.name} /></span>
           <button type="button" className={`dxp-star ${row.favorite ? 'on' : ''}`} aria-pressed={row.favorite} aria-label={row.favorite ? `Retirer ${row.name} des favoris` : `Ajouter ${row.name} aux favoris`}
             onClick={(event) => { event.stopPropagation(); toggleFavorite(row) }}>{StarIcon}</button>
           <span className="dxp-nm">{row.name}</span>

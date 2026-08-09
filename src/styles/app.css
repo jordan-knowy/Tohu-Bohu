@@ -59,3 +59,36 @@
 .sread-missing{display:grid;gap:3px;font-family:var(--mono);font-size:9.5px;color:var(--t3);margin:-6px 0 14px}
 .sread-note{margin:12px 0 0;padding-top:11px;border-top:1px dashed var(--border);font-size:11px;color:var(--t3);line-height:1.6}
 .sread-note b{color:var(--t2)}
+
+/* Import manuel d'un transcript de réunion (page Connecteurs) */
+.transcript-import{margin-top:14px;padding:18px 20px}
+.transcript-import-head{display:flex;gap:13px;align-items:flex-start;margin-bottom:14px}
+.transcript-import-ic{width:42px;height:42px;flex:none;border-radius:12px;background:var(--violet-s);color:var(--violet);display:grid;place-items:center}
+.transcript-import-ic svg{width:20px;height:20px}
+.transcript-import-head h3{margin:0;font-size:14px}
+.transcript-import-head p{margin:3px 0 0;color:var(--t3);font-size:11px;line-height:1.5}
+.transcript-drop{display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;padding:26px 18px;border:1.5px dashed var(--border-s);border-radius:var(--r-lg);background:var(--bg);color:var(--t3);cursor:pointer;transition:border-color .15s,background .15s}
+.transcript-drop:hover,.transcript-drop.drag{border-color:var(--violet);background:var(--violet-s);color:var(--violet)}
+.transcript-drop.has-file{border-style:solid;border-color:var(--violet);background:var(--violet-s)}
+.transcript-drop>svg{width:24px;height:24px}
+.transcript-drop-name{font-size:12px;font-weight:700;color:var(--t2);word-break:break-word;max-width:100%}
+.transcript-drop.has-file .transcript-drop-name{color:var(--violet)}
+.transcript-drop-hint{font-family:var(--mono);font-size:9px;letter-spacing:.02em}
+.transcript-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.transcript-fields label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--t2)}
+.transcript-fields label span em{color:var(--t3);font-style:normal;font-size:10px}
+.transcript-fields input{padding:9px 11px;border:1px solid var(--border-m);border-radius:var(--r-md);background:var(--white);font:inherit;font-size:12px;color:var(--t1)}
+.transcript-fields input:focus{outline:none;border-color:var(--violet)}
+.transcript-consent{display:flex;gap:9px;align-items:flex-start;margin-top:13px;font-size:11px;color:var(--t2);line-height:1.45;cursor:pointer}
+.transcript-consent input{margin-top:2px;flex:none;accent-color:var(--violet)}
+.transcript-actions{display:flex;gap:9px;margin-top:15px}
+.transcript-progress{padding:8px 0}
+.transcript-progress-bar{height:7px;border-radius:99px;background:var(--bg3);overflow:hidden}
+.transcript-progress-bar span{display:block;height:100%;border-radius:inherit;background:var(--violet);transition:width .4s ease}
+.transcript-progress p{margin:9px 0 0;font-size:11px;color:var(--t3)}
+.transcript-result-head{margin:0 0 11px;font-size:12px;font-weight:700;color:var(--sage)}
+.transcript-chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:11px}
+.transcript-chip{padding:5px 11px;border-radius:99px;background:var(--violet-s);color:var(--violet);font-size:11px;font-weight:700;text-decoration:none;border:1px solid var(--border-m);word-break:break-word}
+.transcript-chip:hover{background:var(--violet-m)}
+.transcript-unmatched{margin:0 0 12px;font-size:10.5px;color:var(--t3);word-break:break-word}
+@media(max-width:780px){.transcript-fields{grid-template-columns:1fr}}

@@ -38,6 +38,7 @@ import ConnectorsPage from './pages/ConnectorsPage'
 import ProfilePage from './pages/ProfilePage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
 import SuperAdminPage from '../super-admin/SuperAdminPage'
+import PreferencesPage from '../preferences/PreferencesPage'
 
 type AppContext = { session: Session; workspaceId: string }
 
@@ -174,6 +175,7 @@ async function boot() {
   const context = { session, workspaceId }
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
     <Route path="/super-admin" element={<SuperAdminPage />} />
+    <Route path="/preferences" element={<PreferencesPage />} />
     <Route element={<AppShell context={context} />}>
       <Route index element={<Navigate to="/app/home" replace />} />
       <Route path="/app/home" element={<ToastProvider><HomePage context={context} /></ToastProvider>} />

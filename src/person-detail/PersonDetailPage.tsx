@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
+import { ContactAvatar } from '../components/ContactAvatar'
 import { verifySuperAdmin } from '../super-admin/service'
 import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
@@ -177,7 +178,7 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
     <div className="hero-body v48-identity-body">
       <div className="hero-left v48-identity-left">
         <div className="v48-avatar-wrap">
-          {person.avatarUrl ? <img alt={person.fullName} src={person.avatarUrl} /> : <span>{initials(person.fullName)}</span>}
+          <ContactAvatar src={person.avatarUrl} name={person.fullName} />
           <i aria-hidden="true" />
         </div>
         <div className="v48-identity-copy">

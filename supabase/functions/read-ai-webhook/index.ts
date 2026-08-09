@@ -84,6 +84,11 @@ function extractParticipants(p: Record<string, any>): Participant[] {
   for (const item of raw) {
     const email = String(item?.email ?? '').trim().toLowerCase() || null
     const name = asText(item?.name ?? item?.display_name ?? item?.full_name) ?? (email ? email.split('@')[0] : null)
+    // Adresses/bots système Read AI (ex. executiveassistant@e.read.ai) : jamais un
+    // vrai participant — les ignorer évite de recréer des contacts fantômes.
+    const domain = email ? (email.split('@')[1] ?? '') : ''
+    if (domain === 'read.ai' || domain.endsWith('.read.ai')) continue
+    if (name && /\bvia read ai\b/i.test(name)) continue
     const key = email ?? name ?? ''
     if (!key || seen.has(key)) continue
     seen.add(key)

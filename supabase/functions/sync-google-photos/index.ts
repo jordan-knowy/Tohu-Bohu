@@ -37,6 +37,38 @@ async function peopleGet(token: string, url: string): Promise<any | null> {
   return response.json()
 }
 
+const AVATAR_BUCKET = 'contact-avatars'
+// Plafond d'auto-hébergement par exécution (borne le temps du run). On ne traite
+// que les avatars manquants : les runs suivants rapatrient le reste.
+const MAX_AVATAR_PERSIST = 400
+
+// Télécharge la photo Google et la stocke dans Supabase Storage (bucket public),
+// puis renvoie l'URL publique stable. En cas d'échec (téléchargement, type,
+// upload), on retombe sur l'URL source pour garder un avatar plutôt que rien.
+async function persistAvatar(
+  supabase: ReturnType<typeof createClient>,
+  organizationId: string,
+  contactId: string,
+  sourceUrl: string,
+): Promise<string> {
+  try {
+    const response = await fetch(sourceUrl)
+    if (!response.ok) return sourceUrl
+    const contentType = response.headers.get('content-type') ?? 'image/jpeg'
+    if (!contentType.startsWith('image/')) return sourceUrl
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (!bytes.length || bytes.length > 5_000_000) return sourceUrl
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+    const path = `${organizationId}/${contactId}.${ext}`
+    const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, bytes, { contentType, upsert: true })
+    if (error) return sourceUrl
+    const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+    return data?.publicUrl || sourceUrl
+  } catch {
+    return sourceUrl
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -104,12 +136,20 @@ Deno.serve(async (request) => {
     } while (pageToken)
 
     let photosMatched = 0
+    let persistAttempts = 0
     for (const [email, contactId] of contactByEmail) {
       const photo = photoByEmail.get(email)
       if (!photo) continue
       // =s256 : force une taille d'avatar nette et homogène.
       const sized = photo.replace(/=s\d+(-c)?$/, '') + '=s256-c'
-      const { error: updateError } = await supabase.from('contacts').update({ avatar_url: sized }).eq('id', contactId)
+      // Auto-hébergement (fiabilité + vie privée) tant qu'on est sous le plafond
+      // du run ; au-delà, on retombe sur l'URL Google directe.
+      let avatarUrl = sized
+      if (persistAttempts < MAX_AVATAR_PERSIST) {
+        persistAttempts++
+        avatarUrl = await persistAvatar(supabase, organizationId, contactId, sized)
+      }
+      const { error: updateError } = await supabase.from('contacts').update({ avatar_url: avatarUrl }).eq('id', contactId)
       if (!updateError) photosMatched++
     }
 
