@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { initials } from '../lib/auth'
+import { displayName, initials } from '../lib/auth'
 import { confidenceLevel } from '../person-detail/ui'
 import { saveSignalFeedback } from '../services/data'
 import { verifySuperAdmin } from '../super-admin/service'
@@ -18,7 +18,9 @@ import {
   updateRecommendationStatus,
 } from './service'
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
-import { V48AccountLiveView, V48AccountRelationView, V48AccountSourceNote } from './V48AccountViews'
+import { V48AccountLiveView, V48AccountSourceNote } from './V48AccountViews'
+import { AccountConnectorsPill, AccountRelationView } from './AccountRelationView'
+import '../styles/account-relation.css'
 
 type PageContext = { session: Session; workspaceId: string }
 type AccountDetailTab = 'relation' | 'live'
@@ -480,9 +482,10 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setCoordsOpen(true)}>
         <Icon name="building" /> Coordonnées
       </button>
+      <AccountConnectorsPill sources={data.sources} />
     </nav>
     <AccountHero data={data} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} />
-    {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><V48AccountRelationView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} /></main>}
+    {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><AccountRelationView data={data} userId={context.session.user.id} currentUserName={displayName(context.session.user)} refresh={refresh} navigate={navigate} /></main>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
     <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}

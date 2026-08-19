@@ -1,6 +1,7 @@
-// Antisèche (ACT-88, à chaque réunion). CRON horaire : réunions à T−24 h sur comptes
-// suivis → antisèche (engagements ouverts + profil comportemental « qui sera en face »
-// + entreprise) envoyée au propriétaire, dédup `antiseche:{meetingId}`.
+// Antisèche (ACT-88, à chaque réunion). CRON horaire : réunions ~2 h avant le
+// début, sur comptes suivis → antisèche (engagements ouverts + profil
+// comportemental « qui sera en face » + entreprise) envoyée au propriétaire,
+// dédup `antiseche:{meetingId}` (une seule fois par réunion).
 // Test : { contactId } → antisèche synthétique « dans 2 h » envoyée à l'appelant.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendEmail } from '../_shared/email.ts'
@@ -106,8 +107,10 @@ Deno.serve(async (request) => {
         const res = await sendEmail({ supabase, userId: body.testUserId, organizationId: body.testOrg, type: 'antiseche', to: body.testEmail, subject: `[Test réel] ${rendered.subject}`, html: rendered.html, dedupeKey: `antiseche-test:${Date.now()}` })
         return json({ ok: true, mode: 'cron-test', ...res })
       }
-      const from = new Date(Date.now() + 23 * 3600_000).toISOString()
-      const to = new Date(Date.now() + 25 * 3600_000).toISOString()
+      // Fenêtre ~2 h avant le début (cron horaire → chaque réunion tombe dans un
+      // seul passage ; la dédup `antiseche:{meetingId}` garantit un envoi unique).
+      const from = new Date(Date.now() + 1.5 * 3600_000).toISOString()
+      const to = new Date(Date.now() + 2.5 * 3600_000).toISOString()
       const { data: meetings } = await supabase.from('meetings').select('id,title,starts_at,company_id,owner_user_id,organization_id').gte('starts_at', from).lte('starts_at', to).limit(50)
       let sent = 0, skipped = 0
       for (const m of (meetings ?? [])) {
@@ -117,7 +120,7 @@ Deno.serve(async (request) => {
           const contactIds = (parts ?? []).map((p: any) => p.contact_id)
           if (!contactIds.length) { skipped++; continue }
           const d = new Date(m.starts_at)
-          const data = await buildAntiseche(supabase, m.organization_id, contactIds, { when: `Demain ${DAYS_LONG[d.getUTCDay()]} ${d.getUTCHours()} h · visio`, title: m.title ?? 'Réunion', headerRight: 'Antisèche · T−24 h' })
+          const data = await buildAntiseche(supabase, m.organization_id, contactIds, { when: `${DAYS_LONG[d.getUTCDay()]} ${d.getUTCHours()} h · dans ~2 h · visio`, title: m.title ?? 'Réunion', headerRight: 'Antisèche · dans ~2 h' })
           const { data: u } = await supabase.auth.admin.getUserById(m.owner_user_id)
           const email = u?.user?.email
           if (!email) { skipped++; continue }
