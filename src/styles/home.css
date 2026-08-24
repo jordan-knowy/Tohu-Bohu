@@ -325,7 +325,7 @@
   .home-cockpit-active .topbar h1{font-size:22px}
   .home-cockpit-active .topbar p{margin-top:3px;text-transform:uppercase;letter-spacing:.08em}
   .home-cockpit-active .global-search{width:min(460px,38vw)}
-  .home-cockpit-active .global-search input{height:42px;background:var(--bg2);font-size:12px}
+  .home-cockpit-active .global-search input{height:42px;background:var(--white);font-size:12px}
   .home-cockpit-active .global-search>span{top:10px}
 }
 .home-highlights{height:58px;display:grid;grid-template-columns:220px 1fr;align-items:stretch;background:var(--white);border:1px solid var(--border);border-radius:18px;box-shadow:0 8px 28px rgba(45,28,94,.08);overflow:hidden;margin-bottom:14px}

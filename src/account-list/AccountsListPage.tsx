@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { createAccount } from '../services/data'
@@ -218,70 +219,51 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
   const toast = useToast()
   const [candidates, setCandidates] = useState<AccountCandidate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [manual, setManual] = useState('')
-  const [manualDomain, setManualDomain] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
     detectAccountCandidates(workspaceId).then(setCandidates).catch((reason) => setError(reason instanceof Error ? reason.message : 'Détection impossible'))
   }, [workspaceId])
-  const add = async (candidate: AccountCandidate) => {
-    setBusy(candidate.name)
+  const byId = useMemo(() => {
+    const map = new Map<string, AccountCandidate>()
+    for (const candidate of candidates ?? []) map.set(candidate.companyId ?? candidate.name, candidate)
+    return map
+  }, [candidates])
+  const items: IntegrationItem[] | null = useMemo(() => candidates?.map((candidate) => ({
+    id: candidate.companyId ?? candidate.name,
+    name: candidate.name,
+    subtitle: candidate.domain ?? candidate.industry,
+    interactions: candidate.interactions,
+    lastInteractionAt: candidate.lastInteractionAt,
+    alreadyTracked: candidate.alreadyTracked,
+    interlocutors: candidate.interlocutors.map((name) => initials(name)),
+    interlocutorCount: candidate.interlocutorCount,
+    ageLabel: ageSince(candidate.firstInteractionAt),
+  })) ?? null, [candidates])
+  const total = candidates?.length ?? 0
+  const handleConfirm = async (ids: string[]) => {
+    setBusy(true)
     try {
-      await trackCandidates(workspaceId, [{ companyId: candidate.companyId, name: candidate.name, domain: candidate.domain }])
-      toast(`${candidate.name} intégré au portefeuille.`)
+      const chosen = ids.map((id) => byId.get(id)).filter((candidate): candidate is AccountCandidate => candidate !== undefined && !candidate.alreadyTracked)
+      if (chosen.length) await trackCandidates(workspaceId, chosen.map((candidate) => ({ companyId: candidate.companyId, name: candidate.name, domain: candidate.domain })))
+      toast(`${chosen.length} compte${chosen.length > 1 ? 's' : ''} intégré${chosen.length > 1 ? 's' : ''} au portefeuille.`)
       await refresh()
       onClose()
     } catch (reason) {
       toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
-    } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
-  const createManual = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!manual.trim()) return
-    setBusy('manual')
-    try {
-      await createAccount({ name: manual.trim(), domain: manualDomain.trim() || null })
-      toast(`Compte « ${manual.trim()} » créé.`)
-      await refresh()
-      onClose()
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Création impossible', 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
-  return <div className="pa-iov" role="dialog" aria-modal="true" aria-label="Intégrer des comptes">
-    <div className="dxp-iov-bg" onClick={onClose} />
-    <div className="dxp-iov-card">
-      <div className="dxp-iov-head">Intégrer des comptes<button type="button" className="dxp-iov-x" aria-label="Fermer" onClick={onClose}>✕</button></div>
-      <div className="dxp-iov-sub">Les newsletters et expéditeurs automatiques sont ignorés par défaut. Tu peux toujours intégrer volontairement leur compte ci-dessous.</div>
-      {error && <div className="dxa-empty">{error}</div>}
-      {!error && candidates === null && <div className="dxa-empty">Détection en cours dans tes échanges…</div>}
-      {candidates !== null && !candidates.length && <div className="dxa-empty">Aucun candidat détecté — connecte ou synchronise une boîte mail, ou crée un compte manuellement.</div>}
-      <div className="dxp-iov-res">
-        {(candidates ?? []).map((candidate) => <div className="dxp-iov-cand" key={candidate.name}>
-          <span className="dxp-iov-iav">{initials(candidate.name)}</span>
-          <div>
-            <div className="dxp-iov-cnm">{candidate.name}</div>
-            <div className="dxp-iov-csub">{[candidate.domain, `${candidate.interactions} échange${candidate.interactions > 1 ? 's' : ''}`, candidate.source].filter(Boolean).join(' · ')}</div>
-          </div>
-          {candidate.alreadyTracked
-            ? <button type="button" className="dxp-iov-add" disabled>Déjà suivi</button>
-            : <button type="button" className="dxp-iov-add" disabled={busy !== null} onClick={() => void add(candidate)}>{busy === candidate.name ? '…' : '+ Ajouter'}</button>}
-        </div>)}
-      </div>
-      <div className="dxp-iov-sep"><span>ou créer manuellement</span></div>
-      <form className="dxp-iov-manual" onSubmit={(event) => void createManual(event)}>
-        <label className="sr-only" htmlFor="pa-manual-name">Nom du compte</label>
-        <input id="pa-manual-name" placeholder="Nom de l’entreprise" value={manual} onChange={(event) => setManual(event.target.value)} />
-        <label className="sr-only" htmlFor="pa-manual-domain">Domaine du compte</label>
-        <input id="pa-manual-domain" placeholder="Domaine (facultatif, ex. exemple.com)" value={manualDomain} onChange={(event) => setManualDomain(event.target.value)} />
-        <button className="dxp-iov-idbtn" disabled={busy !== null || !manual.trim()}>Créer le compte</button>
-      </form>
-    </div>
-  </div>
+  return <IntegrationModal
+    entity="compte"
+    title={`${total} compte${total > 1 ? 's' : ''} détecté${total > 1 ? 's' : ''} dans tes échanges`}
+    subtitle={<>Aucun score à ce stade — que du mesurable. <b>Échanges lus · lecture seule</b>. Les 10 plus actifs sont pré-cochés : tu peux continuer sans rien décider.</>}
+    items={items}
+    loading={candidates === null && !error}
+    error={error}
+    busy={busy}
+    onConfirm={handleConfirm}
+    onClose={onClose}
+  />
 }
 
 export function MemberPicker({ overview, anchor, currentId, onPick, onClose }: { overview: { team: TeamMember[] }; anchor: { x: number; y: number }; currentId: string | null; onPick: (memberId: string) => void; onClose: () => void }) {

@@ -517,7 +517,6 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
       <aside class="home-cockpit-rail">
         ${topMarkup(data)}
         ${signalsMarkup(data)}
-        ${coachingMarkup(data.coaching)}
       </aside>
     </div>`,
   ].join('')
@@ -731,7 +730,6 @@ function actionsMarkup(actions: HomePriorityAction[]): string {
         <span class="krs-asig">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${confidenceLevel(action.confidence) ? ` · confiance ${confidenceLevel(action.confidence)}` : ''}</span>
         <span class="krs-do-inline">
           <button class="krs-b sm yes" data-home="action-done" aria-label="Marquer comme fait"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg> Fait</button>
-          <button class="krs-b sm later" data-home="action-postpone" aria-label="Reporter à demain">↺</button>
           <button class="krs-b sm no" data-home="action-dismiss" aria-label="Écarter cette action"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </span>
       </div>

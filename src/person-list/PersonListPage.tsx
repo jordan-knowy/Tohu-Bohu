@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { createPerson } from '../services/data'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
+import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { ToastProvider, useBusy, useToast } from '../person-detail/ui'
 import {
   CHANNEL_ICONS, CheckIcon, DocIcon, FilterChip, LinkIcon, MailIcon, MemberPicker, StarIcon,
@@ -43,11 +44,6 @@ function CreatePersonModal({ workspaceId, onClose, refresh }: { workspaceId: str
   const toast = useToast()
   const [candidates, setCandidates] = useState<PersonCandidate[] | null>(null)
   const [candidateError, setCandidateError] = useState<string | null>(null)
-  const [adding, setAdding] = useState<string | null>(null)
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [jobTitle, setJobTitle] = useState('')
-  const [companyName, setCompanyName] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     let active = true
@@ -56,60 +52,38 @@ function CreatePersonModal({ workspaceId, onClose, refresh }: { workspaceId: str
       .catch((reason) => { if (active) setCandidateError(reason instanceof Error ? reason.message : 'Détection impossible') })
     return () => { active = false }
   }, [workspaceId])
-
-  const addCandidate = async (candidate: PersonCandidate) => {
-    setAdding(candidate.contactId)
-    try {
-      await trackPersonCandidate(workspaceId, candidate.contactId)
-      toast(`${candidate.fullName} intégré(e) et ajouté(e) à la veille.`)
-      await refresh()
-      setCandidates((current) => current?.filter((item) => item.contactId !== candidate.contactId) ?? current)
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
-    } finally {
-      setAdding(null)
-    }
-  }
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!fullName.trim()) return
+  const items: IntegrationItem[] | null = useMemo(() => candidates?.map((candidate) => ({
+    id: candidate.contactId,
+    name: candidate.fullName,
+    subtitle: [candidate.roleTitle, candidate.companyName].filter(Boolean).join(' · ') || candidate.email,
+    interactions: candidate.interactions,
+    lastInteractionAt: candidate.lastInteractionAt,
+    ageLabel: ageSince(candidate.firstInteractionAt),
+  })) ?? null, [candidates])
+  const total = candidates?.length ?? 0
+  const handleConfirm = async (ids: string[]) => {
     setBusy(true)
     try {
-      await createPerson({ full_name: fullName.trim(), email: email.trim() || null, job_title: jobTitle.trim() || null, company_name: companyName.trim() || null })
-      toast(`${fullName.trim()} intégré(e) à Personnes.`)
+      await Promise.all(ids.map((id) => trackPersonCandidate(workspaceId, id)))
+      toast(`${ids.length} personne${ids.length > 1 ? 's' : ''} intégrée${ids.length > 1 ? 's' : ''} et ajoutée${ids.length > 1 ? 's' : ''} à la veille.`)
       await refresh()
       onClose()
     } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Création impossible', 'error')
-    } finally {
+      toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
       setBusy(false)
     }
   }
-  return <div className="pa-iov" role="dialog" aria-modal="true" aria-label="Intégrer une personne">
-    <div className="dxp-iov-bg" onClick={onClose} />
-    <div className="dxp-iov-card">
-      <div className="dxp-iov-head">Intégrer des personnes<button type="button" className="dxp-iov-x" aria-label="Fermer" onClick={onClose}>✕</button></div>
-      <div className="dxp-iov-sub">Ajoute explicitement une personne suivie par ton équipe, y compris une adresse générique ou une newsletter volontairement suivie.</div>
-      {candidateError && <div className="dxa-empty">{candidateError}</div>}
-      {!candidateError && candidates === null && <div className="dxa-empty">Détection des personnes dans tes échanges…</div>}
-      {candidates !== null && <div className="dxp-iov-res">
-        {candidates.slice(0, 40).map((candidate) => <div className="dxp-iov-cand" key={candidate.contactId}>
-          <span className="dxp-iov-iav">{initials(candidate.fullName)}</span>
-          <div><div className="dxp-iov-cnm">{candidate.fullName}</div><div className="dxp-iov-csub">{[candidate.roleTitle, candidate.companyName, candidate.email, `${candidate.interactions} échange${candidate.interactions > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div></div>
-          <button type="button" className="dxp-iov-add" disabled={adding !== null} onClick={() => void addCandidate(candidate)}>{adding === candidate.contactId ? '…' : '+ Ajouter'}</button>
-        </div>)}
-        {!candidates.length && <div className="dxa-empty">Aucune autre personne détectée.</div>}
-      </div>}
-      <div className="dxp-iov-sep"><span>ou créer manuellement</span></div>
-      <form onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 10, marginTop: 6 }}>
-        <div className="field"><label htmlFor="pl-name">Nom complet</label><input className="input" id="pl-name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Prénom Nom" required /></div>
-        <div className="field"><label htmlFor="pl-email">Email</label><input className="input" id="pl-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="prenom.nom@exemple.com" /></div>
-        <div className="field"><label htmlFor="pl-job">Poste</label><input className="input" id="pl-job" value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="Fonction" /></div>
-        <div className="field"><label htmlFor="pl-company">Compte</label><input className="input" id="pl-company" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Nom de l’entreprise" /></div>
-        <button className="dxp-iov-idbtn" disabled={busy || !fullName.trim()} style={{ justifySelf: 'start' }}>{busy ? '…' : 'Créer la personne'}</button>
-      </form>
-    </div>
-  </div>
+  return <IntegrationModal
+    entity="personne"
+    title={`${total} personne${total > 1 ? 's' : ''} détectée${total > 1 ? 's' : ''} dans tes échanges`}
+    subtitle={<>Aucun score à ce stade — que du mesurable. <b>Échanges lus · lecture seule</b>. Les 10 plus actives sont pré-cochées : tu peux continuer sans rien décider.</>}
+    items={items}
+    loading={candidates === null && !candidateError}
+    error={candidateError}
+    busy={busy}
+    onConfirm={handleConfirm}
+    onClose={onClose}
+  />
 }
 
 function PageBody({ context }: { context: PageContext }) {

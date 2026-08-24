@@ -2020,7 +2020,8 @@
 
 /* V48 — Profil */
 .v48-person-profile{display:grid;gap:12px}
-.v48-person-profile .now{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;padding:16px 24px;border:1px solid var(--grid);border-radius:16px;background:#fcfbfe}
+/* Blocs « Prochain RDV » et « Posture à adopter » indépendants (pas 2 blocs dans un bloc blanc). Retour testing P3.5. */
+.v48-person-profile .now{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;margin-bottom:12px}
 .v48-person-profile .rdv,.v48-person-profile .po{min-height:104px;border-radius:12px}
 .v48-person-profile .rdv{display:flex;align-items:center;gap:14px;padding:15px 18px;background:var(--violet);color:#fff}
 .v48-person-profile .rdv-icon{flex:0 0 auto}.v48-person-profile .rdv-icon svg{width:22px;height:22px}

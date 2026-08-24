@@ -1,0 +1,62 @@
+/* ============================ Parcours d'intégration — écran A (Détection) ============================
+   Modale de détection : faits observables uniquement, tableau triable/filtrable, pré-cochage des plus
+   actifs. Design aligné sur le système de l'app (tokens). Cf. maquette « parcours 3 écrans ». */
+.tin-mask{position:fixed;inset:0;z-index:200;background:rgba(26,16,64,.42);display:flex;align-items:center;justify-content:center;padding:24px}
+.tin{width:100%;max-width:1340px;height:92vh;min-height:600px;background:#fff;border-radius:22px;box-shadow:0 40px 100px -30px rgba(16,10,40,.5);display:flex;flex-direction:column;overflow:hidden}
+.tin-head{padding:22px 26px 16px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start}
+.tin-eyebrow{font:700 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--violet);margin:0 0 6px}
+.tin-h{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:0}
+.tin-sub{margin:5px 0 0;color:var(--t2);font-size:13px}
+.tin-sub b{color:var(--sage);font-weight:800}
+.tin-x{width:34px;height:34px;border:1px solid var(--border);background:#fff;border-radius:10px;font-size:17px;color:var(--t3);cursor:pointer}
+.tin-toolbar{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tin-seg{display:inline-flex;background:var(--violet-s);border-radius:999px;padding:3px}
+.tin-seg button{border:0;background:transparent;border-radius:999px;padding:7px 16px;font-size:12px;font-weight:800;color:var(--t2);cursor:pointer}
+.tin-seg button.on{background:var(--violet);color:#fff;box-shadow:0 4px 12px rgba(110,80,200,.3)}
+.tin-search{flex:1 1 240px;min-width:200px;height:40px;border:1px solid var(--border-m);border-radius:12px;display:flex;align-items:center;gap:9px;padding:0 14px;background:var(--bg)}
+.tin-search input{border:0;background:transparent;outline:0;flex:1;font-size:14px;color:var(--night)}
+.tin-search svg{width:16px;height:16px;color:var(--t3)}
+.tin-chips{display:flex;gap:7px;padding:12px 26px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.tin-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--t2);cursor:pointer}
+.tin-chip.on{border-color:var(--violet);background:var(--violet-s);color:var(--violet)}
+.tin-chip .n{font:700 10px var(--mono);background:var(--bg2);color:var(--t3);border-radius:999px;padding:1px 7px}
+.tin-chip.on .n{background:#fff;color:var(--violet)}
+.tin-tblwrap{flex:1;overflow:auto}
+.tin-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;height:100%;color:var(--t2);font-size:14px;text-align:center;padding:24px}
+.tin-state .spin{width:30px;height:30px;border:3px solid var(--violet-s);border-top-color:var(--violet);border-radius:50%;animation:tin-spin .8s linear infinite}
+@keyframes tin-spin{to{transform:rotate(360deg)}}
+.tin-tbl{width:100%;border-collapse:collapse}
+.tin-tbl thead th{position:sticky;top:0;background:var(--bg);z-index:1;font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--t3);text-align:left;padding:11px 16px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none}
+.tin-tbl thead th .ar{opacity:.5;margin-left:4px}
+.tin-tbl thead th.sorted{color:var(--violet)}
+.tin-tbl thead th.sorted .ar{opacity:1}
+.tin-tbl thead th.nosort{cursor:default}
+.tin-tbl thead th:first-child,.tin-tbl tbody td:first-child{width:44px;padding-left:22px}
+.tin-tbl tbody td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.tin-tbl tbody tr{cursor:pointer}
+.tin-tbl tbody tr:hover{background:var(--violet-s)}
+.tin-tbl tbody tr.sel{background:rgba(110,80,200,.06)}
+.tin-ck{width:19px;height:19px;border-radius:6px;border:2px solid var(--border-m);display:inline-grid;place-items:center;cursor:pointer;box-sizing:border-box}
+.tin-ck.on{background:var(--violet);border-color:var(--violet)}
+.tin-ck.on::after{content:"";width:5px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg) translateY(-1px)}
+.tin-ent{display:flex;align-items:center;gap:11px}
+.tin-av{width:34px;height:34px;border-radius:9px;background:var(--violet-s);color:var(--violet);display:grid;place-items:center;font-weight:800;font-size:12px;flex:none;overflow:hidden}
+.tin-av img{width:100%;height:100%;object-fit:cover}
+.tin-ent b{display:block;font-size:13.5px}
+.tin-ent small{display:block;color:var(--t3);font-size:11px}
+.tin-hist b{font-weight:800}
+.tin-hist small{color:var(--t3);font-size:11px;margin-left:5px}
+.tin-il{display:inline-flex;align-items:center}
+.tin-il i{width:24px;height:24px;border-radius:50%;background:var(--violet);color:#fff;display:inline-grid;place-items:center;font:700 9px var(--mono);border:2px solid #fff;margin-left:-6px}
+.tin-il i:first-child{margin-left:0}
+.tin-il .more{color:var(--t3);font-size:11px;margin-left:6px}
+.tin-rel{display:inline-flex;align-items:center;gap:6px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:3px 10px;border-radius:999px;background:var(--bg2);color:var(--t2)}
+.tin-rel .d{width:6px;height:6px;border-radius:50%}
+.tin-muted{color:var(--t4)}
+.tin-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 26px;border-top:1px solid var(--border);background:var(--bg);flex-wrap:wrap}
+.tin-foot-l{font-size:13px;color:var(--t2)}
+.tin-foot-l b{color:var(--night);font-weight:800}
+.tin-selall{border:0;background:transparent;color:var(--violet);font-weight:700;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:0}
+.tin-cta{border:0;background:var(--violet);color:#fff;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:9px;box-shadow:0 10px 26px -8px rgba(110,80,200,.5)}
+.tin-cta:disabled{opacity:.5;cursor:default;box-shadow:none}
+@media(max-width:780px){.tin-mask{padding:0}.tin{height:100vh;max-width:none;border-radius:0}.tin-tbl tbody td.opt,.tin-tbl thead th.opt{display:none}}

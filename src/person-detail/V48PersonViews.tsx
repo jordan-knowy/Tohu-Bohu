@@ -295,7 +295,15 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
   const evidenceThresholdReached = data.behavior.analyzedInteractions >= data.behavior.profileMinimumInteractions
   const hasProfile = evidenceThresholdReached && observedPrimary.length > 0
   const emerging = hasProfile && data.behavior.analyzedInteractions < data.behavior.minimumInteractions
-  const posture = cognitive.posture.observation || data.behavior.executiveSummary
+  // « Posture à adopter » = conseil d'adaptation (comment se comporter AVEC cette
+  // personne), et non une description d'elle (déjà présente dans le profil / CV Live).
+  // On synthétise depuis les « À faire » des axes observés. Retour testing P2.2.
+  const posture = primaryAxes
+    .filter((axis) => axis.status !== 'insufficient' && axis.activePole)
+    .map((axis) => AXIS_ADAPTATION[axis.id]?.[axis.activePole === 'left' ? 'left' : 'right']?.doText)
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 3)
+    .join(' · ')
 
   const nextMeeting = useMemo(() => {
     const now = Date.now()
@@ -583,7 +591,6 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   // Un engagement = promesse tirée des échanges (posture/coaching ou reco déclenchée par un
   // signal de contenu). « Renouer le contact » (reco fondée sur le score, sans signal) n'en est pas un.
   const engagementRecos = openRecos.filter((item) => item.kind === 'coaching' || item.triggerSignal !== null)
-  const nextActions = openRecos.filter((item) => !engagementRecos.includes(item))
   const engagementCount = commitments.length + engagementRecos.length
   const delta = relation.phaseDelta
   const [methodologyOpen, setMethodologyOpen] = useState(false)
@@ -639,13 +646,6 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
         </div>
       </section>
     </div>
-    {nextActions.length > 0 && <section className="sec">
-      <div className="sec-h"><V48Icon name="sparkle" /><p className="sec-t">Prochaine action recommandée</p><span className="cnt"><b>{nextActions.length}</b></span></div>
-      <div className="sec-b">
-        <p className="hint-l">Suggestions de Tohu à partir du score et de la dynamique relationnelle — à valider ou écarter.</p>
-        <div className="eng">{nextActions.map((item) => <EngagementReco key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}</div>
-      </div>
-    </section>}
     <HistoryCard data={data} memory={<MemoryCard data={data} userId={userId} refresh={refresh} embedded />} />
     {methodologyOpen && <MethodologyModal data={data} onClose={() => setMethodologyOpen(false)} />}
   </div>

@@ -182,6 +182,9 @@ export type AccountCandidate = {
   domain: string | null
   industry: string | null
   interactions: number
+  interlocutorCount: number
+  interlocutors: string[]
+  firstInteractionAt: string | null
   lastInteractionAt: string | null
   source: string
   alreadyTracked: boolean
@@ -196,6 +199,9 @@ export async function detectAccountCandidates(workspaceId: string): Promise<Acco
     domain: text(row.domain),
     industry: text(row.industry),
     interactions: num(row.interactions) ?? 0,
+    interlocutorCount: num(row.interlocutor_count) ?? 0,
+    interlocutors: Array.isArray(row.interlocutors) ? row.interlocutors.filter((value): value is string => typeof value === 'string') : [],
+    firstInteractionAt: text(row.first_interaction_at),
     lastInteractionAt: text(row.last_interaction_at),
     source: text(row.source) ?? 'Messagerie connectée',
     alreadyTracked: row.already_tracked === true,

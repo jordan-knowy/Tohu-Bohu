@@ -464,7 +464,11 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
   const toast = useToast()
   const [showAll, setShowAll] = useState(false)
   const navigate = useNavigate()
-  const shown = showAll ? data.signals : data.signals.slice(0, 5)
+  // « Mouvements détectés » = signaux externes/veille (changement de poste, actualité,
+  // activité récente), PAS les traits comportementaux (posture) qui vivent sur le profil
+  // et le CV Live. Retour testing P2.3.
+  const movements = data.signals.filter((signal) => /monitoring|veille|^ai[_-]/i.test(signal.provenance.sourceType ?? ''))
+  const shown = showAll ? movements : movements.slice(0, 5)
   const validate = (signalId: string, verdict: 'confirmed' | 'dismissed') => run(`signal-${signalId}`, async () => {
     await saveSignalFeedback(signalId, userId, verdict)
     toast(verdict === 'confirmed' ? 'Signal confirmé.' : 'Signal infirmé.')
@@ -474,12 +478,12 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
     <div className="sig-head">
       <div className="sig-ic">{SignalGlyph}</div>
       <div>
-        <div className="sig-ttl">Signaux récents</div>
-        <div className="sig-sub">{data.person.fullName.split(' ')[0]} · individu · sources connectées</div>
+        <div className="sig-ttl">Mouvements détectés</div>
+        <div className="sig-sub">{data.person.fullName.split(' ')[0]} · actualité &amp; activité externe</div>
       </div>
     </div>
     <div className="sig-body">
-      {!data.signals.length && <Empty title="Aucun signal prioritaire actuellement">Les signaux sourcés apparaîtront après les prochaines synchronisations.</Empty>}
+      {!movements.length && <Empty title="Aucun mouvement détecté">Les mouvements externes (changement de poste, actualité, activité récente) apparaîtront après les prochaines synchronisations.</Empty>}
       {shown.map((signal) => <div className="sig-item" key={signal.id}>
         <div className="sig-emoji" style={{ ['--ico' as string]: '#6E50C8', ['--ico-bg' as string]: '#F0EBFB' }}>{SignalGlyph}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -501,7 +505,7 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
           </div>
         </div>
       </div>)}
-      {data.signals.length > 5 && <button type="button" className="cv-more" onClick={() => setShowAll((value) => !value)}>{showAll ? 'Réduire' : `Voir + (${data.signals.length - 5} de plus)`}</button>}
+      {movements.length > 5 && <button type="button" className="cv-more" onClick={() => setShowAll((value) => !value)}>{showAll ? 'Réduire' : `Voir + (${movements.length - 5} de plus)`}</button>}
       <button type="button" className="cv-more" onClick={() => navigate(`/app/signals?personId=${data.person.id}`)}>Voir tous les signaux →</button>
     </div>
   </div>

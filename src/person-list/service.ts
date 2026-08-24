@@ -89,6 +89,7 @@ export type PersonCandidate = {
   companyName: string | null
   interactions: number
   lastInteractionAt: string | null
+  firstInteractionAt: string | null
   source: string
 }
 
@@ -106,6 +107,7 @@ export async function detectPersonCandidates(workspaceId: string): Promise<Perso
     companyName: text(candidate.company_name),
     interactions: Number(candidate.interactions ?? 0),
     lastInteractionAt: text(candidate.last_interaction_at),
+    firstInteractionAt: text(candidate.first_interaction_at),
     source: text(candidate.source) ?? 'Connecteur',
   }))
 }
