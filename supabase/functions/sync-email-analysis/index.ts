@@ -436,7 +436,7 @@ async function providerHasReciprocalExchange(
   }
 }
 
-type MeetingCorpus = { excerpts: string[]; meetingCount: number }
+type MeetingCorpus = { excerpts: string[]; meetingCount: number; latestAt: string | null }
 
 async function loadMeetingCorpus(
   supabase: ReturnType<typeof createClient>,
@@ -473,6 +473,17 @@ async function loadMeetingCorpus(
     .limit(500)
   if (transcriptError) throw transcriptError
 
+  // Date réelle de chaque réunion (starts_at), pour dater les signaux à la date
+  // de l'échange et non à la date de synchronisation.
+  const { data: meetingRows } = await supabase.from('meetings')
+    .select('id,starts_at')
+    .eq('organization_id', organizationId)
+    .in('id', meetingIds)
+  const startsById = new Map<string, string>()
+  for (const meeting of meetingRows ?? []) {
+    if (meeting.starts_at) startsById.set(String(meeting.id), String(meeting.starts_at))
+  }
+
   const usedMeetingsByContact = new Map<string, Set<string>>()
   for (const transcript of transcriptRows ?? []) {
     const meetingId = String(transcript.meeting_id ?? '')
@@ -488,9 +499,11 @@ async function loadMeetingCorpus(
       if (used.has(meetingId)) continue
       used.add(meetingId)
       usedMeetingsByContact.set(contactId, used)
-      const current = result.get(contactId) ?? { excerpts: [], meetingCount: 0 }
+      const current = result.get(contactId) ?? { excerpts: [], meetingCount: 0, latestAt: null }
       current.excerpts.push(excerpt)
       current.meetingCount++
+      const startsAt = startsById.get(meetingId) ?? null
+      if (startsAt && (!current.latestAt || startsAt > current.latestAt)) current.latestAt = startsAt
       result.set(contactId, current)
     }
   }
@@ -1159,9 +1172,10 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       try {
         const contact = contactById.get(contactId) ?? [...contactByEmail.values()].find((item) => item.id === contactId)
         const attributedMeetingCount = meetingCorpus.get(contactId)?.meetingCount ?? 0
-        const [{ count: interactionCountRaw, error: countError }, { data: previousRaw, error: previousError }] = await Promise.all([
+        const [{ count: interactionCountRaw, error: countError }, { data: previousRaw, error: previousError }, { data: latestMessageRaw }] = await Promise.all([
           supabase.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('contact_id', contactId).eq('direction', 'inbound'),
           supabase.from('cognitive_profiles').select('cognitive_profile_data').eq('organization_id', organizationId).eq('contact_id', contactId).eq('profile_version', 1).maybeSingle(),
+          supabase.from('communication_messages').select('sent_at').eq('organization_id', organizationId).eq('contact_id', contactId).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
         ])
         if (countError) throw countError
         if (previousError) throw previousError
@@ -1172,6 +1186,14 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
         const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
         const now = new Date().toISOString()
+        // Date de l'événement = dernier échange réel du lot analysé (email ou
+        // réunion), et non la date de synchronisation. Cf. correction P0.1 :
+        // observed_at doit refléter la chronologie relationnelle, pas la sync.
+        const latestEmailAt = latestMessageRaw?.sent_at ? String(latestMessageRaw.sent_at) : null
+        const latestMeetingAt = meetingCorpus.get(contactId)?.latestAt ?? null
+        const exchangeDates = [latestEmailAt, latestMeetingAt].filter((value): value is string => Boolean(value))
+        const latestExchangeAt = exchangeDates.length ? exchangeDates.reduce((a, b) => (a > b ? a : b)) : null
+        const observedAt = latestExchangeAt && Date.parse(latestExchangeAt) <= Date.parse(now) ? latestExchangeAt : now
         // Écriture unifiée (cognitive_profiles + behavioral_signals), factorisée
         // dans _shared : même logique que l'ingestion manuelle de transcript.
         await persistContactProfile(supabase, {
@@ -1184,7 +1206,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           updatedFrom: attributedMeetingCount ? [provider, 'email', 'meeting_transcript'] : [provider, 'email'],
           signalSource: attributedMeetingCount ? 'mixed_exchange_analysis' : `email_${provider}_analysis`,
           sourceRef: `sync:${now}`,
-          observedAt: now,
+          observedAt,
         })
         // Contexte relationnel : engagements pris + moments qui comptent, extraits
         // du contenu en un seul appel puis dédupliqués sur les entrées déjà connues.
@@ -1209,7 +1231,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
                 source_label: 'Tohu · engagement détecté',
                 confidence: item.confidence,
                 inference_level: 'strong_inference',
-                observed_at: now,
+                observed_at: observedAt,
               }))
             if (fresh.length) {
               const { error: memoryError } = await supabase.from('person_memory_entries').insert(fresh)
@@ -1225,7 +1247,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
               .map((item) => ({
                 organization_id: organizationId,
                 contact_id: contactId,
-                occurred_at: item.occurred_date ? new Date(item.occurred_date).toISOString() : now,
+                occurred_at: item.occurred_date ? new Date(item.occurred_date).toISOString() : observedAt,
                 title: item.title,
                 summary: item.summary,
                 impact: item.impact,

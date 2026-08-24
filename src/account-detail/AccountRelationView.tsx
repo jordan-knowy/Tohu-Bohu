@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import type { CSSProperties, FormEvent, ReactNode } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { FormEvent, ReactNode, SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { initials } from '../lib/auth'
 import { addAccountNote, updateRecommendationStatus } from './service'
@@ -37,6 +37,46 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="acr-empty"><span>◇</span><p>{children}</p></div>
 }
 
+const MONTH_NAMES = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+function monthLabel(key: number): string { const y = Math.floor(key / 12); const m = ((key % 12) + 12) % 12; return `${MONTH_NAMES[m]} ${String(y).slice(2)}` }
+type MonthBar = { label: string; score: number | null }
+
+/** Une barre par MOIS sur la fenêtre choisie (6/12/36) — score = moyenne des
+ *  snapshots du mois, `null` = mois sans donnée (barre grise). C'est ce qui rend
+ *  le toggle 6/12/36 réellement fonctionnel et différent d'un compte à l'autre. */
+function buildMonthlyBars(history: Array<{ score: number; computedAt: string }>, windowMonths: number): MonthBar[] {
+  const byMonth = new Map<number, { sum: number; n: number }>()
+  for (const h of history) {
+    const d = new Date(h.computedAt)
+    if (!Number.isFinite(d.getTime())) continue
+    const key = d.getUTCFullYear() * 12 + d.getUTCMonth()
+    const e = byMonth.get(key) ?? { sum: 0, n: 0 }
+    e.sum += h.score; e.n++; byMonth.set(key, e)
+  }
+  const now = new Date()
+  const lastKey = now.getUTCFullYear() * 12 + now.getUTCMonth()
+  const bars: MonthBar[] = []
+  for (let i = windowMonths - 1; i >= 0; i--) {
+    const e = byMonth.get(lastKey - i)
+    bars.push({ label: monthLabel(lastKey - i), score: e ? Math.round(e.sum / e.n) : null })
+  }
+  return bars
+}
+
+type Tip = { left: number; top: number; above: boolean; content: ReactNode }
+function useTip() {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: SyntheticEvent, content: ReactNode) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const above = r.top > 160
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - 100), (typeof window !== 'undefined' ? window.innerWidth : 1200) - 208)
+    setTip({ left, top: above ? r.top - 8 : r.bottom + 8, above, content })
+  }
+  const hide = () => setTip(null)
+  const node = tip ? createPortal(<div className="v48-tipx" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : 'none' }}>{tip.content}</div>, document.body) : null
+  return { show, hide, node }
+}
+
 // ── Pilule Connecteurs (dans la barre d'onglets) ────────────────────────────
 function providerColor(provider: string): string {
   const p = provider.toLowerCase()
@@ -54,28 +94,38 @@ function providerInitial(label: string): string {
 const isConnected = (s: AccountDetailData['sources'][number]) => s.status === 'connected' || (s.interactionCount ?? 0) > 0
 
 export function AccountConnectorsPill({ sources }: { sources: AccountDetailData['sources'] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [panel, setPanel] = useState<{ top: number; right: number } | null>(null)
+  const show = () => {
+    clearTimeout(timer.current)
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setPanel({ top: r.bottom + 10, right: Math.max(8, window.innerWidth - r.right) })
+  }
+  const hide = () => { timer.current = setTimeout(() => setPanel(null), 130) }
   if (!sources.length) return null
   const connected = sources.filter(isConnected)
   return (
-    <div className="acnx" tabIndex={0} aria-label="Connecteurs du compte">
+    <div className="acnx" ref={ref} tabIndex={0} aria-label="Connecteurs du compte" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       <span className="acnx-st" aria-hidden="true">
         {sources.slice(0, 4).map((s, i) => (
           <i key={i} className={isConnected(s) ? '' : 'off'} style={{ background: providerColor(s.provider) }}>{providerInitial(s.label)}</i>
         ))}
       </span>
       <span className="acnx-v">{connected.length} connecté{connected.length > 1 ? 's' : ''}</span>
-      <div className="acnx-p" role="menu">
-        {sources.map((s, i) => (
-          <div className="acnx-r" key={i} role="menuitem">
-            <i className={isConnected(s) ? '' : 'off'} style={{ background: providerColor(s.provider) }}>{providerInitial(s.label)}</i>
-            <div className="acnx-n">
-              <b>{s.label}</b>
-              {s.interactionCount != null && <span className="acnx-vol">{s.interactionCount} échange{s.interactionCount > 1 ? 's' : ''}</span>}
-              <span className="acnx-note">{isConnected(s) ? 'Connecté' : (s.error || 'Non connecté')}{s.lastSyncedAt ? ` · synchro ${relativeLabel(s.lastSyncedAt)}` : ''}</span>
+      {panel && createPortal(
+        <div className="acnx-p" style={{ top: panel.top, right: panel.right }} role="menu" onMouseEnter={show} onMouseLeave={hide}>
+          {sources.map((s, i) => (
+            <div className="acnx-r" key={i} role="menuitem">
+              <i className={isConnected(s) ? '' : 'off'} style={{ background: providerColor(s.provider) }}>{providerInitial(s.label)}</i>
+              <div className="acnx-n">
+                <b>{s.label}</b>
+                {s.interactionCount != null && <span className="acnx-vol">{s.interactionCount} échange{s.interactionCount > 1 ? 's' : ''}</span>}
+                <span className="acnx-note">{isConnected(s) ? 'Connecté' : (s.error || 'Non connecté')}{s.lastSyncedAt ? ` · synchro ${relativeLabel(s.lastSyncedAt)}` : ''}</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>, document.body)}
     </div>
   )
 }
@@ -90,11 +140,13 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
   const [segMonths, setSegMonths] = useState(12)
   const rel = data.relationship
 
-  const chartPoints = useMemo(() => {
-    const cutoff = Date.now() - segMonths * MONTH_MS
-    const pts = rel.history.filter((h) => { const t = new Date(h.computedAt).getTime(); return Number.isFinite(t) && t >= cutoff })
-    return pts.length >= 2 ? pts : rel.history
-  }, [rel.history, segMonths])
+  const tip = useTip()
+  const bars = useMemo(() => buildMonthlyBars(rel.history, segMonths), [rel.history, segMonths])
+  const real = bars.filter((b) => b.score !== null)
+  let lastRealIdx = -1
+  for (let i = 0; i < bars.length; i++) if (bars[i]!.score !== null) lastRealIdx = i
+  const windowDelta = real.length >= 2 ? (real[real.length - 1]!.score! - real[0]!.score!) : null
+  const barTip = (b: MonthBar) => <><p className="v48-tipx-t">Score du compte</p><p className="v48-tipx-d">{b.label} · {b.score === null ? <b>pas encore de données</b> : <><b>{b.score}</b>/100</>}</p></>
 
   // Répartition par interlocuteur : contacts scorés, triés desc.
   const contributors = useMemo(() => [...data.people].filter((p) => p.score !== null).sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 8), [data.people])
@@ -123,24 +175,29 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
           <p className="big">{rel.score ?? '—'}</p>
           <p className="cpt-per">
             <span>{segMonths} mois</span>
-            {rel.phaseDelta !== null && <span>{rel.phaseDelta >= 0 ? `↗ +${rel.phaseDelta}` : `↘ ${rel.phaseDelta}`} pts</span>}
+            {windowDelta !== null && <span>{windowDelta >= 0 ? `↗ +${windowDelta}` : `↘ ${windowDelta}`} pts</span>}
           </p>
           <div className="seg">
             {[6, 12, 36].map((m) => <span key={m} className={segMonths === m ? 'on' : ''} onClick={() => setSegMonths(m)}>{m} M</span>)}
           </div>
         </div>
 
-        {chartPoints.length >= 2 ? <>
-          <div className="chart">{chartPoints.map((p, i) => <i key={i} style={{ height: `${Math.max(3, p.score)}%`, background: band(p.score) }} title={`${dateLabel(p.computedAt)} · ${p.score}`} />)}</div>
-          <div className="ch-x"><span>{dateLabel(chartPoints[0]!.computedAt)}</span><span>{dateLabel(chartPoints[chartPoints.length - 1]!.computedAt)}</span></div>
+        {real.length >= 1 ? <>
+          <div className="chart">{bars.map((b, i) => b.score === null
+            ? <i key={i} className="empty" style={{ height: '7%', background: '#E3DEF2' }} title={`${b.label} · pas encore de données`} />
+            : <i key={i} tabIndex={0}
+                style={{ height: `${Math.max(5, b.score)}%`, background: i === lastRealIdx ? 'linear-gradient(180deg,#C97A20,#DFA153)' : 'linear-gradient(180deg,#3FAEBE,#2896A8)' }}
+                onMouseEnter={(e) => tip.show(e, barTip(b))} onFocus={(e) => tip.show(e, barTip(b))} onMouseLeave={tip.hide} onBlur={tip.hide} />)}</div>
+          <div className="ch-x"><span>{bars[0]!.label}</span><span>{bars[bars.length - 1]!.label}</span></div>
         </> : <Empty>L’évolution du score apparaîtra après plusieurs calculs persistés.</Empty>}
+        {tip.node}
 
         <div className="cpt-mini">
           <span><b>{tenureLabel(data.account.relationshipStartedAt)}</b> d’ancienneté</span>
           <span><b>{rel.totalInteractions || '—'}</b> échanges</span>
           <span><b>{data.people.length}</b> contacts</span>
         </div>
-        {rel.phaseDelta !== null && <span className={`evo ${rel.phaseDelta < 0 ? 'down' : 'up'}`}>{rel.phaseDelta < 0 ? '↘' : '↗'} {rel.phaseDelta >= 0 ? `+${rel.phaseDelta}` : rel.phaseDelta} pts <em>sur {segMonths} mois</em></span>}
+        {windowDelta !== null && <span className={`evo ${windowDelta < 0 ? 'down' : 'up'}`}>{windowDelta < 0 ? '↘' : '↗'} {windowDelta >= 0 ? `+${windowDelta}` : windowDelta} pts <em>sur {segMonths} mois</em></span>}
 
         <p className="xl">Répartition par interlocuteur</p>
         {contributors.length ? <>

@@ -195,7 +195,6 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
               : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
             <FavoriteRow data={data} userId={userId} refresh={refresh} />
             </div>
-            <span className="v48-live"><i />Live</span>
           </div>
           <div className="hero-sub">
             <span>{subtitle || 'Fonction à confirmer'}</span>
@@ -639,6 +638,7 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
     && (data.behavior.cognitiveProfile.schemaVersion < 3
       || data.behavior.cognitiveProfile.primaryAxes.every((axis) => axis.status === 'insufficient'))
   return <>
+    <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>

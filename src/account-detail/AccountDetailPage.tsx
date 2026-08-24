@@ -412,7 +412,7 @@ function AccountHero({ data, toggleFavorite, openPeople }: { data: AccountDetail
           <div className="v48-eyebrow">Portefeuille / {account.name}</div>
           <div className="v48-name-row"><h1 className="hero-name">{account.name}<button className={`hero-fav ${account.favorite ? 'on' : ''}`} onClick={() => void toggleFavorite()} aria-label={account.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={account.favorite}>
             <svg viewBox="0 0 24 24" fill={account.favorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7"><path d="m12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9L12 2.5Z" /></svg>
-          </button></h1><span className="v48-live"><i />Live</span></div>
+          </button></h1></div>
           <div className="hero-sub"><span>{account.sector ?? 'Secteur à confirmer'}</span><span className="hero-dot" /><span>{account.location ?? 'Ville à confirmer'}</span>{account.relationshipStartedAt && <><span className="hero-dot" /><span>{account.accountType?.toLowerCase() || 'relation'} depuis {formatDate(account.relationshipStartedAt)}</span></>}</div>
           <div className="hero-meta v48-account-chips">
             <span className="crel2-chip"><span className="crel2-k">Relation</span><span className="crel2-dot" /><span className="crel2-v">{account.relationshipStatus ?? account.accountType ?? 'À confirmer'}</span><span className="crel2-c">⌄</span></span>
@@ -476,6 +476,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       </div>
     </div>
     {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
+    <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Live &amp; Signaux</button>

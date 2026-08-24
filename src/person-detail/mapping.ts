@@ -280,7 +280,7 @@ export function buildSignals(signalRows: Row[], feedback: Map<string, string | n
         sourceType: 'behavioral_signal',
         sourceId: String(row.id),
         sourceLabel: sourceTypeLabel(text(row.source_type)),
-        observedAt: text(row.observed_at) ?? text(row.created_at),
+        observedAt: text(row.observed_at),
         confidence: num(row.confidence),
         inferenceLevel: (text(row.inference_level) ?? 'observed') as DataSourceReference['inferenceLevel'],
       }),

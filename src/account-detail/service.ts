@@ -48,7 +48,11 @@ function optional(result: QueryResult, label: string, degraded: string[]): unkno
 export async function getAccountDetail(workspaceId: string, accountId: string): Promise<AccountDetailData> {
   const client = getSupabase()
   const degradedReasons: string[] = []
-  const currentUserId = (await client.auth.getUser()).data.user?.id ?? ''
+  const currentUser = (await client.auth.getUser()).data.user
+  const currentUserId = currentUser?.id ?? ''
+  // Domaine interne de l'utilisateur (ex. optee.io) — sert à ne pas traiter sa
+  // propre entreprise comme un compte à surveiller. (Retour testing P1.3.)
+  const internalDomain = (currentUser?.email?.split('@')[1] ?? '').toLowerCase()
   const [
     accountResult, peopleResult, signalsResult, meetingsResult, settingsResult,
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
@@ -147,7 +151,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
         sourceType: 'company_signal',
         sourceId: String(row.id),
         sourceLabel: text(row.source) ?? 'Veille Tohu',
-        observedAt: text(row.observed_at) ?? text(row.created_at),
+        observedAt: text(row.observed_at),
         confidence: number(row.confidence),
         inferenceLevel: text(row.inference_level),
       }),
@@ -199,6 +203,15 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     validationStatus: text(row.validation_status) ?? 'unverified',
     provenance: provenance(row),
   }))
+
+  // Tier 1 — filtre lecture (retours testing P1.3 + P1.4) :
+  // • entreprise interne (même domaine que l'utilisateur) → ni veille ni recos ;
+  // • veille du compte coupée → aucun signal de veille affiché.
+  const accountDomain = (text(account.domain) ?? '').toLowerCase()
+  const isInternalAccount = internalDomain !== '' && accountDomain !== '' && (accountDomain === internalDomain || accountDomain.endsWith('.' + internalDomain))
+  const watchOn = bool(watch.enabled)
+  const visibleSignals = (isInternalAccount || !watchOn) ? [] : signals
+  const visibleRecommendations = isInternalAccount ? [] : recommendations
 
   return {
     generatedAt: new Date().toISOString(),
@@ -254,8 +267,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
         error: text(object(row.metadata).last_error),
       }
     }).filter((source) => source.status === 'connected' || source.status === 'error' || source.interactionCount !== null),
-    recommendations,
-    signals,
+    recommendations: visibleRecommendations,
+    signals: visibleSignals,
     memoryEntries,
     firmographics,
   }

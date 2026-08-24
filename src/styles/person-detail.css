@@ -1931,6 +1931,9 @@
 }
 
 /* V48 — identité commune */
+/* Bandeau au-dessus des cartes suivantes pour que les menus (owner / organisation)
+   passent en premier plan et ne soient pas recouverts. (Retour testing.) */
+.ra-content .pp>.v48-identity-card{position:relative;z-index:20}
 .ra-content .pp>.v48-identity-card .v48-identity-body{
   display:flex;
   align-items:center;
@@ -1940,6 +1943,9 @@
 }
 .ra-content .pp>.v48-identity-card .v48-identity-left{display:flex;align-items:center;gap:16px;min-width:0}
 .v48-avatar-wrap,.v48-account-avatar{position:relative;flex:0 0 auto}
+/* Avatar personne rond → le halo ::after (border-radius:inherit) devient rond aussi
+   (sinon voyant vert "carré" autour du profil). Retour testing P1.5. */
+.v48-avatar-wrap{border-radius:50%}
 .v48-avatar-wrap>img,.v48-avatar-wrap>span{
   width:60px;height:60px;display:flex;align-items:center;justify-content:center;border-radius:50%;
   border:1px solid #dcd5f0;object-fit:cover;background:#f4f1fc;color:var(--violet);
@@ -1955,6 +1961,8 @@
 .v48-name-row{display:flex;align-items:center;gap:11px;min-width:0}
 .v48-live{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #c7e7d5;border-radius:999px;background:#eef8f2;color:#1e6b47;font-family:var(--font);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .v48-live i{width:6px;height:6px;border-radius:50%;background:#2ea86a;animation:v48-pulse 1.9s ease-in-out infinite}
+/* Badge Live remonté au-dessus de la barre d'onglets (hors onglet). Retour testing P1.6. */
+.v48-page-live{display:flex;justify-content:flex-end;align-items:center;margin:0 0 10px}
 .ra-content .pp>.v48-identity-card .mh-meta,.ra-content .pp>.v48-identity-card .hero-meta{display:flex;flex-wrap:nowrap;align-items:center;gap:9px;margin-top:14px;min-width:0}
 .ra-content .pp>.v48-identity-card .mh-meta>*{flex:0 0 auto}
 .ra-content .pp>.v48-identity-card .mh-meta .v48-account-chip{min-width:0}

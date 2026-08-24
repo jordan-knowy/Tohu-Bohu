@@ -408,6 +408,19 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const contacts = rows(contactsData)
   const connectors = rows(connectorsData)
   const memberships = rows(membershipsData)
+
+  // Tier 1 (retours testing P1.3/P1.4) : ne pas afficher dans le feed les signaux
+  // de sa propre entreprise (domaine interne de l'utilisateur) ni ceux d'un compte
+  // dont la veille a été explicitement coupée.
+  const currentUserEmail = (await client.auth.getUser()).data.user?.email ?? ''
+  const internalDomain = currentUserEmail.split('@')[1]?.toLowerCase() ?? ''
+  const isInternalDomain = (domain: string | null): boolean => {
+    const value = (domain ?? '').toLowerCase()
+    return internalDomain !== '' && value !== '' && (value === internalDomain || value.endsWith('.' + internalDomain))
+  }
+  const internalCompanyIds = new Set(companies.filter((company) => isInternalDomain(str(company.normalized_domain) ?? str(company.domain))).map((company) => String(company.id)))
+  const watchData = await safeQuery<DbRow[]>(client.from('account_watch_settings').select('company_id,enabled').eq('organization_id', organizationId), 'table account_watch_settings', degradedReasons)
+  const veilleOffCompanyIds = new Set(rows(watchData).filter((row) => row.enabled === false).map((row) => String(row.company_id)))
   const memberIds = [...new Set(memberships.map((membership) => str(membership.user_id)).filter((value): value is string => value !== null))]
   const memberProfilesData = memberIds.length
     ? await safeQuery<DbRow[]>(client.from('profiles').select('id,full_name,avatar_url').in('id', memberIds), 'lecture des profils d’équipe', degradedReasons)
@@ -450,8 +463,12 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   }
   const companyNames = new Map(companies.map((company) => [String(company.id), String(company.name ?? 'Compte')]))
   const signals: HomeSignal[] = [
-    ...rows(companySignalsData).map((row) => mapCompanySignal(row, feedback)),
-    ...rows(behavioralSignalsData).map((row) => mapBehavioralSignal(row, feedback, companyNames)),
+    ...rows(companySignalsData)
+      .filter((row) => { const id = str(row.company_id); return !(id !== null && (internalCompanyIds.has(id) || veilleOffCompanyIds.has(id))) })
+      .map((row) => mapCompanySignal(row, feedback)),
+    ...rows(behavioralSignalsData)
+      .filter((row) => { const id = str(record(row.contacts).company_id); return !(id !== null && internalCompanyIds.has(id)) })
+      .map((row) => mapBehavioralSignal(row, feedback, companyNames)),
   ].sort((a, b) => b.observedAt.localeCompare(a.observedAt)).slice(0, 12)
 
   // Actions du jour : dérivées de faits persistés, filtrées par l'état utilisateur.

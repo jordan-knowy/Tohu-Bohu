@@ -33,6 +33,7 @@ import PersonDetailPage from '../person-detail/PersonDetailPage'
 import GlobalSearch from './GlobalSearch'
 import NotificationBell from './NotificationBell'
 import AskPage from './pages/AskPage'
+import BohuBar from './BohuBar'
 import HomePage from './pages/HomePage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import ProfilePage from './pages/ProfilePage'
@@ -154,6 +155,7 @@ function AppShell({ context }: { context: AppContext }) {
         <NotificationBell userId={context.session.user.id} />
       </header>
       <main className={LEGACY_CONTENT_PATHS.has(location.pathname) ? 'content' : 'ra-content'}><Outlet context={context} /></main>
+      {location.pathname !== '/app/ask' && <BohuBar />}
     </div>
   </div>
 }

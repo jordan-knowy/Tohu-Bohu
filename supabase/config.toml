@@ -37,7 +37,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.sync-email-analysis]
-verify_jwt = true
+verify_jwt = false
 
 [functions.connect-hubspot]
 verify_jwt = false

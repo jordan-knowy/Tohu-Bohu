@@ -20,8 +20,9 @@
 .acnx-st i.off{background:#C7C0DC!important;opacity:.7}
 .acnx-v{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#8B84A3;white-space:nowrap;transition:color .16s}
 .acnx:hover .acnx-v,.acnx:focus-within .acnx-v{color:#6E50C8}
-.acnx-p{position:absolute;z-index:400;top:calc(100% + 10px);right:0;width:398px;max-width:88vw;background:#fff;border:1px solid #DCD5F0;border-radius:16px;padding:6px 4px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s;text-align:left;box-shadow:0 18px 48px rgba(26,16,64,.14)}
-.acnx:hover .acnx-p,.acnx:focus-within .acnx-p{opacity:1;visibility:visible;transform:none}
+/* Panneau porté dans <body> (position:fixed via style inline) pour échapper à
+   l'overflow de la barre d'onglets. */
+.acnx-p{position:fixed;z-index:99999;width:398px;max-width:88vw;background:#fff;border:1px solid #DCD5F0;border-radius:16px;padding:6px 4px;text-align:left;box-shadow:0 18px 48px rgba(26,16,64,.16);font-family:'JetBrains Mono',ui-monospace,monospace}
 .acnx-r{display:grid;grid-template-columns:22px 1fr;gap:11px;align-items:start;padding:9px 14px;border-radius:11px}
 .acnx-r:hover{background:#F4F1FC}
 .acnx-r>i{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-family:'Epilogue',sans-serif;font-style:normal;font-weight:800;font-size:9.5px;color:#fff;margin-top:1px}
@@ -56,7 +57,8 @@
 .acr .seg span{font-size:10.5px;letter-spacing:.08em;color:var(--mut);padding:6px 13px;border-radius:7px;cursor:pointer;border:1px solid transparent}
 .acr .seg span.on{background:#fff;color:var(--ink);border-color:var(--grid)}
 .acr .chart{display:flex;align-items:flex-end;gap:6px;height:180px}
-.acr .chart i{flex:1;border-radius:6px 6px 3px 3px;display:block;min-height:3px;transition:height .3s}
+.acr .chart i{flex:1;border-radius:6px 6px 3px 3px;display:block;min-height:3px;cursor:pointer;transition:opacity .12s}
+.acr .chart i:hover,.acr .chart i:focus-visible{opacity:.7;outline:none}
 .acr .ch-x{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);margin:8px 0 14px}
 .acr .cpt-mini{display:flex;flex-wrap:wrap;gap:22px;font-size:12px;color:var(--mut);margin:18px 0 0}
 .acr .cpt-mini b{font-family:'Epilogue',sans-serif;font-weight:800;color:var(--ink);font-size:14px}
