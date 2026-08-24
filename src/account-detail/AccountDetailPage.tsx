@@ -20,6 +20,7 @@ import {
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
 import { V48AccountLiveView, V48AccountSourceNote } from './V48AccountViews'
 import { AccountConnectorsPill, AccountRelationView } from './AccountRelationView'
+import { FicheSkeleton } from '../components/FicheSkeleton'
 import '../styles/account-relation.css'
 
 type PageContext = { session: Session; workspaceId: string }
@@ -448,7 +449,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
   if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
-  if (!data) return <div className="ra-skeleton" aria-label="Chargement de la fiche compte"><i /><i /><i /></div>
+  if (!data) return <FicheSkeleton label="Chargement de la fiche compte…" />
   const account = data.account
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }

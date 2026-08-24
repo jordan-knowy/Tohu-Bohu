@@ -170,6 +170,12 @@ export type PersonMemoryEntry = {
   visibility: string
   resolvedAt: string | null
   createdAt: string
+  // Preuve verbatim (renseignée à partir de l'analyse email v36+) : phrase source
+  // exacte + date/direction du message d'origine. null pour les engagements
+  // antérieurs (contenu des emails non conservé).
+  sourceExcerpt: string | null
+  sourceOccurredAt: string | null
+  sourceDirection: 'inbound' | 'outbound' | null
 }
 
 export type PersonKeyMoment = {

@@ -7,6 +7,7 @@ import { verifySuperAdmin } from '../super-admin/service'
 import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
+import { FicheSkeleton } from '../components/FicheSkeleton'
 import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
 
 type PageContext = { workspaceId: string; userId: string }
@@ -684,7 +685,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger la personne</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
-  if (!data) return <div className="ra-skeleton" aria-label="Chargement de la fiche personne"><i /><i /><i /></div>
+  if (!data) return <FicheSkeleton label="Chargement de la fiche personne…" />
 
   return <ToastProvider>
     <div className="pp">

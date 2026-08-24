@@ -165,3 +165,18 @@
 .bohubar-send:hover{background:#5238a8}
 .bohubar-send svg{width:19px;height:19px;display:block}
 @media(max-width:780px){.bohubar-wrap{left:68px;padding:0 12px;bottom:14px}.bohubar-cat{display:none}}
+
+/* ── Squelette de chargement des fiches (retour testing P3.6) ─────────────── */
+.fiche-skeleton{display:flex;flex-direction:column;gap:16px;max-width:1180px;margin:0 auto;padding:6px 0 30px}
+.fiche-skeleton .fk-l,.fiche-skeleton .fk-avatar,.fiche-skeleton .fk-score,.fiche-skeleton .fk-tabs i,.fiche-skeleton .fk-card{background:linear-gradient(90deg,var(--bg2),#fff,var(--bg2));background-size:200% 100%;animation:ra-shimmer 1.2s infinite}
+.fiche-skeleton .fk-hero{display:flex;align-items:center;gap:18px;padding:22px;border:1px solid var(--grid);border-radius:var(--r-xl);background:#fff}
+.fiche-skeleton .fk-avatar{width:64px;height:64px;border-radius:50%;flex:0 0 auto}
+.fiche-skeleton .fk-hlines{flex:1;display:flex;flex-direction:column;gap:10px}
+.fiche-skeleton .fk-score{width:64px;height:64px;border-radius:50%;flex:0 0 auto}
+.fiche-skeleton .fk-l{display:block;height:13px;border-radius:7px}
+.fiche-skeleton .fk-tabs{display:flex;gap:10px}
+.fiche-skeleton .fk-tabs i{display:block;height:34px;width:120px;border-radius:999px;background-color:var(--bg2)}
+.fiche-skeleton .fk-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fiche-skeleton .fk-card{border:1px solid var(--grid);border-radius:var(--r-xl);background:#fff;padding:20px;display:flex;flex-direction:column;gap:13px;animation:none}
+.fiche-skeleton .w28{width:28%}.fiche-skeleton .w45{width:45%}.fiche-skeleton .w50{width:50%}.fiche-skeleton .w55{width:55%}.fiche-skeleton .w60{width:60%}.fiche-skeleton .w70{width:70%}.fiche-skeleton .w75{width:75%}.fiche-skeleton .w80{width:80%}.fiche-skeleton .w85{width:85%}.fiche-skeleton .w90{width:90%}
+@media(max-width:780px){.fiche-skeleton .fk-grid{grid-template-columns:1fr}.fiche-skeleton .fk-tabs i{width:80px}}

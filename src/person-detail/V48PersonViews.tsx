@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
-import type { PersonDetailData, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
+import type { PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
@@ -139,7 +139,7 @@ function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis
   const ring = (pct: number) => entries.map(({ index }) => radarPoint(index, pct).join(',')).join(' ')
   const bandPath = `M ${entries.map((entry) => entry.bandOuter.join(' ')).join(' L ')} Z M ${entries.map((entry) => entry.bandInner.join(' ')).join(' L ')} Z`
 
-  return <svg className="rad" viewBox="0 50 660 430" role="img" aria-label={entries.map(({ axis }) => `${axis.label} ${axis.predominancePct ?? 0} pour cent`).join(', ')}>
+  return <div className="rad-wrap"><svg className="rad" viewBox="0 50 660 430" role="img" aria-label={entries.map(({ axis }) => `${axis.label} ${axis.predominancePct ?? 0} pour cent`).join(', ')}>
     {[25, 75, 100].map((value) => <polygon key={value} points={ring(value)} fill="none" stroke="var(--grid)" strokeWidth="1" />)}
     <polygon points={ring(50)} fill="none" stroke="var(--vl)" strokeWidth="1.3" strokeDasharray="4 4" />
     {entries.map(({ axis, index }) => {
@@ -162,6 +162,7 @@ function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis
         <tspan fontFamily="var(--font)" fontWeight={axis.activePole === 'right' ? 800 : 400} fontSize={axis.activePole === 'right' ? 11 : 9} fill={axis.activePole === 'right' ? color : '#8B84A3'}>{axis.poleRight}</tspan>
       </text>
     </g>)}
+    </svg>
     {entries.map(({ axis, layout, insufficient, activePoleLabel }) => {
       const pos = toPercent(layout.anchor === 'start' ? layout.x + 92 : layout.anchor === 'end' ? layout.x - 92 : layout.x + 28, layout.y + 34)
       const trendPhrase = axis.trendLabel === 'rising' ? `+${Math.abs(axis.trendPts ?? 0)} pts sur 30 jours.`
@@ -185,7 +186,7 @@ function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis
         onBlur={onHideTip}
       >i</button>
     })}
-  </svg>
+  </div>
 }
 
 function quadrantInfo(assertiveness: number | null, warmth: number | null): { name: string; color: string; assertiveLabel: string; warmthLabel: string; dotX: number; dotY: number } | null {
@@ -528,16 +529,88 @@ function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: 
 const EG_CHECK = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
 const EG_CROSS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
 
-function engagementStatus(item: PersonRecommendation): { cls: 'late' | 'open' | 'done'; label: string } {
+// Seuils au-dessous desquels le score relationnel est marqué « à confirmer »
+// (retour testing P6.2) : peu d'échanges OU confiance faible. Aucune fourchette
+// Q1-Q3 n'est affichée tant que le back ne persiste pas de distribution réelle.
+const SCORE_CONFIRM_MIN_INTERACTIONS = 5
+const SCORE_CONFIRM_MIN_CONFIDENCE = 40
+
+// Trois états lisibles, partagés par les deux types d'engagement (retour testing
+// P2.6) : À faire (violet) · Glissé = échéance passée (rouge) · Tenu (vert).
+type EngagementState = { cls: 'late' | 'open' | 'done'; label: string }
+
+function isOverdue(dueISO: string | null): boolean {
+  if (!dueISO) return false
+  const due = new Date(dueISO).getTime()
+  return Number.isFinite(due) && due < Date.now()
+}
+
+function engagementStatus(item: PersonRecommendation): EngagementState {
   if (item.status === 'completed') return { cls: 'done', label: 'Tenu' }
-  if (item.dueAt && new Date(item.dueAt).getTime() < Date.now()) return { cls: 'late', label: 'En retard' }
-  return { cls: 'open', label: 'Ouvert' }
+  if (isOverdue(item.dueAt)) return { cls: 'late', label: 'Glissé' }
+  return { cls: 'open', label: 'À faire' }
+}
+
+/** Échéance encodée en fin de contenu (« … — échéance AAAA-MM-JJ ») par l'analyse :
+ *  on la sort du titre pour l'afficher proprement et en déduire l'état. */
+function memoryDue(content: string): { title: string; dueAt: string | null } {
+  const match = content.match(/\s*—\s*échéance\s+(\d{4}-\d{2}-\d{2})\s*$/)
+  if (!match || match.index === undefined) return { title: content, dueAt: null }
+  return { title: content.slice(0, match.index).trim(), dueAt: match[1] ?? null }
+}
+
+// Preuve « d'où vient l'engagement » : les vrais échanges datés autour de la date
+// de l'engagement (mail envoyé/reçu, réunion). Le corps des emails n'étant pas
+// conservé, on référence les échanges réels, on n'invente aucune citation.
+function engagementSources(data: PersonDetailData, refISO: string | null, limit = 3): PersonHistoryEvent[] {
+  const comms = data.history.filter((event) => event.type === 'email' || event.type === 'meeting')
+  if (comms.length === 0) return []
+  if (!refISO) return comms.slice(0, limit)
+  const ref = new Date(refISO).getTime()
+  return [...comms]
+    .sort((a, b) => Math.abs(new Date(a.occurredAt).getTime() - ref) - Math.abs(new Date(b.occurredAt).getTime() - ref))
+    .slice(0, limit)
+}
+
+function sourceLine(event: PersonHistoryEvent): string {
+  const when = formatDate(event.occurredAt)
+  if (event.type === 'meeting') return `Réunion le ${when}${event.title && event.title !== 'Réunion' ? ` · ${event.title}` : ''}`
+  const verb = event.description ?? 'Échange' // « Email envoyé » / « Email reçu »
+  const subject = event.title && event.title !== event.description ? ` · ${event.title}` : ''
+  return `${verb} le ${when}${subject}`
+}
+
+// Bloc « preuve » commun aux deux types d'engagement.
+function EngagementProof({ data, refISO, verbatim, direction, reasoning }: {
+  data: PersonDetailData
+  refISO: string | null
+  verbatim?: string | null
+  direction?: 'inbound' | 'outbound' | null
+  reasoning?: string | null
+}) {
+  const sources = engagementSources(data, refISO)
+  const verbatimDate = refISO ? formatDate(refISO) : null
+  const verbVerb = direction === 'outbound' ? 'Envoyé' : direction === 'inbound' ? 'Reçu' : null
+  return <>
+    {verbatim
+      ? <p className="eg-proof-q">
+          {(verbVerb || verbatimDate) && <span className="eg-proof-q-src">{[verbVerb, verbatimDate ? `le ${verbatimDate}` : null].filter(Boolean).join(' ')}</span>}
+          « {verbatim} »
+        </p>
+      : reasoning && <p className="eg-proof-why"><span className="eg-proof-why-l">Pourquoi</span>{reasoning}</p>}
+    {sources.length > 0 && <div className="eg-proof-src">
+      <p className="eg-proof-src-h">Échanges à l’origine</p>
+      <ul>{sources.map((event) => <li key={event.id}>{sourceLine(event)}</li>)}</ul>
+    </div>}
+    {!verbatim && <p className="eg-proof-note">Le contenu des emails n’est pas conservé (confidentialité) : Tohu référence les échanges datés d’origine, sans citation reconstituée.</p>}
+  </>
 }
 
 function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommendation; data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, run] = useBusy()
   const status = engagementStatus(item)
+  const [proofOpen, setProofOpen] = useState(false)
   const act = (next: 'completed' | 'dismissed') => run(item.id, async () => {
     await updatePersonRecommendationStatus(data, item.id, userId, next)
     toast(next === 'completed' ? 'Engagement tenu — historisé.' : 'Écarté.')
@@ -548,12 +621,18 @@ function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommend
     <div className="eg-c">
       <p className="eg-t">{item.title}</p>
       <p className="eg-d">{item.recommendedAction || item.justification}</p>
+      {item.dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(item.dueAt)}</p>}
       <p className="eg-src">↳ {item.provenance.sourceLabel}</p>
     </div>
     <div className="eg-b">
+      <button type="button" className="info" aria-expanded={proofOpen} title="D’où vient cet engagement ?" onClick={() => setProofOpen((value) => !value)}>i</button>
       <button type="button" className="ok" title="Tenu" disabled={busy !== null} onClick={() => void act('completed')}>{EG_CHECK}</button>
       <button type="button" className="no" title="Écarter" disabled={busy !== null} onClick={() => void act('dismissed')}>{EG_CROSS}</button>
     </div>
+    {proofOpen && <div className="eg-proof">
+      <div className="eg-proof-meta"><span>{item.provenance.sourceLabel ?? 'Tohu'}</span>{item.provenance.observedAt && <span>· {formatDate(item.provenance.observedAt)}</span>}{item.provenance.confidence !== null && <span>· confiance {item.provenance.confidence}%</span>}</div>
+      <EngagementProof data={data} refISO={item.provenance.observedAt} reasoning={item.justification || item.recommendedAction || 'Déduit de la dynamique relationnelle observée.'} />
+    </div>}
   </div>
 }
 
@@ -561,6 +640,9 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
   const toast = useToast()
   const [busy, run] = useBusy()
   const source = item.sourceType === 'manual' ? item.authorName : item.sourceLabel ?? 'Tohu'
+  const [proofOpen, setProofOpen] = useState(false)
+  const { title, dueAt } = memoryDue(item.content)
+  const status: EngagementState = isOverdue(dueAt) ? { cls: 'late', label: 'Glissé' } : { cls: 'open', label: 'À faire' }
   const resolve = () => run(item.id, async () => {
     await resolvePersonMemoryEntry(data, userId, item.id)
     toast('Engagement tenu — conservé dans la mémoire relationnelle.')
@@ -571,16 +653,24 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
     toast('Engagement supprimé.')
     await refresh()
   })
-  return <div className="eg open">
-    <span className="eg-s">{item.sourceType === 'manual' ? 'Noté' : 'Détecté'}</span>
+  return <div className={`eg ${status.cls}`}>
+    <span className="eg-s">{status.label}</span>
     <div className="eg-c">
-      <p className="eg-t">{item.content}</p>
-      <p className="eg-src">↳ {source} · {formatDate(item.createdAt)}</p>
+      <p className="eg-t">{title}</p>
+      {dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(dueAt)}</p>}
+      <p className="eg-src">↳ {source} · {formatDate(item.sourceOccurredAt ?? item.createdAt)}</p>
     </div>
     <div className="eg-b">
+      <button type="button" className="info" aria-expanded={proofOpen} title="D’où vient cet engagement ?" onClick={() => setProofOpen((value) => !value)}>i</button>
       <button type="button" className="ok" title="Tenu — garder en mémoire" disabled={busy !== null} onClick={resolve}>{EG_CHECK}</button>
       <button type="button" className="no" title="Supprimer" disabled={busy !== null} onClick={remove}>{EG_CROSS}</button>
     </div>
+    {proofOpen && <div className="eg-proof">
+      <div className="eg-proof-meta"><span>{source}</span><span>· {formatDate(item.sourceOccurredAt ?? item.createdAt)}</span><span>· {item.sourceType === 'manual' ? 'Noté manuellement' : 'Détecté automatiquement'}</span></div>
+      {item.sourceType === 'manual'
+        ? <p className="eg-proof-q">{item.content}</p>
+        : <EngagementProof data={data} refISO={item.sourceOccurredAt ?? item.createdAt} verbatim={item.sourceExcerpt} direction={item.sourceDirection} />}
+    </div>}
   </div>
 }
 
@@ -620,6 +710,8 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
           <div className="rel-top">
             <p className="big" style={{ color: scoreTone(relation.score) }}>{relation.score ?? '—'}</p>
             {delta !== null && <span className={`evo ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '↗ +' : '↘ '}{Math.abs(delta)} pts</span>}
+            {relation.score !== null && (relation.totalInteractions < SCORE_CONFIRM_MIN_INTERACTIONS || (relation.confidence !== null && relation.confidence < SCORE_CONFIRM_MIN_CONFIDENCE)) &&
+              <span className="rel-tbc" title={`Score établi sur ${relation.totalInteractions} échange${relation.totalInteractions > 1 ? 's' : ''}${relation.confidence !== null ? ` · confiance ${relation.confidence}%` : ''} — à confirmer avec plus d’historique.`}>à confirmer</span>}
           </div>
           <div className="mini">
             {ageLabel && <span><b>{ageLabel}</b> d’ancienneté</span>}

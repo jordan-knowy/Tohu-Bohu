@@ -292,6 +292,66 @@ export function deriveActions(accounts: ScoredAccount[], signals: HomeSignal[], 
   return [...unique.values()].sort((a, b) => b.priority - a.priority || b.observedAt.localeCompare(a.observedAt))
 }
 
+const COMMITMENT_DUE = /—\s*échéance\s+(\d{4}-\d{2}-\d{2})/
+
+/** Échéance encodée en fin de contenu d'engagement (« … — échéance AAAA-MM-JJ »). */
+export function commitmentDueDate(content: string): string | null {
+  const match = content.match(COMMITMENT_DUE)
+  return match ? match[1] ?? null : null
+}
+
+/** Contenu de l'engagement sans le suffixe d'échéance, pour un titre propre. */
+export function commitmentTitle(content: string): string {
+  return content.replace(/\s*—\s*échéance\s+\d{4}-\d{2}-\d{2}\s*$/, '').trim()
+}
+
+/** Engagement pris non résolu, remonté depuis une fiche personne. */
+export type PendingCommitment = {
+  id: string
+  contactId: string
+  contactName: string
+  accountId: string | null
+  accountName: string | null
+  content: string
+  observedAt: string | null
+  confidence: number | null
+  sourceLabel: string | null
+}
+
+/**
+ * « Éléments en suspens » issus des fiches : engagements pris et non encore
+ * tenus (person_memory_entries non résolus). Un engagement dont l'échéance est
+ * dépassée devient prioritaire (« glissé »). Aucune donnée inventée : titre,
+ * date et échéance proviennent du contenu réellement persisté.
+ */
+export function deriveEngagementActions(commitments: PendingCommitment[], now: Date): HomePriorityAction[] {
+  const nowIso = now.toISOString()
+  return commitments.map((commitment) => {
+    const dueAt = commitmentDueDate(commitment.content)
+    const title = commitmentTitle(commitment.content) || commitment.content
+    const overdue = dueAt !== null && new Date(dueAt).getTime() < now.getTime()
+    const ageDays = daysSince(commitment.observedAt, now)
+    return {
+      actionId: `engagement:${commitment.id}`,
+      type: 'engagement' as const,
+      title: overdue ? `Engagement glissé — ${title}` : `Engagement à tenir — ${title}`,
+      explanation: overdue
+        ? `Échéance dépassée${dueAt ? ` (${dueAt})` : ''} avec ${commitment.contactName}. À traiter ou à clôturer.`
+        : `Promis dans les échanges avec ${commitment.contactName}${dueAt ? ` · échéance ${dueAt}` : ''}. Toujours ouvert.`,
+      priority: priorityOf({ urgency: overdue ? 34 : 16, impact: 22, confidence: commitment.confidence, ageDays: overdue ? 0 : ageDays }),
+      accountId: commitment.accountId,
+      accountName: commitment.accountName,
+      personId: commitment.contactId,
+      personName: commitment.contactName,
+      source: commitment.sourceLabel ?? 'Engagement détecté',
+      observedAt: commitment.observedAt ?? nowIso,
+      confidence: commitment.confidence,
+      sourceSignalId: null,
+      recommended: overdue ? 'Traiter ou clôturer cet engagement' : 'Faire avancer cet engagement',
+    }
+  })
+}
+
 /** Digest « depuis ta dernière visite » — uniquement des faits datés persistés. */
 export function buildDigest(input: {
   since: string | null

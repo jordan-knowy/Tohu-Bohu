@@ -452,6 +452,9 @@ export function buildMemoryEntries(memoryRows: Row[], profileNames: Map<string, 
     visibility: text(row.visibility) ?? 'workspace',
     resolvedAt: text(row.resolved_at),
     createdAt: text(row.created_at) ?? new Date().toISOString(),
+    sourceExcerpt: text(row.source_excerpt),
+    sourceOccurredAt: text(row.source_occurred_at) ?? text(row.observed_at),
+    sourceDirection: row.source_direction === 'inbound' || row.source_direction === 'outbound' ? row.source_direction : null,
   }))
 }
 

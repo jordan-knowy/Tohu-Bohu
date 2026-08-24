@@ -18,6 +18,8 @@ import {
   buildDigest,
   daysSince,
   deriveActions,
+  deriveEngagementActions,
+  type PendingCommitment,
   type ScoredAccount,
 } from './priority'
 import type {
@@ -471,10 +473,47 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
       .map((row) => mapBehavioralSignal(row, feedback, companyNames)),
   ].sort((a, b) => b.observedAt.localeCompare(a.observedAt)).slice(0, 12)
 
+  // Éléments en suspens issus des fiches (retour testing P2.4) : engagements pris
+  // et non encore résolus, remontés sur les personnes du portefeuille. On exclut
+  // les contacts d'un domaine interne (Tier 1) et ne garde que les contacts suivis.
+  const trackedContactIds = new Set(contacts.map((contact) => String(contact.id)))
+  const commitmentsData = await safeQuery<DbRow[]>(
+    client.from('person_memory_entries')
+      .select('id,contact_id,content,observed_at,source_label,confidence,contacts(id,full_name,company_id)')
+      .eq('organization_id', organizationId)
+      .in('entry_type', ['commitment', 'decision', 'engagement'])
+      .is('resolved_at', null)
+      .order('observed_at', { ascending: false, nullsFirst: false })
+      .limit(80),
+    'table person_memory_entries (engagements en suspens)', degradedReasons,
+  )
+  const pendingCommitments: PendingCommitment[] = rows(commitmentsData).flatMap((row) => {
+    const contactId = str(row.contact_id)
+    const content = str(row.content)
+    if (!contactId || !content || !trackedContactIds.has(contactId)) return []
+    const contactRow = record(row.contacts)
+    const companyId = str(contactRow.company_id)
+    if (companyId !== null && internalCompanyIds.has(companyId)) return []
+    return [{
+      id: String(row.id),
+      contactId,
+      contactName: str(contactRow.full_name) ?? 'Personne',
+      accountId: companyId,
+      accountName: companyId !== null ? companyNames.get(companyId) ?? null : null,
+      content,
+      observedAt: str(row.observed_at),
+      confidence: num(row.confidence),
+      sourceLabel: str(row.source_label),
+    }]
+  })
+
   // Actions du jour : dérivées de faits persistés, filtrées par l'état utilisateur.
   const actionStates = new Map<string, DbRow>()
   for (const row of rows(actionStatesData)) actionStates.set(String(row.action_id), row)
-  const allActions = deriveActions(scoredAccounts, signals, now)
+  const allActions = [
+    ...deriveActions(scoredAccounts, signals, now),
+    ...deriveEngagementActions(pendingCommitments, now),
+  ].sort((a, b) => b.priority - a.priority || b.observedAt.localeCompare(a.observedAt))
   const priorityActions = allActions.filter((action) => {
     const state = actionStates.get(action.actionId)
     if (!state) return true

@@ -94,6 +94,7 @@ export type HomeActionType =
   | 'couverture'
   | 'validation'
   | 'opportunite'
+  | 'engagement'
 
 export type HomePriorityAction = {
   /** Identifiant déterministe (`type:entityId`) — permet la persistance d'état. */

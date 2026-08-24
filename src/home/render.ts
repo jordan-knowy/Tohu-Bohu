@@ -101,6 +101,7 @@ const ACTION_LABELS: Record<string, string> = {
   couverture: 'Couverture',
   validation: 'Validation',
   opportunite: 'Opportunité',
+  engagement: 'Engagement',
 }
 
 const SIGNAL_EMOJI: Array<[RegExp, string]> = [
@@ -501,14 +502,14 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
       <div class="home-cockpit-main">
         ${scoreRowMarkup(data)}
         ${teamVisionMarkup(data)}
-        <section class="recommendations-panel" aria-label="Recommandations">
+        <section class="recommendations-panel" aria-label="Éléments en suspens">
           <div class="section-heading">
             <span class="section-heading-icon" aria-hidden="true">✦</span>
-            <div><h2>Recommandations</h2><p>Actions réelles, priorisées à partir des signaux et interactions</p></div>
-            <div class="recommendation-filters" role="group" aria-label="Filtrer les recommandations">
-              <button class="on" data-action-filter="all">Toutes</button>
-              <button data-action-filter="relationship">Relationnelles</button>
-              <button data-action-filter="commercial">Commerciales</button>
+            <div><h2>Éléments en suspens</h2><p>Ce qui attend une action de ta part, agrégé depuis tes comptes et tes personnes</p></div>
+            <div class="recommendation-filters" role="group" aria-label="Filtrer les éléments en suspens">
+              <button class="on" data-action-filter="all">Tous</button>
+              <button data-action-filter="relationship">Relationnels</button>
+              <button data-action-filter="commercial">Commerciaux</button>
             </div>
           </div>
           <div class="krs-stack" id="home-actions">${actionsMarkup(data.priorityActions)}</div>
@@ -827,7 +828,7 @@ function bindCockpit(ctx: HomeContext, data: HomeDashboardData): void {
   }))
   root.querySelectorAll<HTMLButtonElement>('[data-action-filter]').forEach((filter) => filter.addEventListener('click', () => {
     const selected = filter.dataset.actionFilter ?? 'all'
-    const relationship = new Set(['relance', 'risque', 'couverture', 'validation'])
+    const relationship = new Set(['relance', 'risque', 'couverture', 'validation', 'engagement'])
     const commercial = new Set(['mouvement', 'opportunite'])
     root.querySelectorAll<HTMLButtonElement>('[data-action-filter]').forEach((button) => button.classList.toggle('on', button === filter))
     root.querySelectorAll<HTMLElement>('#home-actions .krs-card').forEach((card) => {

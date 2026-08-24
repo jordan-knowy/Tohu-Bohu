@@ -7,6 +7,7 @@ import { V48PersonProfileView } from '../../person-detail/V48PersonViews'
 import type { PersonDetailData, PersonSourceStatus } from '../../person-detail/types'
 import { MIN_BEHAVIOR_INTERACTIONS, MIN_COGNITIVE_PROFILE_INTERACTIONS } from '../../person-detail/types'
 import { confidenceLevel } from '../../person-detail/ui'
+import { FicheSkeleton } from '../../components/FicheSkeleton'
 import { getProfile, getResponsibleBehaviorProfile, listManagedAccounts, type Account, type ProfileRow, type UserBehaviorProfile } from '../../services/data'
 
 type PageContext = { session: Session; workspaceId: string }
@@ -152,7 +153,7 @@ export default function ProfilePage({ context }: { context: PageContext }) {
 
   const selfDetail = useMemo(() => state ? buildSelfDetail(state.profile, state.behavior, context.workspaceId) : null, [state, context.workspaceId])
   if (error) return <div className="ra-state error"><h1>Impossible de charger votre profil</h1><p>{error}</p></div>
-  if (!state || !selfDetail) return <div className="ra-skeleton" aria-label="Chargement du profil"><i /><i /><i /></div>
+  if (!state || !selfDetail) return <FicheSkeleton label="Chargement du profil…" />
   const { profile, behavior, accounts } = state
   const email = context.session.user.email ?? 'Email indisponible'
 

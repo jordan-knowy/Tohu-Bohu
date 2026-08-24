@@ -628,7 +628,7 @@ async function graphDeltaMessages(token: string, folder: 'Inbox' | 'SentItems', 
 // datés « de part et d'autre » (→ « Engagements pris ») et les moments qui
 // comptent, jalons typés friction/reinforce/milestone (→ historique enrichi).
 
-type ExtractedEngagement = { text: string; owner: 'contact' | 'nous'; due_date: string | null; confidence: number }
+type ExtractedEngagement = { text: string; owner: 'contact' | 'nous'; due_date: string | null; confidence: number; source_quote: string | null; source_date: string | null; source_direction: 'inbound' | 'outbound' | null }
 type ExtractedMoment = { title: string; summary: string | null; occurred_date: string | null; impact: 'friction' | 'reinforce' | 'milestone'; confidence: number }
 type ExtractedContext = { engagements: ExtractedEngagement[]; moments: ExtractedMoment[] }
 
@@ -645,6 +645,9 @@ const CONTEXT_RESPONSE_FORMAT = {
           owner: { type: 'string', enum: ['contact', 'nous'] },
           due_date: NULLABLE_STRING_SCHEMA,
           confidence: { type: 'number', minimum: 0, maximum: 100 },
+          source_quote: NULLABLE_STRING_SCHEMA,
+          source_date: NULLABLE_STRING_SCHEMA,
+          source_direction: NULLABLE_STRING_SCHEMA,
         }),
       },
       moments: {
@@ -671,13 +674,18 @@ async function extractContext(name: string, excerpts: string[]): Promise<Extract
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey || !excerpts.length) return empty
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
-  const prompt = `À partir des échanges (emails et passages de réunion) avec ${name}, relève deux choses, uniquement à partir de faits réellement présents dans les extraits (jamais inventé, jamais une généralité, jamais de citation mot pour mot).
+  const prompt = `À partir des échanges (emails et passages de réunion) avec ${name}, relève deux choses, uniquement à partir de faits réellement présents dans les extraits (jamais inventé, jamais une généralité).
+
+Chaque extrait d'email commence par un en-tête « [Email · reçu|envoyé · AAAA-MM-JJ] » : « reçu » = message de ${name}, « envoyé » = message de nous ; la date est celle de l'email.
 
 1) ENGAGEMENTS ("engagements") — promesses/actions datées que ${name} ("contact") OU nous ("nous") s'est engagé à faire :
 - "text" : reformulation courte et actionnable (ex. « Envoyer le devis mis à jour », « Rappeler jeudi pour valider le périmètre ») ;
 - "owner" : "contact" ou "nous" ;
 - "due_date" : échéance AAAA-MM-JJ si mentionnée, sinon null ;
-- "confidence" : 0 à 100.
+- "confidence" : 0 à 100 ;
+- "source_quote" : la phrase EXACTE, copiée MOT POUR MOT depuis un extrait, qui prouve l'engagement (recopie à l'identique, sans reformuler, ≤ 240 caractères). null si aucune phrase précise ne le prouve ;
+- "source_date" : la date AAAA-MM-JJ de l'en-tête de l'extrait d'où provient "source_quote" ; null si inconnue ;
+- "source_direction" : "reçu" ou "envoyé" selon l'en-tête de l'extrait d'où provient "source_quote" ; null si inconnu.
 
 2) MOMENTS QUI COMPTENT ("moments") — les jalons observables de la relation, en couvrant AUTANT les avancées que les tensions (ne te limite pas aux moments positifs). Vise 6 à 12 moments quand le corpus le permet, répartis dans le temps :
 - cherche ACTIVEMENT les frictions, souvent sous-détectées : échéance manquée, relance restée sans réponse, délai, désaccord, insatisfaction exprimée, engagement non tenu, ton qui se tend ;
@@ -690,7 +698,7 @@ async function extractContext(name: string, excerpts: string[]): Promise<Extract
 
 S'il n'y a rien de clair pour une catégorie, renvoie une liste vide pour celle-ci.
 
-Réponds uniquement avec ce JSON strict : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
+Réponds uniquement avec ce JSON strict : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0,"source_quote":null,"source_date":null,"source_direction":null}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
 
 Extraits :\n${corpus}`
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -708,16 +716,29 @@ Extraits :\n${corpus}`
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
   const parsed = JSON.parse(openRouterContent(data)) as { engagements?: unknown; moments?: unknown }
+  // Anti-hallucination : on ne conserve « source_quote » que si la phrase apparaît
+  // réellement dans le corpus analysé (comparaison insensible à la casse et aux
+  // espaces). Sinon on n'affiche aucune citation — jamais de verbatim reconstitué.
+  const normText = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim()
+  const corpusNorm = normText(corpus)
   const engagements = (Array.isArray(parsed.engagements) ? parsed.engagements : [])
     .map((raw) => asRecord(raw))
     .filter((item) => typeof item.text === 'string' && String(item.text).trim().length > 3)
     .slice(0, 20)
-    .map((item) => ({
-      text: String(item.text).trim().slice(0, 300),
-      owner: item.owner === 'nous' ? 'nous' as const : 'contact' as const,
-      due_date: typeof item.due_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(item.due_date) ? String(item.due_date).slice(0, 10) : null,
-      confidence: Number.isFinite(Number(item.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : 50,
-    }))
+    .map((item) => {
+      const rawQuote = typeof item.source_quote === 'string' ? item.source_quote.trim().replace(/^[«"']\s*|\s*[»"']$/g, '').slice(0, 240) : ''
+      const quoteVerified = rawQuote.length >= 8 && corpusNorm.includes(normText(rawQuote))
+      const dir = typeof item.source_direction === 'string' ? item.source_direction.toLowerCase() : ''
+      return {
+        text: String(item.text).trim().slice(0, 300),
+        owner: item.owner === 'nous' ? 'nous' as const : 'contact' as const,
+        due_date: typeof item.due_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(item.due_date) ? String(item.due_date).slice(0, 10) : null,
+        confidence: Number.isFinite(Number(item.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : 50,
+        source_quote: quoteVerified ? rawQuote : null,
+        source_date: quoteVerified && typeof item.source_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(item.source_date) ? String(item.source_date).slice(0, 10) : null,
+        source_direction: !quoteVerified ? null : /reçu|recu|inbound/.test(dir) ? 'inbound' as const : /envoy|outbound/.test(dir) ? 'outbound' as const : null,
+      }
+    })
   const moments = (Array.isArray(parsed.moments) ? parsed.moments : [])
     .map((raw) => asRecord(raw))
     .filter((item) => typeof item.title === 'string' && String(item.title).trim().length > 3)
@@ -1072,7 +1093,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         || trackedDomains.has(corporateDomain(String(primaryContact.email ?? '')) ?? '')
         || primaryContact.id === manualContactId
       )) {
-        contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email]\n${message.body}`])
+        contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email · ${message.direction === 'inbound' ? 'reçu' : 'envoyé'} · ${String(message.sentAt).slice(0, 10)}]\n${message.body}`])
       }
     })
 
@@ -1232,6 +1253,11 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
                 confidence: item.confidence,
                 inference_level: 'strong_inference',
                 observed_at: observedAt,
+                // Preuve verbatim (Part B) : phrase source exacte + date/sens du
+                // message d'origine, uniquement si vérifiée dans le corpus.
+                source_excerpt: item.source_quote,
+                source_occurred_at: item.source_date ?? observedAt,
+                source_direction: item.source_direction,
               }))
             if (fresh.length) {
               const { error: memoryError } = await supabase.from('person_memory_entries').insert(fresh)

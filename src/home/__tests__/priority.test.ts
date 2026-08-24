@@ -4,9 +4,13 @@ import {
   atRiskAccounts,
   bestAccounts,
   buildDigest,
+  commitmentDueDate,
+  commitmentTitle,
   deriveActions,
+  deriveEngagementActions,
   priorityOf,
   riskScore,
+  type PendingCommitment,
   type ScoredAccount,
 } from '../priority'
 import { relationLevel, type HomeSignal } from '../types'
@@ -200,5 +204,49 @@ describe('buildDigest — depuis la dernière visite (bloc 2)', () => {
     expect(digest?.newSignals).toBe(1)
     expect(digest?.jobChanges).toBe(1)
     expect(digest?.newPeople).toBe(1)
+  })
+})
+
+function commitment(overrides: Partial<PendingCommitment>): PendingCommitment {
+  return {
+    id: 'c1',
+    contactId: 'p1',
+    contactName: 'Alexandra',
+    accountId: 'a1',
+    accountName: 'CSJC',
+    content: 'Envoyer le devis mis à jour',
+    observedAt: '2026-07-10T00:00:00Z',
+    confidence: 80,
+    sourceLabel: 'Tohu · engagement détecté',
+    ...overrides,
+  }
+}
+
+describe('commitmentDueDate / commitmentTitle — échéance encodée dans le contenu (P2.4)', () => {
+  it('extrait l’échéance et nettoie le titre', () => {
+    const content = 'Envoyer le devis mis à jour — échéance 2026-08-30'
+    expect(commitmentDueDate(content)).toBe('2026-08-30')
+    expect(commitmentTitle(content)).toBe('Envoyer le devis mis à jour')
+  })
+  it('renvoie null quand aucune échéance n’est encodée', () => {
+    expect(commitmentDueDate('Rappeler jeudi')).toBeNull()
+    expect(commitmentTitle('Rappeler jeudi')).toBe('Rappeler jeudi')
+  })
+})
+
+describe('deriveEngagementActions — éléments en suspens issus des fiches (P2.4)', () => {
+  it('mappe un engagement ouvert en action de type engagement, rattachée à la personne', () => {
+    const action = deriveEngagementActions([commitment({})], NOW)[0]!
+    expect(action.type).toBe('engagement')
+    expect(action.actionId).toBe('engagement:c1')
+    expect(action.personId).toBe('p1')
+    expect(action.accountId).toBe('a1')
+    expect(action.title).toContain('à tenir')
+  })
+  it('priorise un engagement glissé (échéance dépassée) au-dessus d’un engagement ouvert', () => {
+    const overdue = deriveEngagementActions([commitment({ id: 'over', content: 'Relancer — échéance 2026-06-01' })], NOW)[0]!
+    const open = deriveEngagementActions([commitment({ id: 'open', content: 'Relancer — échéance 2026-12-01' })], NOW)[0]!
+    expect(overdue.title).toContain('glissé')
+    expect(overdue.priority).toBeGreaterThan(open.priority)
   })
 })
