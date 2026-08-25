@@ -42,6 +42,8 @@ export type StartTranscriptInput = {
   title?: string
   meetingDate?: string | null
   consent: boolean
+  /** Contact ciblé (fiche d'origine) : les engagements/moments extraits lui sont rattachés. */
+  contactId?: string | null
 }
 
 function hasAcceptedExtension(name: string): boolean {
@@ -58,7 +60,7 @@ function safeFileName(name: string): string {
  * l'analyse se poursuit côté serveur et se suit via `fetchTranscriptJob`.
  */
 export async function startTranscriptIngest(input: StartTranscriptInput): Promise<string> {
-  const { file, organizationId, userId, title, meetingDate, consent } = input
+  const { file, organizationId, userId, title, meetingDate, consent, contactId } = input
   if (!hasAcceptedExtension(file.name)) {
     throw new Error('Format non supporté — dépose un fichier .txt, .vtt ou .srt.')
   }
@@ -86,6 +88,7 @@ export async function startTranscriptIngest(input: StartTranscriptInput): Promis
       title: title?.trim() || null,
       meeting_date: meetingDate || null,
       consent,
+      contact_id: contactId || null,
     },
   }).select('id').single()
   if (jobError || !jobRow) throw new Error(jobError?.message ?? 'Job non initialisé.')

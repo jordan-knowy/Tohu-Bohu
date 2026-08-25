@@ -228,41 +228,56 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
 }
 
 // ── Stratégie de compte (carrousel) ─────────────────────────────────────────
-const PAGE = 3
+const PAGE = 5
+type Rec = AccountDetailData['recommendations'][number]
+
+// Une carte action = mouvement/engagement. Le « i » déplie la preuve (canal ·
+// date · pourquoi), comme sur la fiche personne (readme : preuves sur les deux fiches).
+function StrategyCard({ rec, busy, act }: { rec: Rec; busy: boolean; act: (status: 'completed' | 'dismissed') => void }) {
+  const [proof, setProof] = useState(false)
+  return (
+    <article className="mv">
+      <span className="mv-s">{rec.category}</span>
+      <div className="mv-c">
+        <div className="mv-h"><p className="mv-t">{rec.title}</p><span className="mv-p">prio {rec.priority}</span></div>
+        <p className="mv-d">{rec.justification}</p>
+        {rec.recommendedAction && <p className="mv-d"><b style={{ color: 'var(--ink)' }}>{rec.recommendedAction}</b></p>}
+        <p className="mv-src">↳ {rec.provenance.sourceLabel}{rec.personName ? ` · ${rec.personName}` : ''}</p>
+        {proof && <div className="mv-proof">
+          <div className="mv-proof-meta"><span>{rec.provenance.sourceLabel}</span>{rec.provenance.observedAt && <span>· {dateLabel(rec.provenance.observedAt)}</span>}{rec.provenance.confidence !== null && <span>· confiance {rec.provenance.confidence}%</span>}</div>
+          <p className="mv-proof-q"><span className="mv-proof-l">Pourquoi</span>{rec.justification || rec.recommendedAction || 'Déduit de la dynamique observée sur le compte.'}</p>
+        </div>}
+      </div>
+      <div className="mv-b">
+        <button className="mv-i" aria-expanded={proof} title="D’où vient cette action ?" onClick={() => setProof((v) => !v)}>i</button>
+        <button className="mv-ok" disabled={busy} title="Fait" onClick={() => act('completed')}>✓</button>
+        <button className="mv-no" disabled={busy} title="Écarter" onClick={() => act('dismissed')}>×</button>
+      </div>
+    </article>
+  )
+}
+
 function StrategySection({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
   const open = useMemo(() => data.recommendations.filter((r) => r.status === 'open' || r.status === 'postponed').sort((a, b) => b.priority - a.priority), [data.recommendations])
   const [page, setPage] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const pages = Math.max(1, Math.ceil(open.length / PAGE))
   const current = open.slice(page * PAGE, page * PAGE + PAGE)
-  const act = async (id: string, status: 'completed' | 'dismissed' | 'postponed') => {
+  const act = (id: string) => async (status: 'completed' | 'dismissed') => {
     setBusy(id)
     try { await updateRecommendationStatus(data, id, userId, status); await refresh() } finally { setBusy(null) }
   }
   return (
     <section className="sec">
-      <div className="sec-h">{StrategyIcon}<p className="sec-t">Stratégie de compte</p></div>
+      <div className="sec-h">{StrategyIcon}<p className="sec-t">Stratégie de compte</p><span className="cnt"><b>{open.length}</b> action{open.length > 1 ? 's' : ''}</span></div>
       <div className="sec-b">
         {open.length ? <>
           <div className="mvs">
-            {current.map((r) => <article className="mv" key={r.id}>
-              <span className="mv-s">{r.category}</span>
-              <div className="mv-c">
-                <div className="mv-h"><p className="mv-t">{r.title}</p><span className="mv-p">P{r.priority}</span></div>
-                <p className="mv-d">{r.justification}</p>
-                {r.recommendedAction && <p className="mv-d"><b style={{ color: 'var(--ink)' }}>{r.recommendedAction}</b></p>}
-                <p className="mv-src">↳ {r.provenance.sourceLabel}{r.personName ? ` · ${r.personName}` : ''}</p>
-                <div className="mv-b">
-                  <button disabled={busy === r.id} onClick={() => void act(r.id, 'completed')}>✓ Fait</button>
-                  <button disabled={busy === r.id} onClick={() => void act(r.id, 'dismissed')}>× Pas juste</button>
-                  <button disabled={busy === r.id} onClick={() => void act(r.id, 'postponed')}>Reporter</button>
-                </div>
-              </div>
-            </article>)}
+            {current.map((r) => <StrategyCard key={r.id} rec={r} busy={busy === r.id} act={(status) => void act(r.id)(status)} />)}
           </div>
           {pages > 1 && <div className="mvp">
             <button className="mvp-b" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>← Précédent</button>
-            <span className="mvp-i">{page + 1} / {pages}</span>
+            <span className="mvp-i">{page * PAGE + 1}–{Math.min(open.length, page * PAGE + PAGE)} sur {open.length}</span>
             <button className="mvp-b" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Suivant →</button>
           </div>}
         </> : <Empty>Aucune recommandation stratégique ouverte n’est étayée actuellement.</Empty>}

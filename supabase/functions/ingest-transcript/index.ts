@@ -38,6 +38,88 @@ const MAX_TRANSCRIPT_CHARS = 1_000_000
 type ParsedTranscript = { transcriptText: string; speakers: string[]; speakerMap: Record<string, string> }
 type ContactRow = { id: string; full_name: string | null; email: string | null }
 
+// ── Extraction engagements + moments depuis le transcript ──────────────────
+// Le transcript est stocké (meeting_transcripts) : citer un verbatim est donc
+// légitime. Un engagement n'est conservé que si sa phrase source apparaît
+// réellement dans le transcript (garde-fou anti-invention).
+type TranscriptEngagement = { content: string; confidence: number; due_date: string | null; source_quote: string | null }
+type TranscriptMoment = { title: string; summary: string | null; occurred_date: string | null; impact: 'friction' | 'reinforce' | 'milestone'; confidence: number }
+
+function normCommitment(value: string): string {
+  return value.toLowerCase().replace(/^nous\s*:\s*/, '').replace(/\s+—\s+échéance.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+async function extractTranscriptContext(name: string, transcriptText: string): Promise<{ engagements: TranscriptEngagement[]; moments: TranscriptMoment[] }> {
+  const empty = { engagements: [] as TranscriptEngagement[], moments: [] as TranscriptMoment[] }
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+  if (!apiKey || !transcriptText.trim()) return empty
+  const corpus = transcriptText.slice(0, 16000)
+  const prompt = `À partir de ce transcript de réunion avec ${name}, relève deux choses, uniquement à partir de faits réellement présents (jamais inventé).
+
+1) ENGAGEMENTS — promesses/actions que ${name} ("contact") OU nous ("nous") s'est engagé à faire :
+- "text" : reformulation courte et actionnable ;
+- "owner" : "contact" ou "nous" ;
+- "due_date" : échéance AAAA-MM-JJ si mentionnée, sinon null ;
+- "confidence" : 0 à 100 ;
+- "source_quote" : la phrase EXACTE du transcript, copiée mot pour mot, qui prouve l'engagement (≤ 240 caractères) ; null si aucune.
+
+2) MOMENTS QUI COMPTENT — jalons observables (avancées ET tensions), 4 à 10 :
+- "title" court et factuel ; "summary" une phrase ou null ; "occurred_date" AAAA-MM-JJ ou null ;
+- "impact" : "friction" | "reinforce" | "milestone" ; "confidence" 0 à 100.
+
+Réponds uniquement en JSON : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0,"source_quote":null}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
+
+Transcript :\n${corpus}`
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Title': 'Tohu Transcript Context Extraction' },
+    body: JSON.stringify({
+      model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+  if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
+  const data = await response.json()
+  const raw = asRecord(data).choices
+  const content = Array.isArray(raw) ? String(asRecord(asRecord(raw[0]).message).content ?? '{}') : '{}'
+  const parsed = asRecord(JSON.parse(content))
+  const normText = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim()
+  const corpusNorm = normText(corpus)
+  const engagements = (Array.isArray(parsed.engagements) ? parsed.engagements : [])
+    .map((entry) => asRecord(entry))
+    .filter((entry) => typeof entry.text === 'string' && String(entry.text).trim().length > 3)
+    .slice(0, 20)
+    .map((entry) => {
+      const owner = entry.owner === 'nous' ? 'nous' : 'contact'
+      const text = String(entry.text).trim().slice(0, 300)
+      const dueDate = typeof entry.due_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(entry.due_date) ? String(entry.due_date).slice(0, 10) : null
+      const rawQuote = typeof entry.source_quote === 'string' ? entry.source_quote.trim().replace(/^[«"']\s*|\s*[»"']$/g, '').slice(0, 240) : ''
+      const quoteVerified = rawQuote.length >= 8 && corpusNorm.includes(normText(rawQuote))
+      const base = owner === 'nous' ? `Nous : ${text}` : text
+      return {
+        content: dueDate ? `${base} — échéance ${dueDate}` : base,
+        confidence: Number.isFinite(Number(entry.confidence)) ? Math.max(0, Math.min(100, Number(entry.confidence))) : 50,
+        due_date: dueDate,
+        source_quote: quoteVerified ? rawQuote : null,
+      }
+    })
+  const moments = (Array.isArray(parsed.moments) ? parsed.moments : [])
+    .map((entry) => asRecord(entry))
+    .filter((entry) => typeof entry.title === 'string' && String(entry.title).trim().length > 3)
+    .slice(0, 12)
+    .map((entry) => ({
+      title: String(entry.title).trim().slice(0, 200),
+      summary: typeof entry.summary === 'string' && String(entry.summary).trim() ? String(entry.summary).trim().slice(0, 400) : null,
+      occurred_date: typeof entry.occurred_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(entry.occurred_date) ? String(entry.occurred_date).slice(0, 10) : null,
+      impact: entry.impact === 'friction' ? 'friction' as const : entry.impact === 'reinforce' ? 'reinforce' as const : 'milestone' as const,
+      confidence: Number.isFinite(Number(entry.confidence)) ? Math.max(0, Math.min(100, Number(entry.confidence))) : 50,
+    }))
+  return { engagements, moments }
+}
+
 // ── Parsing des formats de transcript ─────────────────────────────────────
 
 function secondsToClock(totalSeconds: number): string {
@@ -304,6 +386,69 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 5) Engagements pris + moments qui comptent, rattachés au contact ciblé
+    // (fiche d'origine si fournie, sinon le premier intervenant reconnu).
+    let commitmentsAdded = 0
+    const targetContactId = String(payload.contact_id ?? '')
+    const targetContact = analysable.find((r) => r.contact.id === targetContactId)?.contact ?? analysable[0]?.contact ?? null
+    if (targetContact) {
+      await setStep('Extraction des engagements', 92)
+      try {
+        const ctx = await extractTranscriptContext(targetContact.full_name ?? 'Contact', parsed.transcriptText)
+        if (ctx.engagements.length) {
+          const { data: existing } = await admin.from('person_memory_entries')
+            .select('content').eq('organization_id', organizationId).eq('contact_id', targetContact.id).eq('entry_type', 'commitment')
+          const seen = new Set((existing ?? []).map((r) => normCommitment(String(r.content ?? ''))))
+          const fresh = ctx.engagements
+            .filter((e) => { const key = normCommitment(e.content); if (seen.has(key)) return false; seen.add(key); return true })
+            .map((e) => ({
+              organization_id: organizationId,
+              contact_id: targetContact.id,
+              author_user_id: job.user_id,
+              entry_type: 'commitment',
+              content: e.content,
+              visibility: 'workspace',
+              processing_status: 'ready',
+              source_type: 'manual_transcript_analysis',
+              source_label: 'Tohu · transcript',
+              confidence: e.confidence,
+              inference_level: 'strong_inference',
+              observed_at: startsAt,
+              source_excerpt: e.source_quote,
+              source_occurred_at: startsAt,
+              source_direction: null,
+            }))
+          if (fresh.length) {
+            const { error: memErr } = await admin.from('person_memory_entries').insert(fresh)
+            if (memErr) analysisErrors.push(`engagements: ${memErr.message}`); else commitmentsAdded = fresh.length
+          }
+        }
+        if (ctx.moments.length) {
+          const { data: existingMoments } = await admin.from('person_key_moments')
+            .select('title').eq('organization_id', organizationId).eq('contact_id', targetContact.id)
+          const seenM = new Set((existingMoments ?? []).map((r) => normCommitment(String(r.title ?? ''))))
+          const freshM = ctx.moments
+            .filter((m) => { const key = normCommitment(m.title); if (seenM.has(key)) return false; seenM.add(key); return true })
+            .map((m) => ({
+              organization_id: organizationId,
+              contact_id: targetContact.id,
+              occurred_at: m.occurred_date ? new Date(m.occurred_date).toISOString() : startsAt,
+              title: m.title,
+              summary: m.summary,
+              impact: m.impact,
+              confidence: m.confidence,
+              source_label: 'Tohu · transcript',
+            }))
+          if (freshM.length) {
+            const { error: momErr } = await admin.from('person_key_moments').insert(freshM)
+            if (momErr) analysisErrors.push(`moments: ${momErr.message}`)
+          }
+        }
+      } catch (error) {
+        analysisErrors.push(`engagements: ${errorMessage(error)}`)
+      }
+    }
+
     const matched = resolved.filter((r): r is { speaker: string; contact: ContactRow } => Boolean(r.contact))
     const unmatched = resolved.filter((r) => !r.contact).map((r) => r.speaker)
     const result = {
@@ -311,6 +456,7 @@ Deno.serve(async (req) => {
       speakers_total: parsed.speakers.length,
       participants_matched: matched.length,
       profiles_updated: profilesUpdated,
+      commitments_added: commitmentsAdded,
       matched_participants: matched.map((r) => ({ contact_id: r.contact.id, name: r.contact.full_name ?? r.speaker })),
       speakers_unmatched: unmatched,
       analysis_errors: analysisErrors,

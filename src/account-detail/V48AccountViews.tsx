@@ -4,7 +4,7 @@ import { initials } from '../lib/auth'
 import { saveSignalFeedback } from '../services/data'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
 import { addAccountNote, updateRecommendationStatus } from './service'
-import type { AccountDetailData, AccountPerson } from './types'
+import type { AccountDetailData, AccountPerson, AccountSignal } from './types'
 
 type ViewProps = {
   data: AccountDetailData
@@ -183,17 +183,60 @@ function AccountInsight({ data }: { data: AccountDetailData }) {
   </div>
 }
 
+// Rôle d'interlocuteur → libellé maquette (Décideur, Filtre, Prescripteur, Utilisateur…).
+const ROLE_LABELS: Record<string, string> = {
+  decision_maker: 'Décideur', decideur: 'Décideur', economic_buyer: 'Décideur',
+  gatekeeper: 'Filtre · Gatekeeper', filtre: 'Filtre · Gatekeeper',
+  influencer: 'Prescripteur · Influenceur', prescripteur: 'Prescripteur · Influenceur', prescriber: 'Prescripteur · Influenceur',
+  user: 'Utilisateur', utilisateur: 'Utilisateur', end_user: 'Utilisateur',
+  champion: 'Champion', sponsor: 'Sponsor', buyer: 'Acheteur', technical: 'Référent technique',
+}
+function roleLabel(person: AccountPerson): string {
+  const raw = person.decisionRole || person.relationshipRole || person.organizationalRole
+  if (!raw) return 'Interlocuteur'
+  return ROLE_LABELS[raw.toLowerCase()] ?? raw.replaceAll('_', ' ')
+}
+
+// Catégorie d'un signal → tag + tonalité (couleur du liseré), dérivée du type réel.
+function signalCategory(signal: AccountSignal): { tag: string; tone: 'friction' | 'positive' | 'external' | 'internal' | 'context' } {
+  const hay = `${signal.type} ${signal.provenance.sourceType} ${signal.impact ?? ''}`.toLowerCase()
+  if (/friction|risk|risque|churn|silence|retard|perdu|tension|deadline|échéance|impayé|litige/.test(hay)) return { tag: 'Friction', tone: 'friction' }
+  if (/opportun|reprise|growth|win|renforce|levée|funding|expansion|signature/.test(hay)) return { tag: 'Opportunité', tone: 'positive' }
+  if (/pappers|rcs|registre|news|press|monitoring|veille|mobility|job|externe|linkedin|nomination|gouvernance/.test(hay)) return { tag: 'Externe', tone: 'external' }
+  if (isBehavioralSignal(signal.type)) return { tag: 'Interne', tone: 'internal' }
+  return { tag: 'Contexte', tone: 'context' }
+}
+
+// Action contextuelle : n'apparaît que si une vraie URL source existe.
+function signalAction(signal: AccountSignal): { label: string; url: string } | null {
+  const url = signal.provenance.sourceUrl
+  if (!url) return null
+  const label = signal.provenance.sourceLabel ?? ''
+  if (/pappers|rcs/i.test(label)) return { label: 'Ouvrir la fiche Pappers →', url }
+  if (/outlook|gmail|mail|email/i.test(label)) return { label: 'Ouvrir le mail →', url }
+  return { label: 'Ouvrir la source →', url }
+}
+
 function OrgGrid({ people, navigate }: { people: AccountPerson[]; navigate: (path: string) => void }) {
-  const shown = useMemo(() => [...people].sort((a, b) => (b.exchangeShare ?? -1) - (a.exchangeShare ?? -1)), [people])
+  const [expanded, setExpanded] = useState(false)
+  const sorted = useMemo(() => [...people].sort((a, b) => (b.exchangeShare ?? -1) - (a.exchangeShare ?? -1)), [people])
+  const shown = expanded ? sorted : sorted.slice(0, 4)
+  const rest = sorted.length - shown.length
   return <section className="v48-section">
-    <SectionTitle icon="people" title="Organigramme" meta={<span className="v48-section-count"><b>{shown.length}</b> actifs</span>} />
-    {!shown.length ? <Empty>Aucun interlocuteur réel n’est encore rattaché à ce compte.</Empty> :
-      <div className="v48-org-grid">{shown.map((person) => <button key={person.id} onClick={() => navigate(`/app/people/${person.id}`)} style={{ '--person-tone': person.score !== null && person.score >= 70 ? '#2ea86a' : person.score !== null && person.score < 50 ? '#d94f63' : '#6e50c8' } as CSSProperties}>
-        <span>{person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}</span>
-        <div><small>{person.decisionRole || person.organizationalRole || 'Rôle à confirmer'}</small><strong>{person.name}</strong><p>{person.jobTitle || 'Fonction à confirmer'}</p></div>
-        <b>{person.score ?? '—'}</b>
-        <footer><span>{person.exchangeShare === null ? 'part à confirmer' : `${person.exchangeShare}% des échanges`}</span><i>→</i></footer>
-      </button>)}</div>}
+    <SectionTitle icon="people" title="Organigramme" meta={<span className="v48-section-count"><b>{sorted.length}</b> actif{sorted.length > 1 ? 's' : ''}</span>} />
+    {!sorted.length ? <Empty>Aucun interlocuteur réel n’est encore rattaché à ce compte.</Empty> :
+      <div className="v48-orgc-grid">{shown.map((person) => {
+        const tone = person.score !== null && person.score >= 70 ? '#2ea86a' : person.score !== null && person.score < 50 ? '#d94f63' : '#6e50c8'
+        return <button className="v48-orgc" key={person.id} onClick={() => navigate(`/app/people/${person.id}`)} style={{ '--person-tone': tone } as CSSProperties}>
+          <span className="v48-orgc-tag">{roleLabel(person)}</span>
+          <strong className="v48-orgc-name">{person.name}</strong>
+          <span className="v48-orgc-share">{person.exchangeShare === null ? 'part à confirmer' : <><b>{person.exchangeShare}%</b> des échanges</>}</span>
+          {person.jobTitle && <p className="v48-orgc-fn">{person.jobTitle}</p>}
+          <footer><span>{person.exchangeShare === null ? 'À confirmer' : 'Vos échanges · Observable'}</span><i>→</i></footer>
+        </button>
+      })}</div>}
+    {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} interlocuteur{rest > 1 ? 's' : ''} de plus ▾</button>}
+    {expanded && sorted.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
   </section>
 }
 
@@ -207,8 +250,9 @@ function Firmographics({ data }: { data: AccountDetailData }) {
   </details>
 }
 
-function SignalFeed({ data, userId, refresh }: Omit<ViewProps, 'navigate'>) {
+function SignalFeed({ data, userId, refresh, openWatch }: Omit<ViewProps, 'navigate'> & { openWatch: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const validate = async (id: string, verdict: 'confirmed' | 'dismissed') => {
     setBusy(id)
     try {
@@ -218,17 +262,38 @@ function SignalFeed({ data, userId, refresh }: Omit<ViewProps, 'navigate'>) {
       setBusy(null)
     }
   }
-  return <section className="v48-section">
-    <SectionTitle icon="signal" title="Signaux récents" meta={<><span className={`v48-watch-pill ${data.account.watchEnabled ? 'on' : ''}`}><i />Veille {data.account.watchEnabled ? 'active' : 'coupée'}</span><span className="v48-section-count"><b>{data.signals.length}</b></span></>} />
-    <div className="v48-signal-feed">
-      {data.signals.map((signal) => <article key={signal.id}>
-        <span><Icon name="signal" /></span>
-        <div><small>{signal.type} · {dateLabel(signal.provenance.observedAt)}</small><h3>{signal.title}</h3><p>{signal.summary || signal.impact || 'Détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel}</em>
-          <footer><button className={signal.validationStatus === 'confirmed' ? 'on' : ''} disabled={busy === signal.id} onClick={() => void validate(signal.id, 'confirmed')}>✓ Confirmer</button><button className={signal.validationStatus === 'dismissed' ? 'on no' : 'no'} disabled={busy === signal.id} onClick={() => void validate(signal.id, 'dismissed')}>× Infirmer</button></footer>
-        </div>
-      </article>)}
+  const lastSync = useMemo(() => data.sources.map((source) => source.lastSyncedAt).filter((value): value is string => value !== null).sort().pop() ?? data.relationship.computedAt, [data])
+  const shown = expanded ? data.signals : data.signals.slice(0, 4)
+  const rest = data.signals.length - shown.length
+  return <section className="v48-section v48-signals">
+    <SectionTitle icon="signal" title="Signaux récents" meta={<><button type="button" className={`v48-watch-pill ${data.account.watchEnabled ? 'on' : ''}`} onClick={openWatch} title="Gérer la veille"><i />Veille {data.account.watchEnabled ? 'active' : 'coupée'}</button><span className="v48-section-count"><b>{data.signals.length}</b></span></>} />
+    {data.account.watchEnabled
+      ? <div className="v48-signals-sync"><i />Dernière synchronisation : <b>{relativeLabel(lastSync)}</b></div>
+      : <div className="v48-signals-sync off"><i />Veille coupée — aucun nouveau signal ne sera collecté.</div>}
+    <div className="v48-sig-list">
+      {shown.map((signal) => {
+        const cat = signalCategory(signal)
+        const action = signalAction(signal)
+        return <article className={`v48-sig tone-${cat.tone}`} key={signal.id}>
+          <div className="v48-sig-rail"><span className="v48-sig-when">{relativeLabel(signal.provenance.observedAt)}</span><i className="v48-sig-dot" /></div>
+          <div className="v48-sig-body">
+            <div className="v48-sig-head"><h3>{signal.title}</h3><span className="v48-sig-cat">{cat.tag}</span></div>
+            <p>{signal.summary || signal.impact || 'Détail en cours de consolidation.'}</p>
+            <div className="v48-sig-foot">
+              {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
+              {action && <a className="v48-sig-open" href={action.url} target="_blank" rel="noreferrer">{action.label}</a>}
+              <span className="v48-sig-acts">
+                <button className={signal.validationStatus === 'confirmed' ? 'on' : ''} disabled={busy === signal.id} onClick={() => void validate(signal.id, 'confirmed')} title="Confirmer">✓</button>
+                <button className={signal.validationStatus === 'dismissed' ? 'on no' : 'no'} disabled={busy === signal.id} onClick={() => void validate(signal.id, 'dismissed')} title="Infirmer">×</button>
+              </span>
+            </div>
+          </div>
+        </article>
+      })}
       {!data.signals.length && <Empty>Aucun signal réel n’est actuellement rattaché à ce compte.</Empty>}
     </div>
+    {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
+    {expanded && data.signals.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
   </section>
 }
 
@@ -236,11 +301,13 @@ export function V48AccountLiveView(props: ViewProps & { openWatch: () => void })
   return <div className="v48-account-live">
     <AccountInsight data={props.data} />
     <div className="v48-account-live-grid">
-      <div><OrgGrid people={props.data.people} navigate={props.navigate} /><Firmographics data={props.data} /></div>
-      <aside>
-        <button className={`v48-watch-card ${props.data.account.watchEnabled ? 'on' : ''}`} onClick={props.openWatch}><span>🛰️</span><div><strong>Veille Tohu</strong><small>signaux internes &amp; externes</small></div><b>{props.data.account.watchEnabled ? 'Activée' : 'Désactivée'}</b></button>
-        <SignalFeed data={props.data} userId={props.userId} refresh={props.refresh} />
-      </aside>
+      <div className="v48-live-col">
+        <OrgGrid people={props.data.people} navigate={props.navigate} />
+        <Firmographics data={props.data} />
+      </div>
+      <div className="v48-live-col">
+        <SignalFeed data={props.data} userId={props.userId} refresh={props.refresh} openWatch={props.openWatch} />
+      </div>
     </div>
   </div>
 }

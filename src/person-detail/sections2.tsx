@@ -9,6 +9,10 @@ import {
 } from './service'
 import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent } from './types'
 import { Csec, Empty, confidenceLevel, formatDate, formatMonth, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
+import { ACCEPTED_TRANSCRIPT_EXTENSIONS, fetchTranscriptJob, startTranscriptIngest } from '../services/transcript-ingest'
+
+const isTranscriptFile = (name: string): boolean =>
+  ACCEPTED_TRANSCRIPT_EXTENSIONS.some((ext) => name.toLowerCase().endsWith(ext))
 
 type SectionProps = { data: PersonDetailData; userId: string; refresh: () => Promise<void> }
 
@@ -80,6 +84,14 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
   const [recording, setRecording] = useState<{ recorder: MediaRecorder; startedAt: number } | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const chunks = useRef<Blob[]>([])
+  // Ingestion transcript (retour testing) : un transcript déposé ici doit être
+  // réellement analysé (profil + engagements + dates), pas juste stocké.
+  const [transcript, setTranscript] = useState<File | null>(null)
+  const [transcriptConsent, setTranscriptConsent] = useState(false)
+  const [transcriptDate, setTranscriptDate] = useState('')
+  const [transcriptStep, setTranscriptStep] = useState<string | null>(null)
+  const pollRef = useRef<number | null>(null)
+  useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current) }, [])
 
   useEffect(() => {
     if (!recording) return
@@ -107,6 +119,15 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
     const file = input.files?.[0]
     input.value = ''
     if (!file) return
+    // Un transcript (.txt/.vtt/.srt) n'est pas un simple fichier à archiver : on
+    // ouvre le mini-parcours d'analyse (consentement + date) au lieu de le stocker.
+    if (isTranscriptFile(file.name)) {
+      setTranscript(file)
+      setTranscriptConsent(false)
+      setTranscriptDate('')
+      setTranscriptStep(null)
+      return
+    }
     setSaving(true)
     try {
       await addPersonFile(data, userId, file)
@@ -116,6 +137,46 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
       toast(reason instanceof Error ? reason.message : 'Téléversement impossible', 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const runTranscript = async () => {
+    if (!transcript || !transcriptConsent) return
+    setTranscriptStep('Envoi du fichier…')
+    try {
+      const jobId = await startTranscriptIngest({
+        file: transcript,
+        organizationId: data.person.workspaceId,
+        userId,
+        contactId: data.person.id,
+        title: `Transcript — ${data.person.fullName}`,
+        meetingDate: transcriptDate || null,
+        consent: transcriptConsent,
+      })
+      if (pollRef.current) window.clearInterval(pollRef.current)
+      pollRef.current = window.setInterval(async () => {
+        try {
+          const job = await fetchTranscriptJob(jobId)
+          if (!job) return
+          setTranscriptStep(job.currentStep ?? 'Analyse en cours…')
+          if (job.status === 'succeeded' || job.status === 'failed') {
+            if (pollRef.current) window.clearInterval(pollRef.current)
+            pollRef.current = null
+            if (job.status === 'succeeded') {
+              const updated = job.result?.profilesUpdated ?? 0
+              toast(`Transcript analysé — ${updated} profil(s) enrichi(s), engagements et dates mis à jour.`)
+              setTranscript(null); setTranscriptConsent(false); setTranscriptDate(''); setTranscriptStep(null)
+              await refresh()
+            } else {
+              toast(job.errorMessage ?? 'Analyse du transcript impossible.', 'error')
+              setTranscriptStep(null)
+            }
+          }
+        } catch { /* tick suivant réessaie */ }
+      }, 1500)
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Envoi impossible.', 'error')
+      setTranscriptStep(null)
     }
   }
 
@@ -161,7 +222,7 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
     <div className="feed-actions">
       <label className="feed-btn">
         <input type="file" hidden onChange={(event) => void pickFile(event.currentTarget)} />
-        {ClipIcon} Fichier
+        {ClipIcon} Fichier / transcript
       </label>
       <button type="button" className={`feed-btn ${recording ? 'rec' : ''}`} onClick={() => void toggleVoice()} aria-pressed={recording !== null}>
         {recording ? <><span className="rec-dot" /> Arrêter ({elapsed}s)</> : <>{MicIcon} Note vocale</>}
@@ -169,6 +230,20 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
       <span style={{ flex: 1 }} />
       <button className="feed-save" disabled={saving || !content.trim()}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
     </div>
+    {transcript && <div className="feed-transcript" onClick={(event) => event.stopPropagation()}>
+      {transcriptStep
+        ? <div className="feed-transcript-run"><span className="spinner" />{transcriptStep}</div>
+        : <>
+          <div className="feed-transcript-h"><b>Transcript détecté</b> — « {transcript.name} » sera <b>analysé</b> (profil, engagements, dates), pas seulement stocké.</div>
+          <label className="feed-transcript-date"><span>Date de la réunion <em>(optionnel)</em></span>
+            <input type="date" value={transcriptDate} onChange={(event) => setTranscriptDate(event.target.value)} /></label>
+          <label className="feed-transcript-consent"><input type="checkbox" checked={transcriptConsent} onChange={(event) => setTranscriptConsent(event.target.checked)} /><span>Je confirme disposer du consentement des participants pour analyser ce transcript.</span></label>
+          <div className="feed-transcript-actions">
+            <button type="button" className="feed-save" disabled={!transcriptConsent} onClick={() => void runTranscript()}>Analyser le transcript</button>
+            <button type="button" className="feed-btn" onClick={() => setTranscript(null)}>Annuler</button>
+          </div>
+        </>}
+    </div>}
   </form>
 
   if (embedded) return <div className="relhist-memory">{form}</div>
