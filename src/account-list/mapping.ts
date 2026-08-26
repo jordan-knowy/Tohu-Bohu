@@ -16,6 +16,8 @@ export type AccountTier = 'Critique' | 'Sous tension' | 'À traiter' | 'Stables'
 export type AccountListRow = {
   id: string
   name: string
+  domain: string | null
+  logoUrl: string | null
   meta: string | null
   favorite: boolean
   watchEnabled: boolean
@@ -172,6 +174,8 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
     return [{
       id,
       name: text(company.name) ?? 'Compte',
+      domain: text(company.domain) ?? null,
+      logoUrl: text(context.logo_url) ?? null,
       meta: [text(company.industry), text(context.location)].filter(Boolean).join(' · ') || null,
       favorite: object(prefsByCompany.get(id)).favorite === true,
       watchEnabled: object(watchByCompany.get(id)).enabled === true,
@@ -203,36 +207,48 @@ function mostCommonOwner(contacts: Row[]): string | null {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 }
 
-/** Série mensuelle du portefeuille : pour chaque mois, moyenne des derniers
- *  scores mensuels par contact (historique réel), puis moyenne par compte. */
+/** Série mensuelle du portefeuille : pour chaque mois, le score de chaque
+ *  contact est celui reporté (dernier score connu à cette date, « as-of »),
+ *  pas seulement celui daté ce mois précis — même logique de reconstruction
+ *  que la santé du compte (RPC account_health_monthly) et le profil personne :
+ *  un mois sans nouvelle mesure n'efface pas la relation, il la prolonge. */
 export function buildPortfolioSeries(scoreHistory: Row[], contacts: Row[], months: number, now: Date): PortfolioPoint[] {
   const contactCompany = new Map(contacts.map((contact) => [String(contact.id), text(contact.company_id)]))
-  // mois -> compte -> contact -> dernier score du mois
-  const byMonth = new Map<string, Map<string, Map<string, { date: string; score: number }>>>()
+  // contact -> historique trié croissant [{date, score}]
+  const byContact = new Map<string, Array<{ date: string; score: number }>>()
   for (const row of scoreHistory) {
     const date = text(row.snapshot_date)
     const score = num(row.score)
     const contactId = String(row.contact_id)
-    const companyId = contactCompany.get(contactId)
-    if (!date || score === null || !companyId) continue
-    const monthKey = date.slice(0, 7)
-    const companies = byMonth.get(monthKey) ?? new Map()
-    const contactsMap = companies.get(companyId) ?? new Map()
-    const current = contactsMap.get(contactId)
-    if (!current || current.date < date) contactsMap.set(contactId, { date, score })
-    companies.set(companyId, contactsMap)
-    byMonth.set(monthKey, companies)
+    if (!date || score === null || !contactCompany.get(contactId)) continue
+    const list = byContact.get(contactId) ?? []
+    list.push({ date, score })
+    byContact.set(contactId, list)
   }
+  for (const list of byContact.values()) list.sort((a, b) => a.date.localeCompare(b.date))
+  // Pointeur par contact : avance au fil des mois (croissant), jamais reculé.
+  const pointer = new Map<string, number>()
+
   const result: PortfolioPoint[] = []
   for (let index = months - 1; index >= 0; index--) {
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1))
-    const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
-    const companies = byMonth.get(monthKey)
-    if (!companies) { result.push({ monthKey, score: null }); continue }
-    const accountScores = [...companies.values()].map((contactsMap) => {
-      const values = [...contactsMap.values()].map((entry) => entry.score)
-      return values.reduce((sum, value) => sum + value, 0) / values.length
-    })
+    const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1))
+    const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`
+    const cutoff = index === 0 ? now.toISOString().slice(0, 10)
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index + 1, 1) - 1).toISOString().slice(0, 10)
+
+    const companyScores = new Map<string, number[]>()
+    for (const [contactId, list] of byContact) {
+      let i = pointer.get(contactId) ?? 0
+      while (i + 1 < list.length && list[i + 1]!.date <= cutoff) i++
+      pointer.set(contactId, i)
+      if (list[i] === undefined || list[i]!.date > cutoff) continue
+      const companyId = contactCompany.get(contactId)!
+      const scores = companyScores.get(companyId) ?? []
+      scores.push(list[i]!.score)
+      companyScores.set(companyId, scores)
+    }
+    if (!companyScores.size) { result.push({ monthKey, score: null }); continue }
+    const accountScores = [...companyScores.values()].map((values) => values.reduce((sum, value) => sum + value, 0) / values.length)
     result.push({ monthKey, score: Math.round(accountScores.reduce((sum, value) => sum + value, 0) / accountScores.length) })
   }
   return result

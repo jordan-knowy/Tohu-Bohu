@@ -19,7 +19,9 @@ import {
   errorMessage,
   normalizedSpeaker,
   persistContactProfile,
+  type UsageLogContext,
 } from '../_shared/behavior-analysis.ts'
+import { logAiUsage } from '../_shared/ai-usage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +51,7 @@ function normCommitment(value: string): string {
   return value.toLowerCase().replace(/^nous\s*:\s*/, '').replace(/\s+—\s+échéance.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
 
-async function extractTranscriptContext(name: string, transcriptText: string): Promise<{ engagements: TranscriptEngagement[]; moments: TranscriptMoment[] }> {
+async function extractTranscriptContext(name: string, transcriptText: string, usageLog?: UsageLogContext): Promise<{ engagements: TranscriptEngagement[]; moments: TranscriptMoment[] }> {
   const empty = { engagements: [] as TranscriptEngagement[], moments: [] as TranscriptMoment[] }
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey || !transcriptText.trim()) return empty
@@ -83,6 +85,7 @@ Transcript :\n${corpus}`
   })
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'ingest-transcript:extractContext', model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite', usage: data?.usage })
   const raw = asRecord(data).choices
   const content = Array.isArray(raw) ? String(asRecord(asRecord(raw[0]).message).content ?? '{}') : '{}'
   const parsed = asRecord(JSON.parse(content))
@@ -367,7 +370,7 @@ Deno.serve(async (req) => {
         const interactionCount = messageCount + meetingCount
         const previousProfile = asRecord(prev?.cognitive_profile_data)
         const prevUpdatedFrom = Array.isArray(prev?.updated_from) ? prev!.updated_from.map(String) : []
-        const result = await analyze(contact.full_name ?? speaker, 'contact', [excerpt as string], previousProfile, interactionCount)
+        const result = await analyze(contact.full_name ?? speaker, 'contact', [excerpt as string], previousProfile, interactionCount, { client: admin, organizationId, userId: job.user_id as string })
         await persistContactProfile(admin, {
           organizationId,
           contactId: contact.id,
@@ -394,7 +397,7 @@ Deno.serve(async (req) => {
     if (targetContact) {
       await setStep('Extraction des engagements', 92)
       try {
-        const ctx = await extractTranscriptContext(targetContact.full_name ?? 'Contact', parsed.transcriptText)
+        const ctx = await extractTranscriptContext(targetContact.full_name ?? 'Contact', parsed.transcriptText, { client: admin, organizationId, userId: job.user_id as string })
         if (ctx.engagements.length) {
           const { data: existing } = await admin.from('person_memory_entries')
             .select('content').eq('organization_id', organizationId).eq('contact_id', targetContact.id).eq('entry_type', 'commitment')

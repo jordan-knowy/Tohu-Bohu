@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useBohuBarShrunk } from './bohuBarSignal'
 
 const SCOPES = [
   { value: 'organisation', label: 'Mon organisation' },
@@ -38,6 +39,7 @@ const SendArrow = (
  *  dans l'app. Redirige vers /app/ask en envoyant la question (state.ask). */
 export default function BohuBar() {
   const navigate = useNavigate()
+  const shrunk = useBohuBarShrunk()
   const [draft, setDraft] = useState('')
   const [scopeIndex, setScopeIndex] = useState(0)
   const [rotIndex, setRotIndex] = useState(0)
@@ -63,8 +65,8 @@ export default function BohuBar() {
   const rot = ROTATION[rotIndex]!
   const scopeLabel = SCOPES[scopeIndex]?.label ?? 'Mon organisation'
 
-  return <div className="bohubar-wrap">
-    <form className="bohubar" onSubmit={(event) => { event.preventDefault(); submit(draft) }}>
+  return <div className={`bohubar-wrap${shrunk ? ' shrunk' : ''}`}>
+    <form className="bohubar" onSubmit={(event) => { event.preventDefault(); submit(draft) }} aria-hidden={shrunk}>
       <span className="bohubar-mk">{BohuMark}</span>
       <button type="button" className="bohubar-scope" onClick={() => setScopeIndex((index) => (index + 1) % SCOPES.length)} aria-label={`Périmètre : ${scopeLabel}. Cliquer pour changer.`}>
         <span className="dot" aria-hidden="true" />{scopeLabel}<span className="caret" aria-hidden="true">▾</span>

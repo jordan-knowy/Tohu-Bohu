@@ -21,6 +21,7 @@ import type { AccountDetailData, AccountPerson, Provenance } from './types'
 import { V48AccountLiveView, V48AccountSourceNote } from './V48AccountViews'
 import { AccountConnectorsPill, AccountRelationView } from './AccountRelationView'
 import { FicheSkeleton } from '../components/FicheSkeleton'
+import { ContactAvatar } from '../components/ContactAvatar'
 import '../styles/account-relation.css'
 
 type PageContext = { session: Session; workspaceId: string }
@@ -408,7 +409,7 @@ function AccountHero({ data, toggleFavorite, openPeople }: { data: AccountDetail
   return <section className={`hero-header account-detail-hero v48-identity-card ${account.archivedAt ? 'archived' : ''}`}>
     <div className="hero-body v48-identity-body">
       <div className="hero-left v48-identity-left">
-        <div className="v48-account-avatar">{account.logoUrl ? <img src={account.logoUrl} alt={`Logo de ${account.name}`} /> : initials(account.name)}<i /></div>
+        <div className="v48-account-avatar"><ContactAvatar src={account.logoUrl} name={account.name} domain={account.domain} /><i /></div>
         <div className="account-hero-copy v48-identity-copy">
           <div className="v48-eyebrow">Portefeuille / {account.name}</div>
           <div className="v48-name-row"><h1 className="hero-name">{account.name}<button className={`hero-fav ${account.favorite ? 'on' : ''}`} onClick={() => void toggleFavorite()} aria-label={account.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={account.favorite}>

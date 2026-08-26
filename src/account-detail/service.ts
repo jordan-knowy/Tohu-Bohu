@@ -106,6 +106,14 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     : { data: [] }
   const profileNames = new Map(rows(profileData).map((row) => [String(row.id), text(row.full_name) ?? 'Membre Tohu']))
 
+  // Santé mensuelle reconstruite sur toute la vie de la relation (36 mois max) —
+  // depuis le scoring réel des personnes du compte, pas seulement les snapshots
+  // account récents. Dégrade silencieusement si la RPC n'est pas déployée.
+  const healthResult = await client.rpc('account_health_monthly', { p_company_id: accountId, p_months: 36 })
+  const monthlyHealth = Array.isArray(healthResult.data)
+    ? (healthResult.data as Row[]).flatMap((row) => { const ym = text(row.ym); return ym ? [{ ym, score: number(row.score) }] : [] })
+    : []
+
   const people: AccountPerson[] = rows(peopleResult.data).map((row) => {
     const snapshot = latestNested(row.relationship_snapshots, 'snapshot_date')
     const cognitive = latestNested(row.cognitive_profiles, 'updated_at')
@@ -254,6 +262,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       decisionMakerCoverage: number(latestScore.decision_maker_coverage),
       concentrationRisk: number(latestScore.concentration_risk),
       history: scoreRows.flatMap((row) => number(row.score) !== null && text(row.computed_at) ? [{ score: number(row.score)!, computedAt: text(row.computed_at)! }] : []).reverse(),
+      monthlyHealth,
     },
     people,
     sources: connectorRows.map((row) => {

@@ -22,6 +22,7 @@ export type PersonListRow = {
   jobTitle: string | null
   companyId: string | null
   companyName: string | null
+  companyDomain: string | null
   favorite: boolean
   watchEnabled: boolean
   relationType: string | null
@@ -125,6 +126,7 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
       jobTitle: text(contact.role_title),
       companyId,
       companyName: text(company.name),
+      companyDomain: text(company.domain),
       favorite: userSettings.favorite === true,
       watchEnabled: userSettings.watch_enabled === true,
       relationType: text(settings.relationship_type),

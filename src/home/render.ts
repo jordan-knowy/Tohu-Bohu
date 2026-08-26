@@ -104,21 +104,53 @@ const ACTION_LABELS: Record<string, string> = {
   engagement: 'Engagement',
 }
 
-const SIGNAL_EMOJI: Array<[RegExp, string]> = [
-  [/gouvernance|governance|leadership/i, '🏢'],
-  [/job|poste|mouvement|nomination/i, '⇄'],
-  [/silence|froid|cool/i, '🕓'],
-  [/échéance|deadline|assemblée/i, '📋'],
-  [/reprise|opportun/i, '🚀'],
-  [/interlocuteur|contact|couverture/i, '🤝'],
-  [/baisse|down|détract/i, '📉'],
-  [/anniversaire/i, '🎂'],
+// Icônes SVG (pas d'emoji) — héritent la couleur du conteneur via currentColor.
+const svgIcon = (inner: string, sw = 1.8): string =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
+export const HICON = {
+  building: svgIcon('<rect x="4" y="3" width="11" height="18" rx="1"/><path d="M15 8h5v13M8 7h3M8 11h3M8 15h3"/>'),
+  swap: svgIcon('<path d="M7 7h12l-3-3M17 17H5l3 3"/>'),
+  clock: svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  clipboard: svgIcon('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h5"/>'),
+  trendUp: svgIcon('<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>'),
+  users: svgIcon('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.7-5 5.5-5s5.5 2 5.5 5M16 5.5a3 3 0 010 5.8M21 20c0-2-1-3.6-3-4.4"/>'),
+  trendDown: svgIcon('<path d="M3 7l6 6 4-4 8 8M15 17h6v-6"/>'),
+  gift: svgIcon('<rect x="4" y="9" width="16" height="11" rx="1"/><path d="M4 13h16M12 9v11M8.5 9a2.5 2.5 0 113.5-2.3M15.5 9a2.5 2.5 0 10-3.5-2.3"/>'),
+  user: svgIcon('<circle cx="12" cy="8" r="4"/><path d="M4.5 20c0-4 3.5-6 7.5-6s7.5 2 7.5 6"/>'),
+  trophy: svgIcon('<path d="M7 4h10v3a5 5 0 01-10 0zM7 5H4v1.5A3.5 3.5 0 007.3 10M17 5h3v1.5A3.5 3.5 0 0116.7 10M9.5 14h5l.8 5h-6.6z"/>'),
+  globe: svgIcon('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>'),
+  check: svgIcon('<path d="M5 13l4 4L19 7"/>', 2.4),
+  target: svgIcon('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>'),
+  link: svgIcon('<path d="M10 14a4 4 0 005.7 0l3-3A4 4 0 0013 5.3l-1.5 1.6M14 10a4 4 0 00-5.7 0l-3 3A4 4 0 0011 18.7l1.5-1.6"/>'),
+  cross: svgIcon('<path d="M6 6l12 12M18 6L6 18"/>', 2.4),
+  warning: svgIcon('<path d="M12 3.5L2.5 20h19z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.3" r="0.9" fill="currentColor" stroke="none"/>'),
+  bolt: svgIcon('<path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/>', 1.6),
+  lock: svgIcon('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>'),
+  unlock: svgIcon('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 017.7-1.5"/>'),
+  sparkle: svgIcon('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>', 1.5),
+  thumbUp: svgIcon('<path d="M7 21V10l5-7 1 1-1.5 6H19a2 2 0 011.9 2.7l-2.4 6.6A2 2 0 0116.7 21H7z"/><path d="M7 10H4v11h3"/>'),
+  thumbDown: svgIcon('<path d="M17 3v11l-5 7-1-1 1.5-6H5a2 2 0 01-1.9-2.7l2.4-6.6A2 2 0 017.3 3H17z"/><path d="M17 14h3V3h-3"/>'),
+  brain: svgIcon('<path d="M9 4a3 3 0 00-3 3 3 3 0 00-1 5.8A3.5 3.5 0 007 19h2V4z"/><path d="M15 4a3 3 0 013 3 3 3 0 011 5.8A3.5 3.5 0 0117 19h-2V4z"/><path d="M9 8h2M9 12h2M13 8h2M13 12h2"/>'),
+  stopwatch: svgIcon('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M10 2h4M12 2v2"/>'),
+  grid: svgIcon('<rect x="4" y="4" width="7" height="7" rx="1.2"/><rect x="13" y="4" width="7" height="7" rx="1.2"/><rect x="4" y="13" width="7" height="7" rx="1.2"/><rect x="13" y="13" width="7" height="7" rx="1.2"/>'),
+  coach: svgIcon('<path d="M4 5h16v11H9l-4 4V16H4z"/><path d="M8 9h8M8 12.5h5"/>'),
+}
+
+const SIGNAL_ICON: Array<[RegExp, string]> = [
+  [/gouvernance|governance|leadership/i, HICON.building],
+  [/job|poste|mouvement|nomination/i, HICON.swap],
+  [/silence|froid|cool/i, HICON.clock],
+  [/échéance|deadline|assemblée/i, HICON.clipboard],
+  [/reprise|opportun/i, HICON.trendUp],
+  [/interlocuteur|contact|couverture/i, HICON.users],
+  [/baisse|down|détract/i, HICON.trendDown],
+  [/anniversaire/i, HICON.gift],
 ]
 
 function signalEmoji(signal: HomeSignal): string {
   const haystack = `${signal.signalType} ${signal.title}`
-  for (const [pattern, emoji] of SIGNAL_EMOJI) if (pattern.test(haystack)) return emoji
-  return signal.kind === 'company' ? '🏢' : '👤'
+  for (const [pattern, icon] of SIGNAL_ICON) if (pattern.test(haystack)) return icon
+  return signal.kind === 'company' ? HICON.building : HICON.user
 }
 
 function confidenceColor(confidence: number | null): string {
@@ -144,7 +176,7 @@ export async function renderHome(ctx: HomeContext): Promise<void> {
     data = await (ctx.loadDashboard ?? getHomeDashboard)(ctx.organizationId, ctx.session.user.id)
   } catch (error) {
     if (token !== renderToken) return
-    ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-card"><div class="sync-ic" aria-hidden="true">⚠</div><div class="sync-t">Impossible de charger la Home</div><p class="sync-s">${esc(error instanceof Error ? error.message : 'Erreur inattendue.')}</p><button class="sync-cta" data-home="retry">Réessayer</button></div></div>`
+    ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-card"><div class="sync-ic" aria-hidden="true">${HICON.warning}</div><div class="sync-t">Impossible de charger la Home</div><p class="sync-s">${esc(error instanceof Error ? error.message : 'Erreur inattendue.')}</p><button class="sync-cta" data-home="retry">Réessayer</button></div></div>`
     bindRetry(ctx)
     return
   }
@@ -235,10 +267,10 @@ function renderS0(ctx: HomeContext, data: HomeDashboardData): void {
   ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-stage" id="sync-s0">
     <div class="sync-card">
       ${connBadge}
-      <div class="sync-ic" aria-hidden="true">⚡</div>
+      <div class="sync-ic" aria-hidden="true">${HICON.bolt}</div>
       <h2 class="sync-t">Connecte ton portefeuille</h2>
       <p class="sync-s">Tohu détecte les organisations présentes dans tes échanges, puis prépare leur analyse relationnelle.</p>
-      <div class="sync-rgpd"><span aria-hidden="true">🔒</span><span>Tohu lit uniquement les métadonnées autorisées (expéditeur, destinataires, dates, objet). Le corps de tes emails n'est jamais conservé.</span></div>
+      <div class="sync-rgpd"><span aria-hidden="true">${HICON.lock}</span><span>Tohu lit uniquement les métadonnées autorisées (expéditeur, destinataires, dates, objet). Le corps de tes emails n'est jamais conservé.</span></div>
       ${cta}
       ${lastSync}
       <div class="sync-error" id="sync-error" role="alert"></div>
@@ -341,7 +373,7 @@ async function startDetection(ctx: HomeContext, data: HomeDashboardData): Promis
     setStep(ctx, 4)
     setProgress(ctx, 100)
     if (!detection.candidates.length) {
-      ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-card">${emptyState('▦', 'Aucune organisation détectée', 'Tohu n’a pas trouvé d’organisation dans les échanges synchronisés. Ajoute une source ou crée un compte manuellement.', '<div style="display:flex;gap:8px;justify-content:center;margin-top:6px"><button class="btn-secondary" data-home="go-connectors">Gérer les connecteurs</button><button class="btn-view" data-home="go-accounts">Créer un compte</button></div>')}</div></div>`
+      ctx.container.innerHTML = `<div class="sync-wrap"><div class="sync-card">${emptyState(HICON.grid, 'Aucune organisation détectée', 'Tohu n’a pas trouvé d’organisation dans les échanges synchronisés. Ajoute une source ou crée un compte manuellement.', '<div style="display:flex;gap:8px;justify-content:center;margin-top:6px"><button class="btn-secondary" data-home="go-connectors">Gérer les connecteurs</button><button class="btn-view" data-home="go-accounts">Créer un compte</button></div>')}</div></div>`
       ctx.container.querySelector('[data-home="go-connectors"]')?.addEventListener('click', () => ctx.goView('connecteurs'))
       ctx.container.querySelector('[data-home="go-accounts"]')?.addEventListener('click', () => ctx.goView('acc'))
       return
@@ -382,7 +414,7 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
     ? `<div class="sel-cap" aria-live="polite"><b id="sel-count">0</b>/${limit} · offre ${esc(data.plan.name)}</div>`
     : `<div class="sel-cap" aria-live="polite"><b id="sel-count">0</b> sélectionnés · offre ${esc(data.plan.name)}</div>`
   const upsell = limit !== null && candidates.length > limit
-    ? `<div class="sel-upsell">🔓 ${candidates.length - limit} autres comptes détectés — <a role="button" tabindex="0" data-home="go-upgrade">passe à l’offre supérieure pour tout suivre →</a></div>`
+    ? `<div class="sel-upsell">${HICON.unlock} ${candidates.length - limit} autres comptes détectés — <a role="button" tabindex="0" data-home="go-upgrade">passe à l’offre supérieure pour tout suivre →</a></div>`
     : ''
   ctx.container.innerHTML = `<div class="sync-wrap" style="max-width:640px">
     <div class="sel-head">
@@ -431,7 +463,7 @@ function renderSelection(ctx: HomeContext, data: HomeDashboardData, candidates: 
     list.innerHTML = visible.length ? visible.map(({ candidate, index }) => {
       const meta = [candidate.industry, candidate.location, `${candidate.interactions} échange${candidate.interactions > 1 ? 's' : ''}`, candidate.lastInteractionAt ? `vu ${relativeTime(candidate.lastInteractionAt)}` : null].filter(Boolean).join(' · ')
       return `<button type="button" class="sel-row ${candidate.selected ? 'on' : 'off'}" data-index="${index}" aria-pressed="${candidate.selected}">
-        <span class="sel-cb" aria-hidden="true">${candidate.selected ? '✓' : ''}</span>
+        <span class="sel-cb" aria-hidden="true">${candidate.selected ? HICON.check : ''}</span>
         <span class="sel-id"><span class="sel-nm">${esc(candidate.name)}</span><span class="sel-mt" style="display:block">${esc(meta || candidate.domain || 'Organisation détectée')}</span></span>
         <span class="sel-nps">à analyser</span>
         <span class="sel-src">${esc(candidate.source)}</span>
@@ -483,6 +515,11 @@ async function runAnalysis(ctx: HomeContext, chosen: HomeAccountCandidate[]): Pr
     setStep(ctx, 2)
     setProgress(ctx, 100)
     ctx.toast(`${result.tracked} compte${result.tracked > 1 ? 's' : ''} activé${result.tracked > 1 ? 's' : ''} · ${result.linkedContacts} personne${result.linkedContacts > 1 ? 's' : ''} rattachée${result.linkedContacts > 1 ? 's' : ''}.`)
+    // Historique complet dès l'activation : reconstruit le score passé et présent
+    // (pas seulement « aujourd'hui ») à partir des échanges déjà synchronisés,
+    // avec la même formule que le score courant. Best-effort, ne bloque jamais
+    // l'affichage du cockpit.
+    void getSupabase().functions.invoke('score-batch', { body: { organizationId: ctx.organizationId, deepBackfill: true } })
     await renderHome(ctx)
   } catch (error) {
     stepError(ctx, error instanceof Error ? error.message : 'Activation impossible.', () => void runAnalysis(ctx, chosen))
@@ -504,7 +541,7 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
         ${teamVisionMarkup(data)}
         <section class="recommendations-panel" aria-label="Éléments en suspens">
           <div class="section-heading">
-            <span class="section-heading-icon" aria-hidden="true">✦</span>
+            <span class="section-heading-icon" aria-hidden="true">${HICON.clipboard}</span>
             <div><h2>Éléments en suspens</h2><p>Ce qui attend une action de ta part, agrégé depuis tes comptes et tes personnes</p></div>
             <div class="recommendation-filters" role="group" aria-label="Filtrer les éléments en suspens">
               <button class="on" data-action-filter="all">Tous</button>
@@ -568,7 +605,7 @@ function activityMarkup(data: HomeDashboardData): string {
   const signals = data.activity.signalsToday === null ? '' : `<b>${data.activity.signalsToday}</b> signaux aujourd’hui`
   const sourceDots = data.sources.map((source) => `<span class="brain-source ${source.status}"><i></i>${esc(source.label)}</span>`).join('')
   return `<div class="brain-activity" role="status">
-    <span class="brain-activity-icon" aria-hidden="true">✿</span>
+    <span class="brain-activity-icon" aria-hidden="true">${HICON.brain}</span>
     <span>${exchange}${signals ? ` · ${signals}` : ''}</span>
     <button class="brain-sources" data-home="go-connectors" aria-label="Gérer les sources connectées">${sourceDots || '<span class="brain-source disconnected"><i></i>Aucune source</span>'}</button>
     <span class="brain-live"><i></i>${data.activity.lastSyncAt ? `Synchro ${esc(relativeTime(data.activity.lastSyncAt))}` : 'En attente de synchro'}</span>
@@ -576,7 +613,7 @@ function activityMarkup(data: HomeDashboardData): string {
 }
 
 function degradedMarkup(data: HomeDashboardData): string {
-  return `<div class="home-degraded" role="status"><span aria-hidden="true">⚠</span><span>Configuration incomplète — certaines fonctions sont désactivées (${esc(data.degradedReasons.slice(0, 3).join(' ; '))}). Applique les migrations Home du dossier supabase/migrations.</span></div>`
+  return `<div class="home-degraded" role="status"><span aria-hidden="true">${HICON.warning}</span><span>Configuration incomplète — certaines fonctions sont désactivées (${esc(data.degradedReasons.slice(0, 3).join(' ; '))}). Applique les migrations Home du dossier supabase/migrations.</span></div>`
 }
 
 /* Bloc 1 — bandeau du forfait */
@@ -604,9 +641,9 @@ function digestMarkup(data: HomeDashboardData): string {
   if (digest.overdueActions) parts.push(`<b>${digest.overdueActions} action${digest.overdueActions > 1 ? 's' : ''} reportée${digest.overdueActions > 1 ? 's' : ''} à échéance</b>`)
   if (!parts.length) return ''
   return `<div class="hdelta" role="status">
-    <span class="hdelta-ic" aria-hidden="true">✨</span>
+    <span class="hdelta-ic" aria-hidden="true">${HICON.sparkle}</span>
     <div class="hdelta-t">Depuis ta dernière visite (${esc(relativeTime(digest.since))}) : ${parts.join(', ')}.</div>
-    <button class="hdelta-x" data-home="close-digest" aria-label="Fermer le résumé">✕</button>
+    <button class="hdelta-x" data-home="close-digest" aria-label="Fermer le résumé">${HICON.cross}</button>
   </div>`
 }
 
@@ -635,7 +672,7 @@ function scoreRowMarkup(data: HomeDashboardData): string {
       <span class="cockpit-kpi-label">Score relationnel global
         <span class="hscore-why" tabIndex="0" aria-label="Comment ce score est calculé">?<span class="hscore-why-tip">Moyenne informative des comptes suivis mesurés (jamais utilisée pour classer ou recommander). Chaque compte est calculé par le moteur relationnel backend, jamais côté front.</span></span>
       </span>
-      <div class="score-kpi-value">${scoreValue}${relation.score !== null ? `<span class="hscore-band ${relation.level}">${LEVEL_LABELS[relation.level]}</span>` : ''}${freshness === 'stale' ? '<span class="hscore-stale">⏱ Mise à jour retardée</span>' : ''}</div>
+      <div class="score-kpi-value">${scoreValue}${relation.score !== null ? `<span class="hscore-band ${relation.level}">${LEVEL_LABELS[relation.level]}</span>` : ''}${freshness === 'stale' ? `<span class="hscore-stale">${HICON.stopwatch} Mise à jour retardée</span>` : ''}</div>
       ${trend}
       <small>${relation.includedAccounts} compte${relation.includedAccounts > 1 ? 's' : ''} mesuré${relation.includedAccounts > 1 ? 's' : ''}${relation.excludedAccounts ? ` · ${relation.excludedAccounts} sans score` : ''}</small>
     </article>
@@ -665,10 +702,10 @@ function teamVisionMarkup(data: HomeDashboardData): string {
         <span class="team-score ${member.score === null ? 'unavailable' : relationLevel(member.score)}"><small>Score</small><b>${member.score ?? '—'}</b></span>
         <span class="team-delta ${member.delta30d === null ? '' : member.delta30d >= 0 ? 'up' : 'down'}">${member.delta30d === null ? '—' : `${member.delta30d > 0 ? '+' : ''}${member.delta30d} pts`}</span>
       </div>`).join('')
-    : emptyState('♙', 'Vision d’équipe en construction', 'Les responsables apparaîtront ici quand les contacts leur seront attribués.')
+    : emptyState(HICON.users, 'Vision d’équipe en construction', 'Les responsables apparaîtront ici quand les contacts leur seront attribués.')
   return `<section class="team-vision" aria-label="Vision d’équipe">
     <div class="section-heading">
-      <span class="section-heading-icon" aria-hidden="true">♙</span>
+      <span class="section-heading-icon" aria-hidden="true">${HICON.users}</span>
       <div><h2>Vision d’équipe</h2><p>Portefeuilles et scores calculés depuis les contacts attribués</p></div>
       <span class="team-period">30 jours</span>
     </div>
@@ -689,7 +726,7 @@ function topMarkup(data: HomeDashboardData): string {
         <span class="htop-sc ${account.level}">${account.score ?? '—'}</span>
         <span class="htop-more">voir +</span>
       </button>`).join('')
-    : emptyState('🏆', 'Pas encore de classement', 'Les scores apparaîtront après les premières analyses.')
+    : emptyState(HICON.trophy, 'Pas encore de classement', 'Les scores apparaîtront après les premières analyses.')
   const riskRows = atRisk.length
     ? atRisk.map((account, index) => `<button type="button" class="htoprow" data-open-account="${esc(account.id)}" title="${esc(account.riskReasons.join(' · '))}">
         <span class="htop-rk">${index + 1}</span>
@@ -697,9 +734,9 @@ function topMarkup(data: HomeDashboardData): string {
         <span class="htop-sc ${account.level}">${account.score ?? '—'}</span>
         <span class="htop-more">voir +</span>
       </button>`).join('')
-    : emptyState('✓', 'Aucun compte à risque détecté', 'Tohu surveillera les silences, baisses de score et alertes.')
+    : emptyState(HICON.check, 'Aucun compte à risque détecté', 'Tohu surveillera les silences, baisses de score et alertes.')
   return `<section class="htop" aria-label="Top 5 relationnel">
-    <div class="htop-h">🏆 Top 5
+    <div class="htop-h"><span class="htop-h-ic" aria-hidden="true">${HICON.trophy}</span> Top 5
       <span class="htop-toggle" role="tablist">
         <button role="tab" aria-selected="true" class="on" data-top-tab="best">Meilleurs</button>
         <button role="tab" aria-selected="false" data-top-tab="risk">À risque</button>
@@ -713,7 +750,7 @@ function topMarkup(data: HomeDashboardData): string {
 /* Bloc 9 — actions du jour */
 function actionsMarkup(actions: HomePriorityAction[]): string {
   if (!actions.length) {
-    return emptyState('🎯', 'Aucune action prioritaire aujourd’hui', 'Tohu te préviendra dès qu’un signal, un silence ou une échéance demandera ton attention.')
+    return emptyState(HICON.target, 'Aucune action prioritaire aujourd’hui', 'Tohu te préviendra dès qu’un signal, un silence ou une échéance demandera ton attention.')
   }
   return actions.map((action) => `<article class="krs-card" data-type="${esc(action.type)}" data-action-id="${esc(action.actionId)}">
     <div class="krs-band" aria-hidden="true"></div>
@@ -726,8 +763,8 @@ function actionsMarkup(actions: HomePriorityAction[]): string {
       </div>
       <div class="krs-aw">${esc(action.explanation)}</div>
       <div class="krs-arow">
-        ${action.accountId ? `<button type="button" class="krs-cpt" data-open-account="${esc(action.accountId)}">🔗 ${esc(action.accountName ?? 'Compte')}</button>` : ''}
-        ${action.personId ? `<button type="button" class="krs-cpt" data-open-person="${esc(action.personId)}">👤 ${esc(action.personName ?? 'Personne')}</button>` : ''}
+        ${action.accountId ? `<button type="button" class="krs-cpt" data-open-account="${esc(action.accountId)}">${HICON.link} ${esc(action.accountName ?? 'Compte')}</button>` : ''}
+        ${action.personId ? `<button type="button" class="krs-cpt" data-open-person="${esc(action.personId)}">${HICON.user} ${esc(action.personName ?? 'Personne')}</button>` : ''}
         <span class="krs-asig">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${confidenceLevel(action.confidence) ? ` · confiance ${confidenceLevel(action.confidence)}` : ''}</span>
         <span class="krs-do-inline">
           <button class="krs-b sm yes" data-home="action-done" aria-label="Marquer comme fait"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg> Fait</button>
@@ -753,17 +790,17 @@ function signalsMarkup(data: HomeDashboardData): string {
             <span class="sig-src">${esc(signal.source)}${signal.inferenceLevel ? ` · ${esc(signal.inferenceLevel)}` : ''}</span>
             <span class="sig-date">${esc(formatDate(signal.observedAt))}</span>
             <span class="sig-conf" style="background:${confidenceColor(signal.confidence)}" title="${confidenceLevel(signal.confidence) ? `confiance ${confidenceLevel(signal.confidence)}` : 'confiance inconnue'}" aria-label="${confidenceLevel(signal.confidence) ? `confiance ${confidenceLevel(signal.confidence)}` : 'confiance inconnue'}"></span>
-            ${signal.userVerdict ? `<span class="sig-verdict ${signal.userVerdict}">${signal.userVerdict === 'confirmed' ? '✓ confirmé' : '✕ infirmé'}</span>` : ''}
+            ${signal.userVerdict ? `<span class="sig-verdict ${signal.userVerdict}">${signal.userVerdict === 'confirmed' ? `${HICON.check} confirmé` : `${HICON.cross} infirmé`}</span>` : ''}
           </span>
         </span>
       </button>`).join('')
-    : emptyState('🌐', 'Aucun signal prioritaire aujourd’hui', 'Les signaux détectés par tes sources apparaîtront ici, datés et sourcés.')
+    : emptyState(HICON.globe, 'Aucun signal prioritaire aujourd’hui', 'Les signaux détectés par tes sources apparaîtront ici, datés et sourcés.')
   const foot = data.latestSignals.length > 6
     ? `<div class="sig-foot"><button type="button" data-home="expand-signals">Voir toute la veille (${data.latestSignals.length}) →</button></div>`
     : ''
   return `<section class="sig-card" aria-label="Signaux et veille">
     <div class="sig-head">
-      <span class="sig-ic" aria-hidden="true">🌐</span>
+      <span class="sig-ic" aria-hidden="true">${HICON.globe}</span>
       <div><div class="sig-ttl">Signaux · veille</div><div class="sig-sub">multi-compte · faits datés à valider</div></div>
     </div>
     <div class="rc-sync"><span class="spinner" aria-hidden="true"></span><span>Dernière synchronisation : <b>${esc(relativeTime(lastSync))}</b></span></div>
@@ -781,25 +818,25 @@ function signalsMarkup(data: HomeDashboardData): string {
 function coachingMarkup(coaching: HomeCoaching): string {
   if (!coaching) {
     return `<section class="sig-card" aria-label="Coaching relationnel">
-      <div class="sig-head"><span class="sig-ic" aria-hidden="true">◎</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé</div></div></div>
-      <div class="sig-body">${emptyState('◎', 'Analyse comportementale insuffisante', 'Le coaching se construira au fil des synchronisations — aucune personnalité n’est inférée sans preuves suffisantes.')}</div>
+      <div class="sig-head"><span class="sig-ic" aria-hidden="true">${HICON.coach}</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé</div></div></div>
+      <div class="sig-body">${emptyState(HICON.coach, 'Analyse comportementale insuffisante', 'Le coaching se construira au fil des synchronisations — aucune personnalité n’est inférée sans preuves suffisantes.')}</div>
     </section>`
   }
   const items = coaching.insights.map((insight) => `<div class="sig-item" data-coach-item="${esc(insight.id)}">
-    <span class="sig-emoji" aria-hidden="true">◎</span>
+    <span class="sig-emoji" aria-hidden="true">${HICON.target}</span>
     <span class="sig-b">
       <span class="sig-it-t" style="display:block">${esc(insight.trait)}</span>
       <span class="sig-it-d" style="display:block">${esc(insight.observation)}</span>
       <span class="sig-meta">
         <span class="sig-src">${confidenceLevel(insight.confidence) ? `confiance ${confidenceLevel(insight.confidence)}` : 'confiance à confirmer'}</span>
         ${insight.feedback
-          ? `<span class="sig-verdict ${insight.feedback === 'useful' ? 'confirmed' : 'dismissed'}">${insight.feedback === 'useful' ? '✓ utile' : '✕ pas juste'}</span>`
-          : `<span class="krs-do-inline"><button type="button" class="krs-b sm yes" data-coach-fb="useful" data-insight="${esc(insight.id)}" aria-label="Lecture utile">👍</button><button type="button" class="krs-b sm no" data-coach-fb="inaccurate" data-insight="${esc(insight.id)}" aria-label="Pas juste">👎</button></span>`}
+          ? `<span class="sig-verdict ${insight.feedback === 'useful' ? 'confirmed' : 'dismissed'}">${insight.feedback === 'useful' ? `${HICON.check} utile` : `${HICON.cross} pas juste`}</span>`
+          : `<span class="krs-do-inline"><button type="button" class="krs-b sm yes" data-coach-fb="useful" data-insight="${esc(insight.id)}" aria-label="Lecture utile">${HICON.thumbUp}</button><button type="button" class="krs-b sm no" data-coach-fb="inaccurate" data-insight="${esc(insight.id)}" aria-label="Pas juste">${HICON.thumbDown}</button></span>`}
       </span>
     </span>
   </div>`).join('')
   return `<section class="sig-card" aria-label="Coaching relationnel">
-    <div class="sig-head"><span class="sig-ic" aria-hidden="true">◎</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé — jamais un diagnostic</div></div></div>
+    <div class="sig-head"><span class="sig-ic" aria-hidden="true">${HICON.coach}</span><div><div class="sig-ttl">Coaching relationnel</div><div class="sig-sub">style de communication observé — jamais un diagnostic</div></div></div>
     ${coaching.executiveSummary ? `<div style="padding:10px 14px 0;font-size:11.5px;color:var(--t2);line-height:1.5">Dans les échanges observés : <b>${esc(coaching.executiveSummary)}</b></div>` : ''}
     <div class="sig-body">${items}</div>
     <div style="padding:0 14px 12px;font-family:var(--mono);font-size:8.5px;color:var(--t3)">Analyse mise à jour ${coaching.updatedAt ? esc(relativeTime(coaching.updatedAt)) : 'à confirmer'}</div>
@@ -890,7 +927,7 @@ function bindCoaching(ctx: HomeContext, data: HomeDashboardData): void {
     void saveInsightFeedback(ctx.organizationId, ctx.session.user.id, insight.id, feedback).then(() => {
       insight.feedback = feedback
       const item = ctx.container.querySelector<HTMLElement>(`[data-coach-item="${CSS.escape(insight.id)}"] .sig-meta`)
-      if (item) item.innerHTML = `<span class="sig-src">${confidenceLevel(insight.confidence) ? `confiance ${confidenceLevel(insight.confidence)}` : 'confiance à confirmer'}</span><span class="sig-verdict ${feedback === 'useful' ? 'confirmed' : 'dismissed'}">${feedback === 'useful' ? '✓ utile' : '✕ pas juste'}</span>`
+      if (item) item.innerHTML = `<span class="sig-src">${confidenceLevel(insight.confidence) ? `confiance ${confidenceLevel(insight.confidence)}` : 'confiance à confirmer'}</span><span class="sig-verdict ${feedback === 'useful' ? 'confirmed' : 'dismissed'}">${feedback === 'useful' ? `${HICON.check} utile` : `${HICON.cross} pas juste`}</span>`
       ctx.toast(feedback === 'useful' ? 'Merci — lecture confirmée.' : 'Pris en compte — cela affinera le profil.')
     }).catch((error) => ctx.toast(error instanceof Error ? error.message : 'Feedback non enregistré.', 'error'))
   }))
@@ -927,11 +964,11 @@ function openSignalDrawer(ctx: HomeContext, signal: HomeSignal): void {
       ${signal.accountName ? fact('Compte', esc(signal.accountName)) : ''}
       ${signal.personName ? fact('Personne', esc(signal.personName)) : ''}
       ${fact('Règle', signal.kind === 'company' ? 'Veille entreprise (company_signals)' : 'Analyse comportementale (behavioral_signals)')}
-      ${fact('Statut', signal.userVerdict === 'confirmed' ? '✓ Confirmé par toi' : signal.userVerdict === 'dismissed' ? '✕ Infirmé par toi' : 'À valider')}
+      ${fact('Statut', signal.userVerdict === 'confirmed' ? `${HICON.check} Confirmé par toi` : signal.userVerdict === 'dismissed' ? `${HICON.cross} Infirmé par toi` : 'À valider')}
     </div>
     <div class="sig-drawer-actions">
-      <button class="btn-view" data-drawer="confirm">✓ Confirmer</button>
-      <button class="btn-secondary" data-drawer="dismiss">✕ Infirmer</button>
+      <button class="btn-view" data-drawer="confirm">${HICON.check} Confirmer</button>
+      <button class="btn-secondary" data-drawer="dismiss">${HICON.cross} Infirmer</button>
       ${signal.accountId ? `<button class="btn-secondary" data-open-account="${esc(signal.accountId)}">Ouvrir le compte</button>` : ''}
       ${signal.personId ? `<button class="btn-secondary" data-open-person="${esc(signal.personId)}">Ouvrir la personne</button>` : ''}
     </div>

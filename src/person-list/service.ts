@@ -21,6 +21,29 @@ const object = (value: unknown): Row => value && typeof value === 'object' && !A
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(object) : []
 const text = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value : null
 
+// Le projet Supabase plafonne chaque requête PostgREST à 1000 lignes côté
+// serveur (db-max-rows), quel que soit le .limit() demandé côté client. Pour
+// contact_score_history (historique réel, peut dépasser 1000 lignes dès
+// quelques mois de recul), on pagine explicitement via .range() pour ne
+// jamais perdre silencieusement les mois les plus anciens.
+async function fetchAllPages(
+  build: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: QueryResult['error'] }>,
+  pageSize = 1000,
+  maxRows = 20000,
+): Promise<QueryResult> {
+  const out: unknown[] = []
+  let from = 0
+  while (from < maxRows) {
+    const { data, error } = await build(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    const page = data ?? []
+    out.push(...page)
+    if (page.length < pageSize) break
+    from += pageSize
+  }
+  return { data: out, error: null }
+}
+
 export type PeopleOverview = {
   workspaceId: string
   generatedAt: string
@@ -39,8 +62,8 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
     contactsResult, historyResult, settingsResult, userSettingsResult,
     messagesResult, meetingsResult, signalsResult, membershipsResult, profilesResult,
   ] = await Promise.all([
-    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('snapshot_date', { ascending: false }).limit(8000),
+    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name,domain),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
+    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('id', { ascending: true }).range(from, to)),
     client.from('person_settings').select('contact_id,relationship_type,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('person_user_settings').select('contact_id,favorite,watch_enabled').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('communication_messages').select('contact_id,sent_at').eq('organization_id', workspaceId).limit(3000),
@@ -121,6 +144,10 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
   if (error) throw error
   void Promise.allSettled([
     client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
+    // Historique complet pour ce nouveau contact : reconstruit son score passé
+    // et présent à partir de ses échanges déjà synchronisés (même formule),
+    // pas seulement le score du jour.
+    client.functions.invoke('score-batch', { body: { organizationId: workspaceId, contactId, deepBackfill: true } }),
     client.functions.invoke('monitor-contacts', { body: { organizationId: workspaceId } }),
     triggerBehaviorSyncs(workspaceId),
   ])

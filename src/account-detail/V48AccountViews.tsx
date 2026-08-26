@@ -170,12 +170,24 @@ export function V48AccountRelationView(props: ViewProps) {
 
 function AccountInsight({ data }: { data: AccountDetailData }) {
   const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
+  // Sous-encart daté de la carte gauche : un signal notable distinct du spotlight.
+  const nested = data.signals.find((item) => item.id !== signal?.id) ?? null
   const lead = [...data.people].sort((a, b) => (b.exchangeShare ?? 0) - (a.exchangeShare ?? 0))[0]
   const reading = data.account.description
     || (lead ? `La relation est principalement portée par ${lead.name}${lead.exchangeShare === null ? '' : `, qui représente ${lead.exchangeShare}% des échanges observés`}.` : null)
     || 'La lecture du compte est encore en construction.'
+  const sources = data.sources.map((source) => source.label).join(' + ') || 'sources à confirmer'
   return <div className="v48-insight-grid">
-    <article className="v48-insight"><span><Icon name="sparkle" /></span><div><small>Ce que montrent les échanges</small><strong>{reading}</strong><p>Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {data.sources.map((source) => source.label).join(' + ') || 'sources à confirmer'}</p></div></article>
+    <article className="v48-insight filled">
+      <div className="v48-insight-head"><span className="v48-insight-ic"><Icon name="people" /></span><small>Ce que montrent les échanges</small></div>
+      <strong>{reading}</strong>
+      {nested && <div className="v48-insight-nested">
+        <small>{relativeLabel(nested.provenance.observedAt)}</small>
+        <b>{nested.title}</b>
+        {(nested.summary || nested.impact) && <p>{nested.summary || nested.impact}</p>}
+      </div>}
+      <p className="v48-insight-src">Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {sources}</p>
+    </article>
     <article className="v48-signal-spotlight"><small>Depuis votre dernier échange <b>{dateLabel(data.relationship.lastInteractionAt)}</b></small>
       {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || signal.impact || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeLabel(signal.provenance.observedAt)}</em></>
         : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}

@@ -5,6 +5,7 @@ import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { ToastProvider, useBusy, useToast } from '../person-detail/ui'
+import { setBohuBarShrunk } from '../shell/bohuBarSignal'
 import {
   CHANNEL_ICONS, CheckIcon, DocIcon, FilterChip, LinkIcon, MailIcon, MemberPicker, StarIcon,
 } from '../account-list/AccountsListPage'
@@ -99,7 +100,17 @@ function PageBody({ context }: { context: PageContext }) {
   const [integrateOpen, setIntegrateOpen] = useState(false)
   const [ownerPopup, setOwnerPopup] = useState<{ personId: string; x: number; y: number } | null>(null)
   const [passation, setPassation] = useState(false)
+  const [passationClosing, setPassationClosing] = useState(false)
   const [selection, setSelection] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setBohuBarShrunk(passation && !passationClosing)
+    return () => setBohuBarShrunk(false)
+  }, [passation, passationClosing])
+  const closePassation = () => {
+    setPassationClosing(true)
+    setTimeout(() => { setPassation(false); setSelection(new Set()); setPassationClosing(false) }, 260)
+  }
   const [assignAnchor, setAssignAnchor] = useState<{ x: number; y: number } | null>(null)
 
   const refresh = useCallback(async () => {
@@ -206,7 +217,7 @@ function PageBody({ context }: { context: PageContext }) {
         <button type="button" className="dxp-integ" onClick={() => setIntegrateOpen(true)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg> Intégrer des personnes
         </button>
-        <button type="button" className={`kpass-btn ${passation ? 'on' : ''}`} aria-pressed={passation} onClick={() => { setPassation((value) => !value); setSelection(new Set()) }}>
+        <button type="button" className={`kpass-btn ${passation ? 'on' : ''}`} aria-pressed={passation} onClick={() => { passation ? closePassation() : setPassation(true) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8M8 21l-4-4 4-4M4 17h12" /></svg> Sélectionner
         </button>
       </div>
@@ -231,9 +242,9 @@ function PageBody({ context }: { context: PageContext }) {
           onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) toggleSelect(row.id); else navigate(`/app/people/${row.id}`) } }}>
           <span className="dxp-band" style={{ background: TIER_COLORS[row.tier] }} />
           {passation ? <span className="psel" aria-hidden="true">{CheckIcon}</span> : <span />}
-          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.avatarUrl} name={row.name} /></span>
           <button type="button" className={`dxp-star ${row.favorite ? 'on' : ''}`} aria-pressed={row.favorite} aria-label={row.favorite ? `Retirer ${row.name} des favoris` : `Ajouter ${row.name} aux favoris`}
             onClick={(event) => { event.stopPropagation(); toggleFavorite(row) }}>{StarIcon}</button>
+          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.avatarUrl} name={row.name} domain={row.companyDomain} /></span>
           <span className="dxp-nm">{row.name}</span>
           <span className="dxpp-job">{row.jobTitle ?? '—'}</span>
           {row.companyId
@@ -260,7 +271,7 @@ function PageBody({ context }: { context: PageContext }) {
     {ownerPopup && <MemberPicker overview={overview} anchor={ownerPopup}
       currentId={overview.people.find((row) => row.id === ownerPopup.personId)?.ownerId ?? null}
       onPick={pickOwner(ownerPopup.personId)} onClose={() => setOwnerPopup(null)} />}
-    {passation && <div className="pa-bar" role="toolbar" aria-label="Actions groupées">
+    {(passation || passationClosing) && <div className="pa-bar-wrap"><div className={`pa-bar${passationClosing ? ' pa-bar-out' : ''}`} role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> personne{selection.size > 1 ? 's' : ''} sélectionnée{selection.size > 1 ? 's' : ''}</span>
       <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Réattribuer
@@ -268,8 +279,10 @@ function PageBody({ context }: { context: PageContext }) {
       <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer
       </button>
-      <button type="button" className="pb-cancel" onClick={() => { setPassation(false); setSelection(new Set()) }}>Annuler</button>
-    </div>}
+      <button type="button" className="pb-cancel" aria-label="Fermer la sélection" onClick={closePassation}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+    </div></div>}
     {assignAnchor && <MemberPicker overview={overview} anchor={assignAnchor} currentId={null} onPick={assignSelection} onClose={() => setAssignAnchor(null)} />}
   </div>
 }

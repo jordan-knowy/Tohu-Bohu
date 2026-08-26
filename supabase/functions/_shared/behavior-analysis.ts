@@ -10,6 +10,7 @@
 // Toute évolution du prompt / du schéma se fait ICI et bénéficie aux deux
 // chemins (email + transcript) simultanément.
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { logAiUsage } from './ai-usage.ts'
 
 export type Analysis = {
   executive_summary?: string
@@ -66,6 +67,24 @@ const SECONDARY_AXIS_SCHEMA = strictObject({
   source_types: SOURCE_TYPES_SCHEMA,
 })
 
+// « Comment aborder cette personne » : scénarios contextuels do/don't déduits des
+// preuves (jamais générique). Nourrit les listes À faire / À éviter de la fiche.
+const APPROACH_SCENARIO_SCHEMA = strictObject({
+  context: { type: 'string' },
+  summary: NULLABLE_STRING_SCHEMA,
+  do: { type: 'array', items: { type: 'string' } },
+  dont: { type: 'array', items: { type: 'string' } },
+})
+
+const PRIMARY_AXES_OBJECT_SCHEMA = strictObject({
+  rythme: PRIMARY_AXIS_SCHEMA,
+  argumentation: PRIMARY_AXIS_SCHEMA,
+  engagement: PRIMARY_AXIS_SCHEMA,
+  registre: PRIMARY_AXIS_SCHEMA,
+  tonalite: PRIMARY_AXIS_SCHEMA,
+  espace_parole: PRIMARY_AXIS_SCHEMA,
+})
+
 export const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
   type: 'json_schema',
   json_schema: {
@@ -82,14 +101,7 @@ export const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
           assertiveness: INTERPERSONAL_AXIS_SCHEMA,
           warmth: INTERPERSONAL_AXIS_SCHEMA,
         }),
-        primary_axes: strictObject({
-          rythme: PRIMARY_AXIS_SCHEMA,
-          argumentation: PRIMARY_AXIS_SCHEMA,
-          engagement: PRIMARY_AXIS_SCHEMA,
-          registre: PRIMARY_AXIS_SCHEMA,
-          tonalite: PRIMARY_AXIS_SCHEMA,
-          espace_parole: PRIMARY_AXIS_SCHEMA,
-        }),
+        primary_axes: PRIMARY_AXES_OBJECT_SCHEMA,
         secondary_axes: strictObject({
           orientation: SECONDARY_AXIS_SCHEMA,
           certainty: SECONDARY_AXIS_SCHEMA,
@@ -97,6 +109,7 @@ export const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
           initiative: SECONDARY_AXIS_SCHEMA,
         }),
         posture: INTERPERSONAL_AXIS_SCHEMA,
+        approach_guidance: { type: 'array', items: APPROACH_SCENARIO_SCHEMA },
       }),
     }),
   },
@@ -222,15 +235,19 @@ export function isRetriableAnalysisError(error: unknown): boolean {
     || message.startsWith('Profil comportemental incomplet :')
 }
 
+export type UsageLogContext = { client: Parameters<typeof logAiUsage>[0]; organizationId?: string | null; userId?: string | null }
+
 export async function analyze(
   name: string,
   role: 'responsable' | 'contact',
   excerpts: string[],
   previousProfile: Record<string, unknown> = {},
   interactionCount = excerpts.length,
+  usageLog?: UsageLogContext,
 ): Promise<Analysis> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
+  const model = Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
   // Une fiche V1/V2 ne doit servir ni de contrat de sortie ni d'exemple au
   // modèle : il avait tendance à en recopier la structure. Elle sera
@@ -252,6 +269,7 @@ Règles impératives :
 - pour chaque axe primaire (primary_axes) : "raw_score" est la position 0-100 sur l'axe du pôle gauche (0) vers le pôle droit (100) — rythme Posé(0)→Rapide(100), argumentation Récit(0)→Chiffré(100), engagement Implicite(0)→Explicite(100), registre Formel(0)→Direct(100), tonalité Sobre(0)→Chaleureux(100), espace_parole Écoute(0)→Occupe(100) ; "margin_pts" est TON incertitude estimée en points (peu de preuves → marge large, ex. 15-20 ; preuves nombreuses et convergentes → marge étroite, ex. 5-8) ; "trend_pts" est le delta signé de "raw_score" par rapport au profil précédent sur la période récente (null si aucun profil précédent ou axe alors insuffisant), "trend_label" vaut "rising"/"stable"/"declining" en cohérence avec le signe (stable si |trend_pts| <= 3) ; "evidence" contient 2 à 3 items COURTS mélangeant si possible un verbatim paraphrasé daté (jamais mot pour mot), une observation quantifiée (durée, fréquence), et un ratio/compte ;
 - pour chaque axe secondaire (secondary_axes) : "score" suit la même échelle 0-100 pôle gauche→droit (orientation Tâche(0)→Relation(100), certainty Prudent(0)→Affirmatif(100), novelty Éprouvé(0)→Exploratoire(100), initiative Suit(0)→Mène(100)) ; pas de champ "evidence" ici, seulement "observation" ;
 - evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript".
+- "approach_guidance" : 2 à 4 scénarios CONCRETS et CONTEXTUELS indiquant comment aborder AU MIEUX cette personne, déduits UNIQUEMENT des preuves observées (jamais un conseil générique applicable à n'importe qui). Chaque scénario : "context" = une situation précise et variée ("Avant un rendez-vous", "Par email", "Quand il/elle temporise ou hésite", "Pour obtenir une décision", "Après un désaccord ou une friction", "Pour embarquer sur un nouveau sujet"…) ; "summary" = une phrase expliquant le levier relationnel PROPRE à cette personne dans ce contexte ; "do" = 1 à 3 actions précises qui fonctionnent avec elle, ancrées sur son style réel (rythme, registre, argumentation, engagement…) et cohérentes avec les axes ci-dessus ; "dont" = 1 à 3 pièges concrets à éviter avec elle. Formulation opérationnelle (impératif), directement utile avant de la contacter ou de la voir. Renvoie une liste vide si les preuves sont insuffisantes pour être pertinent.
 
 Réponds uniquement avec ce JSON strict :
 {
@@ -279,7 +297,8 @@ Réponds uniquement avec ce JSON strict :
       "novelty": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]},
       "initiative": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[]}
     },
-    "posture": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null}
+    "posture": {"status":"insufficient","score":null,"label":null,"observation":null,"confidence":null,"evidence_count":0,"source_types":[],"evolution":null},
+    "approach_guidance": [{"context":"Avant un rendez-vous","summary":"phrase ancrée sur son style ou null","do":["action précise"],"dont":["piège à éviter"]}]
   }
 }
 
@@ -292,7 +311,7 @@ Nouveaux extraits :\n${corpus}`
       body: JSON.stringify({
         // Modèle dédié à l'analyse comportementale (découplé du chat Ask Tohu).
         // Surchargable via OPENROUTER_ANALYSIS_MODEL sans toucher aux autres fonctions.
-        model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
+        model,
         temperature: retry ? 0 : 0.1,
         response_format: COGNITIVE_PROFILE_RESPONSE_FORMAT,
         // Empêche OpenRouter de choisir un fournisseur qui ignorerait le
@@ -309,6 +328,7 @@ Nouveaux extraits :\n${corpus}`
     })
     if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
     const data = await response.json()
+    if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'behavior-analysis:analyze', model, usage: data?.usage })
     const content = openRouterContent(data)
     try {
       const result = extractJson(content)

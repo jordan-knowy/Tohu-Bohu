@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ContactAvatar } from './ContactAvatar'
 
 /** Un élément détecté (compte ou personne) affiché dans le tableau de détection.
  *  Les champs optionnels (interlocuteurs, ancienneté, relation) ne sont rendus
@@ -19,12 +20,6 @@ export type IntegrationItem = {
 
 type SortKey = 'name' | 'interactions' | 'lastInteractionAt'
 const PRECHECK = 10
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return '·'
-  return (parts.length === 1 ? parts[0]!.slice(0, 2) : parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
-}
 
 function relLabel(iso: string | null): string {
   if (!iso) return '—'
@@ -185,7 +180,7 @@ export function IntegrationModal({ entity, title, subtitle, items, loading, erro
                           return <tr key={item.id} className={on ? 'sel' : ''} onClick={() => toggle(item.id)}>
                             <td><span className={`tin-ck${on ? ' on' : ''}`} role="checkbox" aria-checked={on} /></td>
                             <td><div className="tin-ent">
-                              <span className="tin-av">{item.avatarUrl ? <img src={item.avatarUrl} alt="" /> : initials(item.name)}</span>
+                              <span className="tin-av"><ContactAvatar src={item.avatarUrl} name={item.name} domain={item.subtitle} /></span>
                               <div><b>{item.name}</b>{item.subtitle && <small>{item.subtitle}</small>}</div>
                             </div></td>
                             {hasInterlocutors && (() => {

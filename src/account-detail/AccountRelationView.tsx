@@ -33,6 +33,21 @@ function band(score: number): string {
   return score >= 70 ? 'var(--sage)' : score >= 50 ? 'var(--amber)' : 'var(--coral)'
 }
 
+function quartile(sorted: number[], q: number): number {
+  const pos = (sorted.length - 1) * q
+  const base = Math.floor(pos)
+  const next = sorted[base + 1]
+  return Math.round(next === undefined ? sorted[base]! : sorted[base]! + (pos - base) * (next - sorted[base]!))
+}
+/** Fourchette réellement observée (Q1–Q3) sur l'historique — jamais inventée. */
+function observedScoreRange(scores: number[]): { q1: number; q3: number } | null {
+  const clean = scores.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
+  if (clean.length < 5) return null
+  const q1 = quartile(clean, 0.25)
+  const q3 = quartile(clean, 0.75)
+  return q3 > q1 ? { q1, q3 } : null
+}
+
 function Empty({ children }: { children: ReactNode }) {
   return <div className="acr-empty"><span>◇</span><p>{children}</p></div>
 }
@@ -141,7 +156,21 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
   const rel = data.relationship
 
   const tip = useTip()
-  const bars = useMemo(() => buildMonthlyBars(rel.history, segMonths), [rel.history, segMonths])
+  // Barres = santé mensuelle reconstruite, fenêtre PLEINE : 6/12/36 affiche
+  // toujours 6/12/36 barres (mois sans donnée = barre grise), les barres
+  // s'affinent automatiquement selon leur nombre (voir CSS .chart). Repli sur
+  // les snapshots account bruts si la RPC n'a rien renvoyé.
+  const bars = useMemo(() => {
+    const series = rel.monthlyHealth
+    if (series.length) {
+      return series.slice(-segMonths).map((m) => {
+        const [y, mo] = m.ym.split('-').map(Number)
+        return { label: monthLabel((y ?? 0) * 12 + ((mo ?? 1) - 1)), score: m.score }
+      })
+    }
+    return buildMonthlyBars(rel.history, segMonths)
+  }, [rel.monthlyHealth, rel.history, segMonths])
+  const scoreRange = useMemo(() => observedScoreRange(bars.map((b) => b.score).filter((s): s is number => s !== null)), [bars])
   const real = bars.filter((b) => b.score !== null)
   let lastRealIdx = -1
   for (let i = 0; i < bars.length; i++) if (bars[i]!.score !== null) lastRealIdx = i
@@ -183,7 +212,7 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
         </div>
 
         {real.length >= 1 ? <>
-          <div className="chart">{bars.map((b, i) => b.score === null
+          <div className="chart" style={{ gap: bars.length > 24 ? 2 : bars.length > 10 ? 4 : 6 }}>{bars.map((b, i) => b.score === null
             ? <i key={i} className="empty" style={{ height: '7%', background: '#E3DEF2' }} title={`${b.label} · pas encore de données`} />
             : <i key={i} tabIndex={0}
                 style={{ height: `${Math.max(5, b.score)}%`, background: i === lastRealIdx ? 'linear-gradient(180deg,#C97A20,#DFA153)' : 'linear-gradient(180deg,#3FAEBE,#2896A8)' }}
@@ -196,6 +225,7 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
           <span><b>{tenureLabel(data.account.relationshipStartedAt)}</b> d’ancienneté</span>
           <span><b>{rel.totalInteractions || '—'}</b> échanges</span>
           <span><b>{data.people.length}</b> contacts</span>
+          {scoreRange && <span title="Fourchette réellement observée sur l’historique du score (Q1–Q3) — pas une prédiction.">fourchette <b>{scoreRange.q1}–{scoreRange.q3}</b></span>}
         </div>
         {windowDelta !== null && <span className={`evo ${windowDelta < 0 ? 'down' : 'up'}`}>{windowDelta < 0 ? '↘' : '↗'} {windowDelta >= 0 ? `+${windowDelta}` : windowDelta} pts <em>sur {segMonths} mois</em></span>}
 

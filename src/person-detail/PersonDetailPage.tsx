@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
-import { verifySuperAdmin } from '../super-admin/service'
-import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, renamePerson, setPersonArchived, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
+import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, handoverPerson, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
@@ -81,6 +80,7 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   const person = data.person
   const [ownerOpen, setOwnerOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
+  const [passationOpen, setPassationOpen] = useState(false)
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -141,9 +141,56 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
             </button>
           </div>}
         </span>
+        <button type="button" className="v48-affect-link v48-affect-handover" disabled={busy !== null} onClick={() => setPassationOpen(true)}>Passer la relation</button>
       </div>
     </div>
+    {passationOpen && <PassationModal data={data} userId={userId} refresh={refresh} onClose={() => setPassationOpen(false)} />}
   </div>
+}
+
+/** Passation par fiche : nouveau responsable + note de contexte, puis refresh. */
+function PassationModal({ data, userId, refresh, onClose }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; onClose: () => void }) {
+  const toast = useToast()
+  const person = data.person
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
+  const [toUserId, setToUserId] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([])) }, [person.workspaceId])
+  const candidates = (members ?? []).filter((member) => member.id !== person.primaryOwnerUserId)
+  const submit = async () => {
+    const target = candidates.find((member) => member.id === toUserId)
+    if (!target) return
+    setSaving(true)
+    try {
+      await handoverPerson(data, userId, target.id, target.fullName, note)
+      toast(`Relation passée à ${target.fullName}.`)
+      onClose()
+      await refresh()
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Passation impossible.', 'error')
+    } finally { setSaving(false) }
+  }
+  return createPortal(
+    <div className="v48-shm" onClick={onClose}>
+      <div className="v48-shp" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="v48-shp-h"><p className="v48-shp-t">Passer la relation</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
+        <p className="v48-shp-i">Transfère la responsabilité de <b>{person.fullName}</b> à un membre de l’équipe. La passation est datée et consignée dans la mémoire relationnelle.</p>
+        <p className="v48-shp-l">Nouveau responsable</p>
+        {members === null
+          ? <div className="v48-affect-loading">Chargement…</div>
+          : <select className="pp-select" value={toUserId} onChange={(event) => setToUserId(event.target.value)} style={{ width: '100%' }}>
+              <option value="" disabled>Choisir un membre…</option>
+              {candidates.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
+            </select>}
+        <p className="v48-shp-l" style={{ marginTop: 12 }}>Note de passation <em style={{ textTransform: 'none', letterSpacing: 0 }}>(optionnel)</em></p>
+        <textarea className="feed-txt" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex : dossier en cours sur le devis, Christèle est le bon relai." style={{ width: '100%', minHeight: 70 }} />
+        <div className="v48-shp-actions">
+          <button type="button" className="feed-btn" onClick={onClose}>Annuler</button>
+          <button type="button" className="feed-save" disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Passation…' : 'Confirmer la passation'}</button>
+        </div>
+      </div>
+    </div>, document.body)
 }
 
 function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
@@ -372,64 +419,6 @@ function RelationshipBand({ data }: { data: PersonDetailData }) {
   </div>
 }
 
-const TrashIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
-const RestoreIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4v6h6" /><path d="M4.5 13a8 8 0 1 0 2-8.5L4 10" /></svg>
-
-function ArchiveIconButton({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
-  const toast = useToast()
-  const [busy, run] = useBusy()
-  const archived = Boolean(data.person.archivedAt)
-  const toggle = () => {
-    if (!archived && !window.confirm(`Supprimer ${data.person.fullName} de Tohu ? La fiche sera masquée des listes mais l’historique réel (emails, réunions, signaux) reste conservé — tu pourras la restaurer à tout moment.`)) return
-    void run('archive', async () => {
-      await setPersonArchived(data, userId, !archived)
-      window.dispatchEvent(new Event('tohu:workspace-updated'))
-      toast(archived ? `${data.person.fullName} restaurée.` : `${data.person.fullName} supprimée des listes.`)
-      await refresh()
-    })
-  }
-  return <button type="button" className="kfav-star" disabled={busy !== null} title={archived ? 'Restaurer cette personne' : 'Supprimer cette personne'} aria-label={archived ? 'Restaurer cette personne' : 'Supprimer cette personne'} onClick={toggle} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}>
-    <span style={{ width: 16, height: 16, display: 'inline-flex' }}>{archived ? RestoreIcon : TrashIcon}</span>
-  </button>
-}
-
-function LockIconButton({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
-  const toast = useToast()
-  const [busy, run] = useBusy()
-  if (data.person.locked && !data.person.lockedByMe) {
-    return <button type="button" className="kfav-star" disabled title="Verrouillé par un autre collaborateur — seul l’auteur du verrou peut le lever" aria-label="Verrouillé par un autre collaborateur">
-      <span style={{ fontSize: 14 }}>🔒</span>
-    </button>
-  }
-  const toggle = () => void run('lock', async () => {
-    await setPersonLock(data, userId, !data.person.lockedByMe)
-    toast(data.person.lockedByMe ? 'Verrou levé — la mémoire d’équipe redevient visible.' : 'Personne verrouillée — la mémoire d’équipe est masquée aux autres collaborateurs.')
-    await refresh()
-  })
-  return <button type="button" className="kfav-star" disabled={busy !== null} title={data.person.lockedByMe ? 'Lever le verrou' : 'Verrouiller cette personne'} aria-pressed={data.person.lockedByMe} aria-label={data.person.lockedByMe ? 'Lever le verrou' : 'Verrouiller cette personne'} onClick={toggle}>
-    <span style={{ fontSize: 14 }}>{data.person.lockedByMe ? '🔒' : '🔓'}</span>
-  </button>
-}
-
-function EnrichPersonButton({ data }: { data: PersonDetailData }) {
-  const toast = useToast()
-  const [busy, setBusy] = useState(false)
-  const run = () => void (async () => {
-    setBusy(true)
-    try {
-      const result = await triggerPersonEnrichment(data.person.id)
-      toast(result.enriched > 0 ? `${data.person.fullName} enrichie via l’agent IA.` : 'Aucune donnée fiable retournée par le moteur d’enrichissement.')
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Enrichissement impossible.')
-    } finally {
-      setBusy(false)
-    }
-  })()
-  return <button type="button" className="kfav-star" disabled={busy} title="Enrichir maintenant (super admin)" aria-label="Enrichir maintenant" onClick={run}>
-    <span style={{ fontSize: 14 }}>{busy ? '…' : '✨'}</span>
-  </button>
-}
-
 function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -518,12 +507,14 @@ function PersonContactDialog({ data, userId, refresh, onClose }: { data: PersonD
     }
   })()
 
+  // Une coordonnée effacée (valeur vide) ne doit jamais apparaître comme « trouvée ».
+  const knownDetails = data.contactDetails.filter((detail) => detail.value.trim() !== '')
   const pick = (type: PersonContactDetail['type']) =>
-    data.contactDetails.find((detail) => detail.type === type && detail.primary)
-    ?? data.contactDetails.find((detail) => detail.type === type)
+    knownDetails.find((detail) => detail.type === type && detail.primary)
+    ?? knownDetails.find((detail) => detail.type === type)
   const reachTypes: Array<'phone' | 'email' | 'linkedin' | 'website'> = ['phone', 'email', 'linkedin']
   if (pick('website')) reachTypes.push('website')
-  const identifiers = data.contactDetails.filter((detail) => detail.type === 'email' || detail.type === 'other')
+  const identifiers = knownDetails.filter((detail) => detail.type === 'email' || detail.type === 'other')
   const connected = data.sources.filter((source) => source.status === 'connected')
   const verifiedAt = data.contactDetails.map((detail) => detail.provenance?.lastVerifiedAt).filter(Boolean).sort().at(-1) ?? null
 
@@ -609,35 +600,13 @@ function PersonContactDialog({ data, userId, refresh, onClose }: { data: PersonD
   )
 }
 
-/** Actions de gestion de la fiche (verrou, suppression, enrichissement) —
- *  regroupées dans un menu ⋯ discret, hors de la maquette « démo ». */
-function PersonActionsMenu({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [open])
-  return <span className="v48-actions" ref={rootRef}>
-    <button type="button" className="v48-tabs-action v48-actions-trigger" aria-haspopup="menu" aria-expanded={open} aria-label="Actions de la fiche" onClick={() => setOpen((value) => !value)}>
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
-    </button>
-    {open && <div className="v48-actions-pop" role="menu">
-      {isSuperAdmin && <EnrichPersonButton data={data} />}
-      <LockIconButton data={data} userId={userId} refresh={refresh} />
-      <ArchiveIconButton data={data} userId={userId} refresh={refresh} />
-    </div>}
-  </span>
-}
-
-function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; isSuperAdmin: boolean }) {
+function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
   const [contactOpen, setContactOpen] = useState(false)
+  // La ré-analyse est proposée dès qu'il y a assez de données : profil absent/ancien
+  // (état vide) MAIS AUSSI profil v3 sans conseils d'approche déduits — pour permettre
+  // de régénérer et obtenir le « comment aborder » ancré sur les échanges.
   const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
-    && (data.behavior.cognitiveProfile.schemaVersion < 3
-      || data.behavior.cognitiveProfile.primaryAxes.every((axis) => axis.status === 'insufficient'))
   return <>
     <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
@@ -648,7 +617,6 @@ function PageBody({ data, userId, refresh, isSuperAdmin }: { data: PersonDetailD
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
         Contact
       </button>
-      <PersonActionsMenu data={data} userId={userId} refresh={refresh} isSuperAdmin={isSuperAdmin} />
     </nav>
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
@@ -670,7 +638,6 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   const { personId = '' } = useParams()
   const [data, setData] = useState<PersonDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const refresh = useCallback(async () => {
     try {
       setError(null)
@@ -680,7 +647,6 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
     }
   }, [context.workspaceId, personId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
-  useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
 
   if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><Link to="/app/people">Retour aux personnes</Link></div>
@@ -689,7 +655,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
 
   return <ToastProvider>
     <div className="pp">
-      <PageBody data={data} userId={context.userId} refresh={refresh} isSuperAdmin={isSuperAdmin} />
+      <PageBody data={data} userId={context.userId} refresh={refresh} />
     </div>
   </ToastProvider>
 }

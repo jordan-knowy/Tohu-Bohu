@@ -95,7 +95,7 @@ describe('latestContactScore — profil moteur puis historique', () => {
 })
 
 describe('buildPortfolioSeries / evolutionPercents — série mensuelle réelle', () => {
-  it('moyenne par compte puis par mois, mois vides null (jamais interpolés)', () => {
+  it('moyenne par compte puis par mois — chaque contact reporte son dernier score connu (as-of), un mois n’est null que si aucun contact n’a encore de score', () => {
     const contacts = [{ id: 'c1', company_id: 'a' }, { id: 'c2', company_id: 'b' }]
     const history = [
       { contact_id: 'c1', score: 60, snapshot_date: '2026-06-10' },
@@ -104,7 +104,12 @@ describe('buildPortfolioSeries / evolutionPercents — série mensuelle réelle'
       { contact_id: 'c1', score: 80, snapshot_date: '2026-07-01' },
     ]
     const series = buildPortfolioSeries(history, contacts, 3, NOW)
-    expect(series.map((point) => point.score)).toEqual([null, 60, 80])
+    // Mai : aucun score connu pour aucun contact → null. Juin : dernier score
+    // connu par contact (c1=70, c2=50) → (70+50)/2=60. Juillet : c1 a un
+    // nouveau score (80), c2 reporte son dernier connu (50, de juin) →
+    // (80+50)/2=65 — la relation avec le compte b n'est pas effacée juste
+    // parce qu'aucune nouvelle mesure n'est tombée ce mois-ci.
+    expect(series.map((point) => point.score)).toEqual([null, 60, 65])
   })
   it('évolutions % uniquement quand les points existent', () => {
     const series = [

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildContactDetails, buildHistory, buildPersonDetail, buildRecommendations,
+  buildApproachGuidance, buildContactDetails, buildHistory, buildPersonDetail, buildRecommendations,
   buildScoreHistory, buildSignals, buildSources, legacyCareerRows, scoreWindow,
   type PersonDetailRaw,
 } from '../mapping'
@@ -329,5 +329,23 @@ describe('workspace et RLS côté service', () => {
     const data = buildPersonDetail(raw({ contact: { id: 'person-1', full_name: 'Camille Test' } }))
     expect(data.person.workspaceId).toBe('org-1')
     expect(data.person.id).toBe('person-1')
+  })
+})
+
+describe('buildApproachGuidance — conseils d’approche déduits de l’analyse', () => {
+  it('garde les scénarios remplis et ignore les vides', () => {
+    const guidance = buildApproachGuidance([
+      { context: 'Pour obtenir une décision', summary: 'Il tranche vite sur un chiffre.', do: ['Ouvrir par l’échéance chiffrée'], dont: ['Tourner autour du pot'] },
+      { context: 'Vide', summary: null, do: [], dont: [] },
+      { context: '', summary: 'x', do: ['a'], dont: [] },
+    ])
+    expect(guidance).toHaveLength(1)
+    expect(guidance[0]!.context).toBe('Pour obtenir une décision')
+    expect(guidance[0]!.do).toEqual(['Ouvrir par l’échéance chiffrée'])
+    expect(guidance[0]!.dont).toEqual(['Tourner autour du pot'])
+  })
+  it('renvoie une liste vide si absent ou mal typé', () => {
+    expect(buildApproachGuidance(undefined)).toEqual([])
+    expect(buildApproachGuidance('nope')).toEqual([])
   })
 })

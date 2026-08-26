@@ -111,3 +111,49 @@ body.super-admin-page{margin:0;background:#0d0919;color:#fff;overflow-x:hidden}
 .sa-email-user-toggles{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;margin-top:14px}
 .sa-email-user-toggles label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:#fff}
 .sa-email-note{font-size:12px;color:var(--sa-muted);margin-top:16px;line-height:1.6}
+
+/* ── Onglet Suivi IA & coûts ─────────────────────────────────────────────── */
+.sa-ai{display:flex;flex-direction:column;gap:20px}
+.sa-ai-empty{padding:14px 16px;border:1px dashed rgba(155,124,244,.5);border-radius:12px;background:rgba(155,124,244,.06);color:#cfc6ea;font-size:12.5px;line-height:1.55}
+.sa-ai-empty code{font-family:'JetBrains Mono',monospace;font-size:11px;color:#b9abed}
+.sa-ai-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.sa-ai-card{display:flex;flex-direction:column;gap:5px;padding:16px;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.025)}
+.sa-ai-card-l{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#81798d}
+.sa-ai-card-v{font-family:'Epilogue',sans-serif;font-weight:800;font-size:22px;color:#fff;letter-spacing:-.02em}
+.sa-ai-card-s{font-size:9.5px;color:#9b93a8}
+.sa-ai-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.sa-ai-block{padding:16px 18px;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.02)}
+.sa-ai-block h2{margin:0 0 12px;font-family:'Epilogue',sans-serif;font-size:14px;color:#fff}.sa-ai-block h2 small{color:#81798d;font-weight:400;font-size:10px}
+.sa-ai-table{width:100%;border-collapse:collapse;font-size:12px}
+.sa-ai-table th{text-align:left;padding:6px 8px;color:#81798d;font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;border-bottom:1px solid rgba(255,255,255,.08)}
+.sa-ai-table th:not(:first-child),.sa-ai-table td:not(:first-child){text-align:right}
+.sa-ai-table td{padding:7px 8px;color:#d7d1e2;border-bottom:1px solid rgba(255,255,255,.04)}
+.sa-ai-table td:first-child{font-family:'JetBrains Mono',monospace;font-size:11px;color:#b9abed}
+.sa-ai-table td:last-child{color:#58d6a5;font-weight:700}
+.sa-ai-none{color:#6b6478;text-align:center;padding:14px}
+.sa-ai-bars{display:flex;align-items:flex-end;gap:4px;height:130px;padding-top:8px}
+.sa-ai-bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end;min-width:0}
+.sa-ai-bar>i{width:100%;max-width:22px;border-radius:4px 4px 0 0;background:linear-gradient(180deg,#9b7cf4,#6e50c8);display:block}
+.sa-ai-bar>span{font-size:8px;color:#81798d}
+.sa-ai-note{margin:0;padding:12px 14px;border-radius:11px;background:rgba(255,255,255,.03);color:#9b93a8;font-size:11px;line-height:1.6}
+.sa-ai-note code{font-family:'JetBrains Mono',monospace;font-size:10px;color:#b9abed}
+@media(max-width:900px){.sa-ai-cards{grid-template-columns:repeat(2,1fr)}.sa-ai-cols{grid-template-columns:1fr}}
+
+/* ── Zone dangereuse : suppression d'un utilisateur ──────────────────────── */
+.sa-danger-block{margin-top:18px;padding:16px 18px;border:1px solid rgba(242,120,145,.35);border-radius:14px;background:rgba(242,120,145,.06)}
+.sa-danger-block h3{margin:0 0 5px;font-family:'Epilogue',sans-serif;font-size:14px;color:#f7c0cb}
+.sa-danger-block p{margin:0 0 12px;font-size:11.5px;line-height:1.55;color:#c9b6bb}
+.sa-danger-btn{border:1px solid var(--sa-pink,#f27891);background:rgba(242,120,145,.12);color:#f7c0cb;border-radius:10px;padding:9px 16px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.02em;cursor:pointer}
+.sa-danger-btn:hover:not(:disabled){background:var(--sa-pink,#f27891);color:#20101a}
+.sa-danger-btn:disabled{opacity:.45;cursor:not-allowed}
+.sa-modal-mask{position:fixed;inset:0;z-index:1000;background:rgba(6,4,12,.7);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
+.sa-modal{width:min(460px,94vw);background:var(--sa-panel,#161126);border:1px solid rgba(242,120,145,.3);border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.sa-modal h3{margin:0 0 12px;font-family:'Epilogue',sans-serif;font-size:19px;color:#fff}
+.sa-modal p{margin:0 0 12px;font-size:12.5px;line-height:1.6;color:#cfc6d6}
+.sa-modal-confirm-hint code{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#f7c0cb;background:rgba(242,120,145,.12);padding:2px 7px;border-radius:6px}
+.sa-modal-input{width:100%;margin:4px 0 4px;padding:11px 13px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.03);color:#fff;font-size:13px;box-sizing:border-box}
+.sa-modal-input:focus{outline:none;border-color:var(--sa-pink,#f27891)}
+.sa-modal-error{color:#f7a8b6;font-size:11.5px;margin:8px 0 0}
+.sa-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.sa-modal-actions>button:first-child{border:1px solid rgba(255,255,255,.16);background:none;color:#cfc6d6;border-radius:10px;padding:9px 16px;font-size:12px;cursor:pointer}
+.sa-modal-actions>button:first-child:disabled{opacity:.5;cursor:not-allowed}

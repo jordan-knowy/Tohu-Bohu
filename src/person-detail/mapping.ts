@@ -8,6 +8,7 @@ import {
   MIN_BEHAVIOR_INTERACTIONS,
   type AxisPole,
   type AxisTrend,
+  type PersonApproachScenario,
   type DataSourceReference,
   type PersonBehavioralInsight,
   type PersonCareerEntry,
@@ -170,9 +171,26 @@ export function buildCognitiveProfile(profile: Row, analyzedInteractions: number
       warmth: cognitiveTheme('warmth', 'Chaleur relationnelle', interpersonal.warmth),
     },
     primaryAxes: PRIMARY_AXIS_DEFINITIONS.map((definition) => primaryAxis(definition, primaryAxesData[definition.id])),
+    primaryAxesBySource: {
+      email: PRIMARY_AXIS_DEFINITIONS.map((definition) => primaryAxis(definition, object(object(structured.primary_axes_by_source).email)[definition.id])),
+      meeting: PRIMARY_AXIS_DEFINITIONS.map((definition) => primaryAxis(definition, object(object(structured.primary_axes_by_source).meeting)[definition.id])),
+    },
     secondaryAxes: SECONDARY_AXIS_DEFINITIONS.map((definition) => secondaryAxis(definition, secondaryAxesData[definition.id])),
     posture: cognitiveTheme('posture', 'Posture', structured.posture),
+    approachGuidance: buildApproachGuidance(structured.approach_guidance),
   }
+}
+
+/** « Comment aborder » : scénarios do/don't déduits de l'analyse. On ne garde
+ *  que les scénarios réellement remplis (au moins un do ou un don't). */
+export function buildApproachGuidance(value: unknown): PersonApproachScenario[] {
+  return rows(value).flatMap((row) => {
+    const context = text(row.context)
+    const dos = stringList(row.do)
+    const donts = stringList(row.dont)
+    if (!context || (!dos.length && !donts.length)) return []
+    return [{ context, summary: text(row.summary), do: dos, dont: donts }]
+  })
 }
 
 export function provenance(row: Row, defaults: Partial<DataSourceReference> = {}): DataSourceReference {
@@ -374,7 +392,7 @@ export function buildEvidences(signalRows: Row[]): PersonEvidence[] {
 export function buildContactDetails(detailRows: Row[], contact: Row): PersonContactDetail[] {
   const persisted: PersonContactDetail[] = detailRows.filter((row) => !row.archived_at).map((row) => ({
     id: String(row.id),
-    type: (['email', 'phone', 'linkedin', 'website'].includes(String(row.detail_type)) ? row.detail_type : 'other') as PersonContactDetail['type'],
+    type: (['email', 'phone', 'linkedin', 'website', 'location'].includes(String(row.detail_type)) ? row.detail_type : 'other') as PersonContactDetail['type'],
     value: text(row.value) ?? '',
     label: text(row.label),
     primary: bool(row.is_primary),
@@ -397,6 +415,13 @@ export function buildContactDetails(detailRows: Row[], contact: Row): PersonCont
   const linkedin = text(contact.linkedin_url)
   if (linkedin && !/^(to_confirm|n\/a|null)$/i.test(linkedin.trim()) && !persisted.some((detail) => detail.type === 'linkedin')) {
     legacy.push({ id: 'legacy-linkedin', type: 'linkedin', value: linkedin, label: null, primary: !persisted.some((detail) => detail.type === 'linkedin' && detail.primary), verificationStatus: 'unverified', visibility: 'workspace', provenance: { sourceType: 'enrichment', sourceId: null, sourceLabel: 'Recherche web', sourceUrl: linkedin, observedAt: text(contact.updated_at), importedAt: null, lastVerifiedAt: null, confidence: null, inferenceLevel: 'inferred' } })
+  }
+  // Localisation trouvée par la recherche web — même logique que LinkedIn : une
+  // correction manuelle (cas homonyme) prime et n'est jamais réécrasée par la
+  // veille automatique, qui continue d'écrire dans contacts.location.
+  const location = text(contact.location)
+  if (location && !persisted.some((detail) => detail.type === 'location')) {
+    legacy.push({ id: 'legacy-location', type: 'location', value: location, label: null, primary: !persisted.some((detail) => detail.type === 'location' && detail.primary), verificationStatus: 'unverified', visibility: 'workspace', provenance: { sourceType: 'enrichment', sourceId: null, sourceLabel: 'Recherche web', sourceUrl: null, observedAt: text(contact.updated_at), importedAt: null, lastVerifiedAt: null, confidence: null, inferenceLevel: 'inferred' } })
   }
   return [...persisted, ...legacy]
 }
@@ -623,6 +648,13 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
 
   const summaryText = text(raw.summaryRow.content)
   const executiveSummary = text(cognitiveProfile.executive_summary) ?? text(cognitiveProfile.summary)
+  const contactDetails = buildContactDetails(raw.contactDetails, contact)
+  // Une correction manuelle persistée (cas homonyme) prime sur la valeur brute
+  // héritée de la veille automatique — voir buildContactDetails. Une correction
+  // à valeur vide (effacement volontaire) reste prioritaire : null, pas la
+  // valeur brute fausse.
+  const persistedLocation = contactDetails.find((detail) => detail.type === 'location')
+  const resolvedLocation = persistedLocation ? text(persistedLocation.value) : text(contact.location)
 
   return {
     generatedAt: new Date().toISOString(),
@@ -633,7 +665,7 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       fullName: formatPersonName(text(contact.full_name)) ?? 'Contact',
       avatarUrl: text(contact.avatar_url),
       jobTitle: text(contact.role_title),
-      location: text(contact.location),
+      location: resolvedLocation,
       biography: text(contact.web_bio),
       relationshipType: text(settings.relationship_type),
       decisionRole: text(settings.decision_role),
@@ -706,7 +738,7 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     sources: buildSources(raw.connectors, providerCounts),
     recommendations: buildRecommendations(raw.recommendations),
     signals,
-    contactDetails: buildContactDetails(raw.contactDetails, contact),
+    contactDetails,
     careerEntries,
     memoryEntries,
     keyMoments: buildKeyMoments(raw.keyMoments),

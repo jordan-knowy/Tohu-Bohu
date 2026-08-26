@@ -14,6 +14,7 @@
 // 20260724120000_enrichment_slots.sql) — appelé par le code qui invoque cet agent.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logAiUsage } from './ai-usage.ts';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL = 'anthropic/claude-haiku-4.5';
@@ -41,7 +42,11 @@ export type EnrichmentInput = {
   /** Le nom actuel est un pseudo/local-part d'email (ex. "Fxravet81"), pas un vrai
    *  nom — priorité absolue à la recherche du vrai prénom/nom avant tout le reste. */
   nameLooksLikePlaceholder: boolean;
+  /** Contexte de journalisation de l'usage IA (facultatif). */
+  usageLog?: AgentUsageLog;
 };
+
+export type AgentUsageLog = { client: Parameters<typeof logAiUsage>[0]; organizationId?: string | null; userId?: string | null; fn: string };
 
 export type EnrichmentProfile = {
   entityType?: string;
@@ -196,7 +201,7 @@ const TOOLS = [
 
 type ChatMessage = Record<string, unknown>;
 
-async function callOpenRouter(apiKey: string, messages: ChatMessage[], forceEmit: boolean) {
+async function callOpenRouter(apiKey: string, messages: ChatMessage[], forceEmit: boolean, usageLog?: AgentUsageLog) {
   const res = await fetch(OPENROUTER_API, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -210,7 +215,9 @@ async function callOpenRouter(apiKey: string, messages: ChatMessage[], forceEmit
     signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status} : ${(await res.text()).slice(0, 300)}`);
-  return res.json();
+  const data = await res.json();
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: usageLog.fn, model: OPENROUTER_MODEL, usage: data?.usage });
+  return data;
 }
 
 async function webSearch(apiKey: string, query: string): Promise<string> {
@@ -281,7 +288,7 @@ export async function runEnrichmentAgent(input: EnrichmentInput): Promise<Enrich
 
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     const forceEmit = iteration === MAX_ITERATIONS;
-    const data = await callOpenRouter(openrouterKey, messages, forceEmit);
+    const data = await callOpenRouter(openrouterKey, messages, forceEmit, input.usageLog);
     const msg = data.choices?.[0]?.message;
     if (!msg) throw new Error('Réponse OpenRouter vide.');
     messages.push(msg);

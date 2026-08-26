@@ -4,7 +4,7 @@ import { saveSignalFeedback } from '../services/data'
 import { initials } from '../lib/auth'
 import {
   addPersonContactDetail, addPersonFile, addPersonNote, addPersonVoiceNote,
-  archivePersonContactDetail, setCareerVerification, setPrimaryContactDetail,
+  archivePersonContactDetail, clearPersonContactDetail, setCareerVerification, setPrimaryContactDetail,
   updatePersonContactDetail, validateContactDetail,
 } from './service'
 import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent } from './types'
@@ -433,8 +433,15 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
 
 // ─── Rail : coordonnées ────────────────────────────────────────────────────
 
-const DETAIL_ICONS: Record<PersonContactDetail['type'], string> = { email: '✉', phone: '📞', linkedin: 'in', website: '🌐', other: '◇' }
-const DETAIL_LABELS: Record<PersonContactDetail['type'], string> = { email: 'Email', phone: 'Téléphone', linkedin: 'LinkedIn', website: 'Site', other: 'Autre' }
+const DETAIL_ICONS: Record<PersonContactDetail['type'], React.ReactNode> = {
+  email: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M4 7l8 6 8-6" /></svg>,
+  phone: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M5 4h3.5l1.5 4-2 1.4a10 10 0 0 0 4.6 4.6L18 16l4 1.5V21a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>,
+  linkedin: 'in',
+  website: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" /></svg>,
+  location: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 21s6.4-5.8 6.4-10.2a6.4 6.4 0 1 0-12.8 0C5.6 15.2 12 21 12 21z" /><circle cx="12" cy="10.6" r="2.3" /></svg>,
+  other: '◇',
+}
+const DETAIL_LABELS: Record<PersonContactDetail['type'], string> = { email: 'Email', phone: 'Téléphone', linkedin: 'LinkedIn', website: 'Site', location: 'Localisation', other: 'Autre' }
 const ContactBookIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.2" /><circle cx="9" cy="11" r="2" /><path d="M6 16a3 3 0 0 1 6 0" /><path d="M15 10.5h3M15 14h3" /></svg>
 
 export function ContactsCard({ data, userId, refresh }: SectionProps) {
@@ -459,6 +466,15 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
   const startEdit = (detail: PersonContactDetail) => { setEditing(detail.id); setEditValue(detail.value) }
 
   const saveEdit = (detail: PersonContactDetail) => run(`edit-${detail.id}`, async () => {
+    if (!editValue.trim()) {
+      // Champ vidé volontairement : on efface la coordonnée (ex. fausse donnée
+      // d'un homonyme) au lieu d'exiger une valeur de remplacement.
+      await clearPersonContactDetail(data, userId, detail)
+      setEditing(null)
+      toast('Coordonnée effacée.')
+      await refresh()
+      return
+    }
     const invalid = validateContactDetail(detail.type, editValue)
     if (invalid) { toast(invalid, 'error'); return }
     if (detail.id.startsWith('legacy-')) {
@@ -482,10 +498,13 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
     })
   }
 
+  // Une coordonnée effacée (valeur vide, ex. fausse donnée d'un homonyme) reste
+  // en base pour supprimer la valeur héritée fausse, mais ne s'affiche jamais.
+  const visibleDetails = data.contactDetails.filter((detail) => detail.value.trim() !== '')
   return <div className="rail-contact">
     <div className="rc-h"><span className="rc-h-l"><span className="rc-ic">{ContactBookIcon}</span>Coordonnées</span>{data.contactDetails.some((detail) => detail.verificationStatus === 'verified') && <span className="live-badge"><span className="live-dot" />Vérifié</span>}</div>
-    {!data.contactDetails.length && <Empty title="Aucune coordonnée vérifiée">Ajoute un email, un téléphone ou un profil pour cette personne.</Empty>}
-    {data.contactDetails.map((detail) => <div className="rc-card" key={detail.id}>
+    {!visibleDetails.length && <Empty title="Aucune coordonnée vérifiée">Ajoute un email, un téléphone ou un profil pour cette personne.</Empty>}
+    {visibleDetails.map((detail) => <div className="rc-card" key={detail.id}>
       <div className="contact-ic" aria-hidden="true">{DETAIL_ICONS[detail.type]}</div>
       <div className="contact-main">
         <div className="contact-lbl">{detail.label ?? DETAIL_LABELS[detail.type]}{detail.primary ? ' · principale' : ''}{detail.visibility === 'private' ? ' · privée' : ''}</div>
@@ -513,7 +532,7 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
           {Object.entries(DETAIL_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <label className="sr-only" htmlFor="new-detail-value">Valeur</label>
-        <input id="new-detail-value" className="pp-input" placeholder={newType === 'email' ? 'prenom@domaine.fr' : newType === 'phone' ? '+33 …' : 'https://…'} value={newValue} onChange={(event) => setNewValue(event.target.value)} required />
+        <input id="new-detail-value" className="pp-input" placeholder={newType === 'email' ? 'prenom@domaine.fr' : newType === 'phone' ? '+33 …' : newType === 'location' ? 'Ville, Pays' : 'https://…'} value={newValue} onChange={(event) => setNewValue(event.target.value)} required />
         <label className="sr-only" htmlFor="new-detail-label">Libellé (optionnel)</label>
         <input id="new-detail-label" className="pp-input" placeholder="Libellé (optionnel)" value={newLabel} onChange={(event) => setNewLabel(event.target.value)} />
         <div style={{ display: 'flex', gap: 6 }}>

@@ -115,6 +115,10 @@ export interface AccountDetailData {
     decisionMakerCoverage: number | null
     concentrationRisk: number | null
     history: Array<{ score: number; computedAt: string }>
+    // Santé mensuelle reconstruite (RPC account_health_monthly) : une entrée par
+    // mois calendaire, `score`=null pour un mois sans donnée. Couvre toute la vie
+    // de la relation, contrairement à `history` (snapshots account récents seuls).
+    monthlyHealth: Array<{ ym: string; score: number | null }>
   }
   people: AccountPerson[]
   sources: Array<{

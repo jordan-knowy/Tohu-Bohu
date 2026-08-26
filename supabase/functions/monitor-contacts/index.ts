@@ -270,6 +270,7 @@ Deno.serve(async (req) => {
         tier, domainType, sourceHints: sourceHintsFor(domainType), skipCompanyResearch, companyContext,
         nameLooksLikePlaceholder: currentNameIsPlaceholder,
         alreadyKnown: { previousEnrichment: previous, note: 'Détecte surtout les CHANGEMENTS récents (poste, activité) vs le déjà-connu.' },
+        usageLog: { client: supabase, organizationId: c.organization_id, userId: c.owner_user_id ?? null, fn: 'monitor-contacts' },
       });
     } catch { /* ignore — enr reste null, traité comme échec ci-dessous */ }
 

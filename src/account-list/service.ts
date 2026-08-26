@@ -7,6 +7,29 @@ import {
 
 type QueryResult = { data: unknown; error: { message?: string; code?: string } | null }
 
+// Le projet Supabase plafonne chaque requête PostgREST à 1000 lignes côté
+// serveur (db-max-rows), quel que soit le .limit() demandé côté client. Pour
+// contact_score_history (historique réel, peut dépasser 1000 lignes dès
+// quelques mois de recul), on pagine explicitement via .range() pour ne
+// jamais perdre silencieusement les mois les plus anciens.
+async function fetchAllPages(
+  build: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: QueryResult['error'] }>,
+  pageSize = 1000,
+  maxRows = 20000,
+): Promise<QueryResult> {
+  const out: unknown[] = []
+  let from = 0
+  while (from < maxRows) {
+    const { data, error } = await build(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    const page = data ?? []
+    out.push(...page)
+    if (page.length < pageSize) break
+    from += pageSize
+  }
+  return { data: out, error: null }
+}
+
 function optional(result: QueryResult, label: string, degraded: string[]): unknown {
   if (!result.error) return result.data
   if (['42P01', '42703', 'PGRST200', 'PGRST204', 'PGRST205'].includes(result.error.code ?? '') || /does not exist|schema cache/i.test(result.error.message ?? '')) {
@@ -41,7 +64,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   ] = await Promise.all([
     client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
     client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('snapshot_date', { ascending: false }).limit(8000),
+    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('id', { ascending: true }).range(from, to)),
     client.from('account_settings').select('company_id,relationship_status,relationship_started_at,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('account_user_preferences').select('company_id,favorite').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('account_watch_settings').select('company_id,enabled').eq('organization_id', workspaceId),

@@ -40,7 +40,7 @@
 .tin-ck.on{background:var(--violet);border-color:var(--violet)}
 .tin-ck.on::after{content:"";width:5px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg) translateY(-1px)}
 .tin-ent{display:flex;align-items:center;gap:11px}
-.tin-av{width:34px;height:34px;border-radius:9px;background:var(--violet-s);color:var(--violet);display:grid;place-items:center;font-weight:800;font-size:12px;flex:none;overflow:hidden}
+.tin-av{width:34px;height:34px;border-radius:50%;background:var(--violet-s);color:var(--violet);display:grid;place-items:center;font-weight:800;font-size:12px;flex:none;overflow:hidden}
 .tin-av img{width:100%;height:100%;object-fit:cover}
 .tin-ent b{display:block;font-size:13.5px}
 .tin-ent small{display:block;color:var(--t3);font-size:11px}

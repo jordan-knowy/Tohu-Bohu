@@ -101,7 +101,7 @@
 .hscore-tr{font-family:var(--mono);font-size:9.5px;margin-top:8px;color:var(--t3)}
 .hscore-tr.up{color:var(--sage)}
 .hscore-why{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;border:1px solid var(--t3);color:var(--t3);font-size:9px;font-weight:700;cursor:help;font-family:var(--mono);position:relative;vertical-align:middle}
-.hscore-why .hscore-why-tip{visibility:hidden;opacity:0;position:absolute;top:150%;left:0;z-index:60;width:240px;background:#171426;color:#EDE9F7;border:1px solid rgba(255,255,255,.13);border-radius:11px;padding:10px 12px;font-family:var(--font);font-size:10.5px;font-weight:400;line-height:1.5;text-align:left;text-transform:none;letter-spacing:0;box-shadow:0 14px 36px rgba(20,15,40,.45);transition:opacity .15s,visibility .15s}
+.hscore-why .hscore-why-tip{visibility:hidden;opacity:0;position:absolute;top:150%;left:50%;transform:translateX(-50%);z-index:60;width:max-content;max-width:min(240px,80vw);background:#171426;color:#EDE9F7;border:1px solid rgba(255,255,255,.13);border-radius:11px;padding:10px 12px;font-family:var(--font);font-size:10.5px;font-weight:400;line-height:1.5;text-align:left;text-transform:none;letter-spacing:0;box-shadow:0 14px 36px rgba(20,15,40,.45);transition:opacity .15s,visibility .15s}
 .hscore-why:hover .hscore-why-tip,.hscore-why:focus .hscore-why-tip{visibility:visible;opacity:1}
 .hscore-stale{display:inline-block;margin-left:8px;vertical-align:middle;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);background:var(--amber-s);border:1px solid rgba(201,122,32,.25);border-radius:var(--r-f);padding:2px 8px}
 .hscore-tr.down{color:var(--coral)}
@@ -241,6 +241,15 @@
 .sig-card{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-md)}
 .sig-head{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--violet-s),transparent)}
 .sig-ic{width:28px;height:28px;border-radius:9px;background:var(--violet);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+.sig-ic svg,.sig-emoji svg{width:16px;height:16px}
+.htop-h-ic svg{width:15px;height:15px}
+.sync-rgpd svg,.sel-upsell svg,.hscore-stale svg,.sync-ic svg{width:14px;height:14px;flex:none;vertical-align:-2px}
+.sel-cb svg{width:12px;height:12px}
+.hdelta-x svg{width:13px;height:13px;display:block}
+.section-heading-icon svg{width:19px;height:19px}
+.sig-drawer-actions svg{width:13px;height:13px;vertical-align:-2px;margin-right:2px}
+.krs-cpt svg,.sig-verdict svg{width:11px;height:11px;flex:none}
+.htop-h-ic{display:inline-flex;color:var(--amber)}
 .sig-ttl{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t1)}
 .sig-sub{font-family:var(--mono);font-size:8.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
 .rc-sync{display:flex;align-items:center;gap:8px;padding:10px 15px 0;font-size:9.5px;color:var(--t3);font-family:var(--mono)}
@@ -359,7 +368,7 @@
 .home-cockpit-main{min-width:0;display:flex;flex-direction:column;gap:22px}
 .home-cockpit-rail{min-width:0;display:flex;flex-direction:column;gap:22px;position:sticky;top:88px}
 .cockpit-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:184px;gap:16px;align-items:stretch}
-.cockpit-kpi{box-sizing:border-box;min-width:0;height:100%;min-height:0;border:1px solid var(--border);border-radius:20px;background:var(--white);box-shadow:0 10px 30px rgba(45,28,94,.08);padding:20px 21px;text-align:left;overflow:hidden}
+.cockpit-kpi{box-sizing:border-box;min-width:0;height:100%;min-height:0;border:1px solid var(--border);border-radius:20px;background:var(--white);box-shadow:0 10px 30px rgba(45,28,94,.08);padding:20px 21px;text-align:left;overflow:visible}
 button.cockpit-kpi{cursor:pointer}
 button.cockpit-kpi:hover{transform:translateY(-2px);border-color:var(--violet-x);box-shadow:0 14px 34px rgba(45,28,94,.12)}
 .cockpit-kpi-label{display:block;min-height:20px;font:800 8px/1.35 var(--mono);letter-spacing:.085em;text-transform:uppercase;color:var(--t3);margin-bottom:8px;white-space:normal}

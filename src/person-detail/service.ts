@@ -261,6 +261,25 @@ export async function setPersonOwner(data: PersonDetailData, userId: string, own
   if (error) throw error
 }
 
+/** Passation de relation (P4.4) : réassigne l'owner, trace la passation datée
+ *  (from → to) et consigne la note de contexte dans la mémoire relationnelle. */
+export async function handoverPerson(data: PersonDetailData, userId: string, toUserId: string, toName: string, note: string): Promise<void> {
+  const client = getSupabase()
+  await setPersonOwner(data, userId, toUserId)
+  const { error } = await client.from('ownership_handovers').insert({
+    organization_id: data.person.workspaceId,
+    entity_type: 'contact',
+    entity_id: data.person.id,
+    from_user_id: data.person.primaryOwnerUserId,
+    to_user_id: toUserId,
+    note: note.trim() || null,
+    created_by: userId,
+  })
+  if (error) throw error
+  const trimmed = note.trim()
+  await addPersonNote(data, userId, `Passation de la relation à ${toName}.${trimmed ? ` ${trimmed}` : ''}`, 'note')
+}
+
 /** Visibilité : « workspace » (toute l'organisation) ou « restricted » (équipe restreinte). */
 export async function setPersonVisibility(data: PersonDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
   const { error } = await getSupabase().from('person_settings').upsert({
@@ -445,6 +464,7 @@ export function validateContactDetail(type: PersonContactDetail['type'], value: 
   if (type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) return 'Format d’email invalide.'
   if (type === 'phone' && !/^\+?[\d\s().-]{6,20}$/.test(trimmed)) return 'Format de téléphone invalide.'
   if ((type === 'linkedin' || type === 'website') && !/^https?:\/\/\S+\.\S+/.test(trimmed)) return 'URL invalide (https attendu).'
+  if (type === 'location' && trimmed.length < 2) return 'Localisation trop courte.'
   return null
 }
 
@@ -465,6 +485,48 @@ export async function addPersonContactDetail(data: PersonDetailData, userId: str
     updated_by: userId,
   })
   if (error) throw error
+}
+
+/** Efface une coordonnée fausse (ex. LinkedIn d'un homonyme) : vide le champ
+ *  sans exiger de valeur de remplacement. Pour une coordonnée héritée
+ *  (legacy-, jamais persistée), on crée une ligne vide qui prime sur la valeur
+ *  brute de contacts.* et l'empêche de se réafficher (voir buildContactDetails).
+ *  Pour une coordonnée déjà persistée, on vide sa valeur (historisée comme
+ *  toute autre correction). */
+export async function clearPersonContactDetail(data: PersonDetailData, userId: string, detail: PersonContactDetail): Promise<void> {
+  if (detail.id.startsWith('legacy-')) {
+    const { error } = await getSupabase().from('person_contact_details').insert({
+      organization_id: data.person.workspaceId,
+      contact_id: data.person.id,
+      detail_type: detail.type,
+      value: '',
+      verification_status: 'invalid',
+      source_type: 'manual',
+      source_label: 'Correction manuelle',
+      inference_level: 'manual',
+      created_by: userId,
+      updated_by: userId,
+    })
+    if (error) throw error
+    return
+  }
+  const client = getSupabase()
+  const { error } = await client.from('person_contact_details').update({
+    value: '',
+    verification_status: 'invalid',
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }).eq('organization_id', data.person.workspaceId).eq('contact_id', data.person.id).eq('id', detail.id)
+  if (error) throw error
+  const { error: revisionError } = await client.from('person_contact_detail_revisions').insert({
+    organization_id: data.person.workspaceId,
+    contact_id: data.person.id,
+    detail_id: detail.id,
+    previous_value: detail.value,
+    new_value: '',
+    changed_by: userId,
+  })
+  if (revisionError) throw revisionError
 }
 
 export async function updatePersonContactDetail(data: PersonDetailData, userId: string, detail: PersonContactDetail, newValue: string): Promise<void> {

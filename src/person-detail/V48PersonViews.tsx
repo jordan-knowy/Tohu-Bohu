@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
-import type { PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
+import type { PersonApproachScenario, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
@@ -60,34 +60,6 @@ const AXIS_HINT: Record<PrimaryAxisId, string> = {
   espace_parole: 'Part du temps de parole occupée sur les échanges enregistrés.',
 }
 
-/** Heuristiques d'adaptation par axe/pôle — génériques et réutilisables, sélectionnées
- *  selon le pôle réellement actif de cette personne (jamais un texte inventé par personne). */
-const AXIS_ADAPTATION: Record<PrimaryAxisId, { left: { doText: string; avoid: string }; right: { doText: string; avoid: string } }> = {
-  rythme: {
-    left: { doText: 'Le laisser dérouler son raisonnement jusqu’au bout avant de trancher.', avoid: 'Le couper en plein raisonnement.' },
-    right: { doText: 'Aller droit au but, sans détour ni longue mise en contexte.', avoid: 'Multiplier les préambules avant d’arriver au sujet.' },
-  },
-  argumentation: {
-    left: { doText: 'Illustrer par des exemples concrets plutôt que des chiffres bruts.', avoid: 'Noyer l’échange sous des données chiffrées sans contexte.' },
-    right: { doText: 'Ouvrir par le chiffre ou la contrainte mesurable.', avoid: 'Rester dans l’anecdote sans jamais chiffrer.' },
-  },
-  engagement: {
-    left: { doText: 'Reformuler par écrit ce qui a été sous-entendu, pour l’ancrer.', avoid: 'Considérer un accord tacite comme acquis sans le tracer.' },
-    right: { doText: 'Reprendre ses engagements datés pour les suivre.', avoid: 'Laisser un engagement annoncé sans relance de suivi.' },
-  },
-  registre: {
-    left: { doText: 'Garder un cadre courtois et structuré dans les échanges.', avoid: 'Sur-familiariser le ton trop vite.' },
-    right: { doText: 'Aller à l’essentiel, sans formule d’usage.', avoid: 'Sur-formaliser ou multiplier les tournures de politesse.' },
-  },
-  tonalite: {
-    left: { doText: 'Rester factuel, sans chercher à sur-jouer la proximité.', avoid: 'Forcer un ton enjoué qui sonnerait faux.' },
-    right: { doText: 'Reconnaître explicitement ce qui fonctionne bien.', avoid: 'Rester sec sur les échanges qui se passent bien.' },
-  },
-  espace_parole: {
-    left: { doText: 'Nommer une priorité claire pour l’inviter à s’exprimer.', avoid: 'Occuper tout le temps de parole disponible.' },
-    right: { doText: 'Border le temps de parole avec un ordre du jour clair.', avoid: 'Enchaîner plusieurs sujets sans reprendre son avis.' },
-  },
-}
 
 const RADAR_CX = 330
 const RADAR_CY = 262
@@ -164,7 +136,16 @@ function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis
     </g>)}
     </svg>
     {entries.map(({ axis, layout, insufficient, activePoleLabel }) => {
-      const pos = toPercent(layout.anchor === 'start' ? layout.x + 92 : layout.anchor === 'end' ? layout.x - 92 : layout.x + 28, layout.y + 34)
+      // « i » collé à la valeur (« +20 % Rapide »), au niveau de cette ligne : à
+      // DROITE de la valeur pour rythme/registre (centre) + argumentation/engagement
+      // (côté droit), à GAUCHE pour tonalité/espace de parole (côté gauche).
+      const valueText = insufficient ? 'À confirmer' : `+${axis.predominancePct ?? 0} % ${activePoleLabel ?? ''}`
+      const valueW = valueText.length * 9.6 // largeur approx. de la valeur en unités SVG (police 18)
+      const btnW = 32
+      const ix = layout.anchor === 'start' ? layout.x + valueW + 12
+        : layout.anchor === 'end' ? layout.x - valueW - 12 - btnW
+          : layout.x + valueW / 2 + 12
+      const pos = toPercent(ix, layout.y + 8)
       const trendPhrase = axis.trendLabel === 'rising' ? `+${Math.abs(axis.trendPts ?? 0)} pts sur 30 jours.`
         : axis.trendLabel === 'declining' ? `−${Math.abs(axis.trendPts ?? 0)} pts sur 30 jours.`
           : axis.trendLabel === 'stable' ? 'Stable sur 30 jours.' : null
@@ -239,32 +220,27 @@ function QuadrantWidget({ data }: { data: PersonDetailData }) {
   </div>
 }
 
-type AdaptationPair = { axisId: PrimaryAxisId; doText: string; avoid: string }
-const DD_PAGE_SIZE = 4
-
-function DoDontPager({ axes }: { axes: PersonPrimaryAxis[] }) {
-  const pairs = useMemo(() => axes
-    .filter((axis) => axis.status !== 'insufficient' && axis.activePole)
-    .map((axis): AdaptationPair => {
-      const template = AXIS_ADAPTATION[axis.id][axis.activePole === 'left' ? 'left' : 'right']
-      return { axisId: axis.id, doText: template.doText, avoid: template.avoid }
-    }), [axes])
+/**
+ * À faire / À éviter CONTEXTUELS, exclusivement déduits de l'analyse comportementale
+ * (`approach_guidance`). Un scénario par page (« Avant un rendez-vous », « Pour obtenir
+ * une décision »…). Aucun repli générique : sans analyse, on n'affiche rien de faux.
+ */
+function DoDontPager({ guidance }: { guidance: PersonApproachScenario[] }) {
   const [page, setPage] = useState(0)
-  const totalPages = Math.max(1, Math.ceil(pairs.length / DD_PAGE_SIZE))
-  const shown = pairs.slice(page * DD_PAGE_SIZE, page * DD_PAGE_SIZE + DD_PAGE_SIZE)
-
-  if (!pairs.length) return <EmptyState>Les recommandations de posture apparaîtront dès qu’un premier axe sera observé.</EmptyState>
-
+  const total = guidance.length
+  if (!total) return null
+  const current = guidance[Math.min(page, total - 1)]!
   return <>
+    <div className="dd-ctx"><span className="dd-ctx-t">{current.context}</span>{current.summary && <p className="dd-ctx-s">{current.summary}</p>}</div>
     <div className="dd">
-      <div><h4 className="y">✓ À faire</h4><ul>{shown.map((pair) => <li key={`do-${pair.axisId}`}><i className="li-i ok" />{pair.doText}</li>)}</ul></div>
-      <div><h4 className="n">✕ À éviter</h4><ul>{shown.map((pair) => <li key={`avoid-${pair.axisId}`}><i className="li-i no" />{pair.avoid}</li>)}</ul></div>
+      <div><h4 className="y">✓ À faire</h4><ul>{current.do.map((text, index) => <li key={`do-${index}`}><i className="li-i ok" />{text}</li>)}</ul></div>
+      <div><h4 className="n">✕ À éviter</h4><ul>{current.dont.map((text, index) => <li key={`avoid-${index}`}><i className="li-i no" />{text}</li>)}</ul></div>
     </div>
-    <div className="mvp">
+    {total > 1 && <div className="mvp">
       <button type="button" className="mvp-b" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>← Précédent</button>
-      <span className="mvp-i">posture {page + 1} sur {totalPages}</span>
-      <button type="button" className="mvp-b" disabled={page >= totalPages - 1} onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}>Suivant →</button>
-    </div>
+      <span className="mvp-i">situation {Math.min(page, total - 1) + 1} sur {total}</span>
+      <button type="button" className="mvp-b" disabled={page >= total - 1} onClick={() => setPage((value) => Math.min(total - 1, value + 1))}>Suivant →</button>
+    </div>}
   </>
 }
 
@@ -296,15 +272,10 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
   const evidenceThresholdReached = data.behavior.analyzedInteractions >= data.behavior.profileMinimumInteractions
   const hasProfile = evidenceThresholdReached && observedPrimary.length > 0
   const emerging = hasProfile && data.behavior.analyzedInteractions < data.behavior.minimumInteractions
-  // « Posture à adopter » = conseil d'adaptation (comment se comporter AVEC cette
-  // personne), et non une description d'elle (déjà présente dans le profil / CV Live).
-  // On synthétise depuis les « À faire » des axes observés. Retour testing P2.2.
-  const posture = primaryAxes
-    .filter((axis) => axis.status !== 'insufficient' && axis.activePole)
-    .map((axis) => AXIS_ADAPTATION[axis.id]?.[axis.activePole === 'left' ? 'left' : 'right']?.doText)
-    .filter((value): value is string => Boolean(value))
-    .slice(0, 3)
-    .join(' · ')
+  // « Posture à adopter » = conseil d'adaptation RÉELLEMENT déduit de l'analyse
+  // (résumé du 1er scénario d'approche, ou observation de posture). Aucun gabarit
+  // générique : à défaut, la carte affiche « profil en construction ».
+  const posture = cognitive.approachGuidance[0]?.summary || cognitive.posture.observation || null
 
   const nextMeeting = useMemo(() => {
     const now = Date.now()
@@ -314,6 +285,12 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
 
   const [tip, setTip] = useState<Tip | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  // Sélecteur de source du radar (P6.3) : proposé seulement si une analyse par
+  // source a produit au moins un axe observé (mail et/ou réunion).
+  const [radarSource, setRadarSource] = useState<'all' | 'email' | 'meeting'>('all')
+  const bySource = cognitive.primaryAxesBySource
+  const hasSourceSplit = bySource.email.some((axis) => axis.status !== 'insufficient') || bySource.meeting.some((axis) => axis.status !== 'insufficient')
+  const radarAxes = radarSource === 'email' ? bySource.email : radarSource === 'meeting' ? bySource.meeting : primaryAxes
   const showTip = (event: React.SyntheticEvent, content: ReactNode) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
     const width = 288
@@ -368,7 +345,12 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
                 <span className="lg-i" style={{ '--c': AXIS_TIER_COLOR.moyenne } as React.CSSProperties}><i />moyenne</span>
                 <span className="lg-i" style={{ '--c': AXIS_TIER_COLOR.forte } as React.CSSProperties}><i />forte</span>
               </span></p>
-              <BehaviorRadar axes={primaryAxes} onShowTip={showTip} onHideTip={hideTip} />
+              {hasSourceSplit && <div className="radar-src" role="group" aria-label="Source du profil comportemental">
+                <button type="button" className={radarSource === 'all' ? 'on' : ''} onClick={() => setRadarSource('all')}>Toutes</button>
+                <button type="button" className={radarSource === 'email' ? 'on' : ''} onClick={() => setRadarSource('email')}>Mail</button>
+                <button type="button" className={radarSource === 'meeting' ? 'on' : ''} onClick={() => setRadarSource('meeting')}>Réunion</button>
+              </div>}
+              <BehaviorRadar axes={radarAxes} onShowTip={showTip} onHideTip={hideTip} />
               <div className="lvs">
                 <p className="lvs-h"><i className="lvs-i" /><b>Dernière analyse</b> · {formatDate(data.behavior.updatedAt)}</p>
                 <span className="lvs-bar" />
@@ -376,7 +358,12 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
             </div>
             <div className="br">
               <QuadrantWidget data={data} />
-              <DoDontPager axes={primaryAxes} />
+              {cognitive.approachGuidance.length
+                ? <DoDontPager guidance={cognitive.approachGuidance} />
+                : <div className="dd-refresh">
+                    <p>Les « <b>À faire / À éviter</b> » sont <b>déduits des échanges réels</b> de la personne. {manualSyncAction ? 'Lance l’analyse pour les générer.' : 'Ils apparaîtront après l’analyse de ses échanges.'}</p>
+                    {manualSyncAction}
+                  </div>}
             </div>
           </div>}
       </div>
@@ -534,6 +521,23 @@ const EG_CROSS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 // Q1-Q3 n'est affichée tant que le back ne persiste pas de distribution réelle.
 const SCORE_CONFIRM_MIN_INTERACTIONS = 5
 const SCORE_CONFIRM_MIN_CONFIDENCE = 40
+
+function quartile(sorted: number[], q: number): number {
+  const pos = (sorted.length - 1) * q
+  const base = Math.floor(pos)
+  const next = sorted[base + 1]
+  return Math.round(next === undefined ? sorted[base]! : sorted[base]! + (pos - base) * (next - sorted[base]!))
+}
+
+/** Fourchette RÉELLEMENT observée (Q1–Q3) sur l'historique de score — jamais un
+ *  intervalle de confiance inventé. null sous 5 points datés ou si plat. */
+function observedScoreRange(scores: Array<number | null>): { q1: number; q3: number } | null {
+  const clean = scores.filter((value): value is number => value !== null && Number.isFinite(value)).sort((a, b) => a - b)
+  if (clean.length < 5) return null
+  const q1 = quartile(clean, 0.25)
+  const q3 = quartile(clean, 0.75)
+  return q3 > q1 ? { q1, q3 } : null
+}
 
 // Trois états lisibles, partagés par les deux types d'engagement (retour testing
 // P2.6) : À faire (violet) · Glissé = échéance passée (rouge) · Tenu (vert).
@@ -700,6 +704,7 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   const ageLabel = relation.relationshipAgeDays === null ? null
     : relation.relationshipAgeDays < 30 ? `${relation.relationshipAgeDays} j`
       : `~${Math.round(relation.relationshipAgeDays / 30)} mois`
+  const scoreRange = useMemo(() => observedScoreRange(data.scoreHistory.map((point) => point.score)), [data.scoreHistory])
 
   return <div className="v48-person-relation">
     <div className="cols">
@@ -716,6 +721,7 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
           <div className="mini">
             {ageLabel && <span><b>{ageLabel}</b> d’ancienneté</span>}
             <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''}</span>
+            {scoreRange && <span title="Fourchette réellement observée sur l’historique du score (Q1–Q3) — pas une prédiction.">fourchette <b>{scoreRange.q1}–{scoreRange.q3}</b></span>}
           </div>
           {relation.score !== null && <p className="rel-narrative">
             {narrativeState === 'loading' ? 'Analyse de l’évolution en cours…' : narrativeState === 'error' ? 'Synthèse indisponible pour le moment.' : narrative}
@@ -747,10 +753,16 @@ function InsightBand({ data }: { data: PersonDetailData }) {
   // Le spotlight « depuis votre dernier échange » privilégie une actualité réelle,
   // pas un trait comportemental (registre, tonalité…) qui n'est pas un événement daté.
   const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
+  // Insight concret (P2.8) : la prochaine action réellement à mener, tirée d'un
+  // engagement ouvert (reco déclenchée ou engagement pris non résolu) — jamais inventée.
+  const openReco = data.recommendations.find((item) => ['open', 'in_progress', 'postponed'].includes(item.status) && (item.kind === 'coaching' || item.triggerSignal !== null))
+  const openCommitment = data.memoryEntries.find((item) => ['commitment', 'decision', 'engagement'].includes(item.entryType) && !item.resolvedAt)
+  const nextStep = openReco?.recommendedAction || openReco?.title || openCommitment?.content?.replace(/\s*—\s*échéance\s+\d{4}-\d{2}-\d{2}\s*$/, '') || null
   return <div className="v48-insight-grid">
     <article className="v48-insight">
       <span><V48Icon name="sparkle" /></span>
       <div><small>Ce que montrent les échanges</small><strong>{data.summary?.text || data.behavior.executiveSummary || 'Lecture en cours de construction'}</strong>
+        {nextStep && <p className="v48-insight-step"><b>Prochaine action</b>{nextStep}</p>}
         <p>Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'}</p>
       </div>
     </article>

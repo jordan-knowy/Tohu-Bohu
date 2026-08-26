@@ -20,7 +20,9 @@ import {
   strictObject,
   stripHtml,
   structuredBehavioralSignals,
+  type UsageLogContext,
 } from '../_shared/behavior-analysis.ts'
+import { logAiUsage } from '../_shared/ai-usage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -669,7 +671,7 @@ function normalizeCommitment(value: string): string {
   return value.toLowerCase().replace(/^nous\s*:\s*/, '').replace(/\s+—\s+échéance.*$/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
 
-async function extractContext(name: string, excerpts: string[]): Promise<ExtractedContext> {
+async function extractContext(name: string, excerpts: string[], usageLog?: UsageLogContext): Promise<ExtractedContext> {
   const empty: ExtractedContext = { engagements: [], moments: [] }
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey || !excerpts.length) return empty
@@ -715,6 +717,7 @@ Extraits :\n${corpus}`
   })
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'sync-email-analysis:extractContext', model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite', usage: data?.usage })
   const parsed = JSON.parse(openRouterContent(data)) as { engagements?: unknown; moments?: unknown }
   // Anti-hallucination : on ne conserve « source_quote » que si la phrase apparaît
   // réellement dans le corpus analysé (comparaison insensible à la casse et aux
@@ -1205,7 +1208,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         if (manualContactId && contactId === manualContactId) targetInteractionCount = interactionCount
         if (interactionCount < 3) return
         const previousProfile = asRecord(previousRaw?.cognitive_profile_data)
-        const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount)
+        const result = await analyze(contact?.full_name ?? 'Contact', 'contact', excerpts, previousProfile, interactionCount, { client: supabase, organizationId, userId: actingUserId })
         const now = new Date().toISOString()
         // Date de l'événement = dernier échange réel du lot analysé (email ou
         // réunion), et non la date de synchronisation. Cf. correction P0.1 :
@@ -1232,7 +1235,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         // Contexte relationnel : engagements pris + moments qui comptent, extraits
         // du contenu en un seul appel puis dédupliqués sur les entrées déjà connues.
         try {
-          const context = await extractContext(contact?.full_name ?? 'Contact', excerpts)
+          const context = await extractContext(contact?.full_name ?? 'Contact', excerpts, { client: supabase, organizationId, userId: actingUserId })
           if (context.engagements.length) {
             const { data: existingRows } = await supabase.from('person_memory_entries')
               .select('content').eq('organization_id', organizationId).eq('contact_id', contactId).eq('entry_type', 'commitment')

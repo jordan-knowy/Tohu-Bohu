@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { logAiUsage } from '../_shared/ai-usage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,11 +45,12 @@ Deno.serve(async (request) => {
       behavioral_signals: behavioralSignals.data,
     })
     const safeHistory = history.slice(-8).filter((item) => ['user', 'assistant'].includes(item.role) && typeof item.content === 'string').map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }))
+    const model = Deno.env.get('OPENROUTER_MODEL') ?? 'openai/gpt-4.1-mini'
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${openRouterKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu' },
       body: JSON.stringify({
-        model: Deno.env.get('OPENROUTER_MODEL') ?? 'openai/gpt-4.1-mini',
+        model,
         temperature: 0.2,
         messages: [
           { role: 'system', content: `Tu es Ask Bohu, le cerveau relationnel d'une équipe. Réponds en français, de façon directe, utile et sobre. Appuie-toi uniquement sur le contexte JSON fourni. N'invente aucune donnée. Si l'information manque, dis-le clairement. Contexte accessible à cet utilisateur : ${context}` },
@@ -59,6 +61,13 @@ Deno.serve(async (request) => {
     })
     if (!response.ok) throw new Error(`OpenRouter a répondu ${response.status}`)
     const payload = await response.json()
+    // Journalisation de l'usage (client service-role : l'utilisateur n'a pas le droit d'écrire).
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (serviceKey) {
+      const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', serviceKey)
+      const { data: membership } = await supabase.from('memberships').select('organization_id').eq('user_id', user.id).limit(1).maybeSingle()
+      await logAiUsage(admin, { organizationId: membership?.organization_id ?? null, userId: user.id, fn: 'ask-tohu-proxy', model, usage: payload?.usage })
+    }
     return json({ answer: payload.choices?.[0]?.message?.content ?? 'Aucune réponse disponible.' })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Erreur serveur.' }, 500)

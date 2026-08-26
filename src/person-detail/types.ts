@@ -118,6 +118,15 @@ export type PersonSecondaryAxis = {
   sourceTypes: string[]
 }
 
+/** Scénario « comment aborder cette personne » : do/don't contextuels déduits
+ *  de l'analyse comportementale (moteur v3+). Vide tant que non ré-analysé. */
+export type PersonApproachScenario = {
+  context: string
+  summary: string | null
+  do: string[]
+  dont: string[]
+}
+
 export type PersonCognitiveProfile = {
   schemaVersion: number
   maturity: 'none' | 'emerging' | 'usable' | 'consolidated' | 'refined'
@@ -126,8 +135,11 @@ export type PersonCognitiveProfile = {
     warmth: PersonCognitiveTheme
   }
   primaryAxes: PersonPrimaryAxis[]
+  /** Mêmes axes recalculés par source (P6.3). Vide tant que non ré-analysé. */
+  primaryAxesBySource: { email: PersonPrimaryAxis[]; meeting: PersonPrimaryAxis[] }
   secondaryAxes: PersonSecondaryAxis[]
   posture: PersonCognitiveTheme
+  approachGuidance: PersonApproachScenario[]
 }
 
 export type PersonCareerEntry = {
@@ -147,7 +159,7 @@ export type PersonCareerEntry = {
 
 export type PersonContactDetail = {
   id: string
-  type: 'email' | 'phone' | 'linkedin' | 'website' | 'other'
+  type: 'email' | 'phone' | 'linkedin' | 'website' | 'location' | 'other'
   value: string
   label: string | null
   primary: boolean

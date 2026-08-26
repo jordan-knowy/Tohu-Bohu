@@ -3,11 +3,11 @@ import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
 import { initials } from '../lib/auth'
 import {
-  getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
-  type AccountDeletionRequestAdmin, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
+  deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
+  type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
-type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails'
+type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails' | 'ai'
 
 const EMAIL_TYPES: Array<{ id: EmailDispatchType; label: string; desc: string }> = [
   { id: 'digest', label: 'Digest hebdo', desc: 'Lundi 8 h' },
@@ -93,6 +93,7 @@ const NAVIGATION: Array<{ id: Tab; label: string; copy: string; icon: string }> 
   { id: 'subscriptions', label: 'Abonnements', copy: 'Plans & revenus', icon: '◇' },
   { id: 'product', label: 'Usage produit', copy: 'Adoption & valeur', icon: '↗' },
   { id: 'operations', label: 'Opérations', copy: 'Sync & fiabilité', icon: '⎔' },
+  { id: 'ai', label: 'Suivi IA & coûts', copy: 'Usage OpenRouter & dépenses', icon: '🧠' },
   { id: 'emails', label: 'E-mails', copy: 'Digests, alertes & diffusion', icon: '✉' },
   { id: 'deletions', label: 'Suppressions', copy: 'Demandes utilisateurs', icon: '⌫' },
 ]
@@ -236,14 +237,31 @@ function PlanDistribution({ users }: { users: SuperAdminUser[] }) {
   </article>
 }
 
-function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose }: {
+function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose, onDeleted }: {
   user: SuperAdminUser
   plans: SuperAdminConsole['plans']
   saving: boolean
   onSaveCommercial: (access: SuperAdminUser['account_type'], plan?: string) => Promise<void>
   onSaveRole: (makeAdmin: boolean) => Promise<void>
   onClose: () => void
+  onDeleted: (organizationsDeleted: number) => Promise<void>
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmEmail, setConfirmEmail] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const emailMatch = confirmEmail.trim().toLowerCase() === (user.email ?? '').trim().toLowerCase() && !!user.email
+  const runDelete = async () => {
+    if (!emailMatch) return
+    setDeleting(true); setDeleteError(null)
+    try {
+      const result = await deleteSuperAdminUser(user.user_id)
+      setConfirmDelete(false)
+      await onDeleted(result.organizations_deleted)
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : 'Suppression impossible.')
+    } finally { setDeleting(false) }
+  }
   const [access, setAccess] = useState(user.account_type)
   const paidPlans = plans.filter((plan) => ['solo', 'pro', 'business'].includes(plan.id) && plan.is_active)
   const initialPaid = paidPlans.some((plan) => plan.id === user.plan_id) ? user.plan_id : (paidPlans[0]?.id ?? 'pro')
@@ -312,6 +330,23 @@ function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose
       <div><span>Échecs</span><strong className={user.sync_failures_count ? 'danger' : ''}>{user.sync_failures_count}</strong></div>
       <div><span>Taux de réussite</span><strong>{user.sync_jobs_count ? `${integerFormatter.format((user.sync_jobs_count - user.sync_failures_count) / user.sync_jobs_count * 100)} %` : '—'}</strong></div>
     </section>
+    <section className="sa-danger-block">
+      <div><h3>Zone dangereuse</h3><p>Supprime définitivement cet utilisateur et <b>toutes ses données en cascade</b> (workspace, comptes, personnes, messages, signaux, profils…). <b>Irréversible.</b></p></div>
+      <button type="button" className="sa-danger-btn" disabled={user.is_super_admin} title={user.is_super_admin ? 'Retire d’abord le rôle Super Admin' : undefined} onClick={() => { setConfirmDelete(true); setConfirmEmail(''); setDeleteError(null) }}>Supprimer l’utilisateur</button>
+    </section>
+    {confirmDelete && <div className="sa-modal-mask" onClick={() => !deleting && setConfirmDelete(false)}>
+      <div className="sa-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <h3>Supprimer définitivement&nbsp;?</h3>
+        <p>Cette action supprime <b>{user.full_name}</b> et <b>toutes ses données en cascade</b> (workspace, comptes, personnes, messages, profils cognitifs…). C’est <b>irréversible</b>.</p>
+        <p className="sa-modal-confirm-hint">Pour confirmer, tape l’email exact : <code>{user.email ?? '—'}</code></p>
+        <input className="sa-modal-input" value={confirmEmail} onChange={(event) => setConfirmEmail(event.target.value)} placeholder={user.email ?? ''} autoFocus />
+        {deleteError && <p className="sa-modal-error">{deleteError}</p>}
+        <div className="sa-modal-actions">
+          <button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}>Annuler</button>
+          <button type="button" className="sa-danger-btn" disabled={!emailMatch || deleting} onClick={() => void runDelete()}>{deleting ? 'Suppression…' : 'Supprimer définitivement'}</button>
+        </div>
+      </div>
+    </div>}
   </aside>
 }
 
@@ -392,7 +427,7 @@ function UsersView({ consoleData, refresh }: { consoleData: SuperAdminConsole; r
         {!users.length && <div className="sa-empty">Aucun utilisateur ne correspond à ces filtres.</div>}
       </div>
     </section>
-    {selected && <UserDetail user={selected} plans={consoleData.plans} saving={saving} onSaveCommercial={save} onSaveRole={saveRole} onClose={() => setSelectedId(null)} />}
+    {selected && <UserDetail user={selected} plans={consoleData.plans} saving={saving} onSaveCommercial={save} onSaveRole={saveRole} onClose={() => setSelectedId(null)} onDeleted={async () => { setSelectedId(null); await refresh() }} />}
   </div>
 }
 
@@ -563,6 +598,55 @@ function DeletionRequestsView({ requests, refresh }: {
   </div>
 }
 
+const usdFormatter = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
+const usdPrecise = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
+const AI_PERIODS: Array<{ key: 'day' | 'week' | 'month' | 'year' | 'all'; label: string }> = [
+  { key: 'day', label: 'Aujourd’hui' },
+  { key: 'week', label: '7 jours' },
+  { key: 'month', label: '30 jours' },
+  { key: 'year', label: '1 an' },
+  { key: 'all', label: 'Total' },
+]
+
+function AiUsageView() {
+  const [stats, setStats] = useState<AiUsageStats | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { void getAiUsage().then(setStats).catch((reason) => setError(reason instanceof Error ? reason.message : 'Chargement impossible')) }, [])
+  const maxDayCost = useMemo(() => Math.max(1e-9, ...(stats?.by_day ?? []).map((day) => day.cost)), [stats])
+  if (error) return <div className="inline-error">{error}</div>
+  if (!stats) return <div className="super-admin-loading"><span className="spinner" /></div>
+  const empty = (stats.totals.all?.calls ?? 0) === 0
+  return <section className="sa-ai">
+    <div className="sa-view-heading"><div><p>OpenRouter · tokens réels, coût estimé</p><h1>Suivi IA &amp; coûts</h1><span>Actualisé {dateTimeFormatter.format(new Date(stats.generated_at))}</span></div></div>
+    {empty && <div className="sa-ai-empty">Aucun appel IA journalisé pour l’instant. La collecte démarre <b>après le déploiement</b> des fonctions instrumentées (<code>sync-email-analysis</code>, <code>ingest-transcript</code>, <code>ask-tohu-proxy</code>). Les chiffres s’accumuleront ensuite ici automatiquement.</div>}
+    <div className="sa-ai-cards">
+      {AI_PERIODS.map(({ key, label }) => { const bucket = stats.totals[key] ?? { calls: 0, tokens: 0, cost: 0 }; return <article key={key} className="sa-ai-card">
+        <span className="sa-ai-card-l">{label}</span>
+        <strong className="sa-ai-card-v">{usdFormatter.format(bucket.cost)}</strong>
+        <span className="sa-ai-card-s">{integerFormatter.format(bucket.calls)} appels · {compactFormatter.format(bucket.tokens)} tokens</span>
+      </article> })}
+    </div>
+    <div className="sa-ai-cols">
+      <div className="sa-ai-block"><h2>Par fonction <small>· 30 j</small></h2>
+        <table className="sa-ai-table"><thead><tr><th>Fonction</th><th>Appels</th><th>Tokens</th><th>Coût est.</th></tr></thead>
+          <tbody>{stats.by_function.map((row) => <tr key={row.fn}><td>{row.fn}</td><td>{integerFormatter.format(row.calls)}</td><td>{compactFormatter.format(row.tokens)}</td><td>{usdPrecise.format(row.cost)}</td></tr>)}{!stats.by_function.length && <tr><td colSpan={4} className="sa-ai-none">—</td></tr>}</tbody></table>
+      </div>
+      <div className="sa-ai-block"><h2>Par modèle <small>· 30 j</small></h2>
+        <table className="sa-ai-table"><thead><tr><th>Modèle</th><th>Appels</th><th>Tokens</th><th>Coût est.</th></tr></thead>
+          <tbody>{stats.by_model.map((row) => <tr key={row.model}><td>{row.model}</td><td>{integerFormatter.format(row.calls)}</td><td>{compactFormatter.format(row.tokens)}</td><td>{usdPrecise.format(row.cost)}</td></tr>)}{!stats.by_model.length && <tr><td colSpan={4} className="sa-ai-none">—</td></tr>}</tbody></table>
+      </div>
+    </div>
+    <div className="sa-ai-block"><h2>Coût par jour <small>· 30 j</small></h2>
+      <div className="sa-ai-bars">{stats.by_day.length ? stats.by_day.map((day) => <div key={day.day} className="sa-ai-bar" title={`${day.day} · ${usdPrecise.format(day.cost)} · ${day.calls} appels`}><i style={{ height: `${Math.max(3, (day.cost / maxDayCost) * 100)}%` }} /><span>{day.day.slice(8)}</span></div>) : <p className="sa-ai-none">Aucune donnée.</p>}</div>
+    </div>
+    <div className="sa-ai-block"><h2>Par utilisateur <small>· 30 j · top 20</small></h2>
+      <table className="sa-ai-table"><thead><tr><th>Utilisateur</th><th>Appels</th><th>Tokens</th><th>Coût est.</th></tr></thead>
+        <tbody>{stats.by_user.map((row) => <tr key={row.user_id ?? 'null'}><td>{row.full_name}</td><td>{integerFormatter.format(row.calls)}</td><td>{compactFormatter.format(row.tokens)}</td><td>{usdPrecise.format(row.cost)}</td></tr>)}{!stats.by_user.length && <tr><td colSpan={4} className="sa-ai-none">—</td></tr>}</tbody></table>
+    </div>
+    <p className="sa-ai-note"><b>Tokens</b> = valeurs réelles renvoyées par OpenRouter. <b>Coût</b> = estimation via une grille de prix approximative (source de vérité : ton tableau de bord OpenRouter). Suivi actif : analyses email/transcript (<code>gemini-3.1-flash-lite</code>), Ask Bohu (<code>gpt-4.1-mini</code>), veille contacts (<code>claude-haiku-4.5</code>). Non compté ici : la recherche web (Perplexity) de la veille société, facturée séparément.</p>
+  </section>
+}
+
 export default function SuperAdminPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [kpis, setKpis] = useState<SuperAdminKpis | null>(null)
@@ -616,6 +700,7 @@ export default function SuperAdminPage() {
         {activeTab === 'subscriptions' && <SubscriptionView kpis={kpis} users={consoleData.users} />}
         {activeTab === 'product' && <ProductView kpis={kpis} timeseries={consoleData.timeseries} />}
         {activeTab === 'operations' && <OperationsView kpis={kpis} timeseries={consoleData.timeseries} />}
+        {activeTab === 'ai' && <AiUsageView />}
         {activeTab === 'emails' && <NotificationsView />}
         {activeTab === 'deletions' && <DeletionRequestsView requests={deletionRequests} refresh={load} />}
       </main>

@@ -210,3 +210,28 @@ export async function updateAccountDeletionRequest(
   })
   if (error) throw error
 }
+
+// ── Suivi IA & coûts ────────────────────────────────────────────────────────
+export type AiUsageBucket = { calls: number; tokens: number; cost: number }
+export type AiUsageStats = {
+  generated_at: string
+  totals: Record<'day' | 'week' | 'month' | 'year' | 'all', AiUsageBucket>
+  by_function: Array<{ fn: string } & AiUsageBucket>
+  by_model: Array<{ model: string } & AiUsageBucket>
+  by_day: Array<{ day: string } & AiUsageBucket>
+  by_user: Array<{ user_id: string | null; full_name: string } & AiUsageBucket>
+}
+
+/** Agrégats d'usage IA (tokens réels OpenRouter + coût estimé). Super-admin only. */
+export async function getAiUsage(): Promise<AiUsageStats> {
+  const { data, error } = await getSupabase().rpc('super_admin_ai_usage')
+  if (error) throw error
+  return data as AiUsageStats
+}
+
+/** Suppression complète d'un utilisateur + cascade de ses données (super admin). */
+export async function deleteSuperAdminUser(userId: string): Promise<{ deleted_email: string; organizations_deleted: number }> {
+  const { data, error } = await getSupabase().rpc('admin_delete_user', { p_user_id: userId })
+  if (error) throw error
+  return data as { deleted_email: string; organizations_deleted: number }
+}
