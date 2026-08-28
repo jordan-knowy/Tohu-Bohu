@@ -220,9 +220,10 @@ export function monthKey(value: string): string {
 }
 
 /** Score historique : n'utilise que des lignes réellement persistées.
- *  Les tables héritées ont des shapes variables : on sonde les clés de score connues. */
+ *  Deux shapes possibles selon la source héritée : contact_score_history
+ *  (`score`) ou relationship_snapshots (`engagement_score`). */
 export function legacyScore(row: Row): number | null {
-  return num(row.score) ?? num(row.engagement_score) ?? num(row.nps) ?? num(row.nps_score) ?? num(row.relationship_score) ?? num(row.value)
+  return num(row.score) ?? num(row.engagement_score)
 }
 
 export function legacyDate(row: Row): string | null {
@@ -700,24 +701,24 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       meetingInteractions: meetingCount,
       firstInteractionAt: allDates[0] ?? null,
       lastInteractionAt: allDates.at(-1) ?? text(relationshipSnapshot.last_contact_at),
-      // Ancienneté factuelle (jours) : uniquement disponible depuis relationship-score-v3
+      // Ancienneté factuelle (jours) : uniquement disponible depuis relationship-score-v3+
       // (voir score-batch) — null pour les snapshots plus anciens, jamais inventée.
       relationshipAgeDays: num(latestSnapshot.relationship_age_days),
+      // Score PERSONNE 5 axes (relationship-score-v4). Confiance/Satisfaction :
+      // valeur composite utilisée dans le calcul (défaut neutre 50 tant qu'aucune
+      // analyse IA n'existe) — `*Measured` distingue ce cas du signal IA réel
+      // (cognitive_profiles.trust_score/satisfaction_score, jamais fabriqué).
       dimensions: {
-        intensity: num(latestSnapshot.intensity_score) ?? num(latestHistory.score_intensite) ?? num(cognitiveProfile.score_intensite),
-        reciprocity: num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite),
-        // Récence : uniquement le champ dédié (v2+) — les snapshots v1 stockaient
-        // la longévité sous ce nom, donc on ne les relit pas ici pour éviter de
-        // confondre les deux dimensions (voir plus bas pour ce cas historique).
-        recency: text(latestSnapshot.model_version) === 'relationship-score-v1' ? null : num(latestSnapshot.recency_score),
-        // Depuis relationship-score-v2, récence et longévité sont deux champs
-        // distincts. L'historique calculé reste prioritaire sur le recency_score
-        // des anciens snapshots v1, où la longévité était stockée sous ce nom.
-        longevity: num(latestSnapshot.longevity_score)
-          ?? num(latestHistory.score_longevite)
-          ?? num(cognitiveProfile.score_longevite)
-          ?? (text(latestSnapshot.model_version) === 'relationship-score-v1' ? num(latestSnapshot.recency_score) : null),
+        confiance: num(latestSnapshot.confiance_score) ?? num(latestHistory.score_confiance) ?? num(cognitiveProfile.score_confiance),
+        satisfaction: num(latestSnapshot.satisfaction_score) ?? num(latestHistory.score_satisfaction) ?? num(cognitiveProfile.score_satisfaction),
+        engagement: num(latestSnapshot.engagement_score) ?? num(latestHistory.score_engagement) ?? num(cognitiveProfile.score_engagement),
+        reciprocite: num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite),
+        ancrage: num(latestSnapshot.ancrage_score) ?? num(latestHistory.score_ancrage) ?? num(cognitiveProfile.score_ancrage),
+        ancrageCarriers: num(latestSnapshot.ancrage_carriers),
+        confianceMeasured: num(cognitiveProfile.trust_score) !== null,
+        satisfactionMeasured: num(cognitiveProfile.satisfaction_score) !== null,
       },
+      axisInterpretation: text(latestSnapshot.axis_interpretation),
     },
     scoreHistory,
     behavior: {

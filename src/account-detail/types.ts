@@ -89,6 +89,10 @@ export interface AccountDetailData {
     sector: string | null
     accountType: string | null
     relationshipStatus: string | null
+    // 'manual' = choisi par un humain (jamais retouché par le moteur) ; 'suggested' =
+    // proposé par le moteur relationnel à partir des échanges réels (voir score-batch
+    // aggregateAccountRelation) ; null = aucune valeur ou colonne pas encore migrée.
+    relationshipStatusSource: string | null
     relationshipStartedAt: string | null
     offerScope: string | null
     favorite: boolean
@@ -114,6 +118,11 @@ export interface AccountDetailData {
     contactCoverage: number | null
     decisionMakerCoverage: number | null
     concentrationRisk: number | null
+    // Composantes réelles du score (0,55 engagement + 0,25 couverture + 0,20 récence) —
+    // engagementComponent/recencyComponent n'existent que depuis leur ajout : null pour
+    // les snapshots antérieurs, jamais recalculées côté front.
+    engagementComponent: number | null
+    recencyComponent: number | null
     history: Array<{ score: number; computedAt: string }>
     // Santé mensuelle reconstruite (RPC account_health_monthly) : une entrée par
     // mois calendaire, `score`=null pour un mois sans donnée. Couvre toute la vie

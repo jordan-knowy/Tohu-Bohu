@@ -46,57 +46,44 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.relationship.score).toBeNull()
     expect(data.relationship.confidence).toBeNull()
     expect(data.relationship.phase).toBe('unknown')
-    expect(data.relationship.dimensions.intensity).toBeNull()
+    expect(data.relationship.dimensions.engagement).toBeNull()
     expect(data.relationship.relationshipAgeDays).toBeNull()
     expect(data.scoreHistory).toEqual([])
     expect(data.summary).toBeNull()
   })
 
-  it('le snapshot canonique prime sur l’historique hérité', () => {
+  it('le snapshot canonique prime sur l’historique hérité (score PERSONNE 5 axes)', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', intensity_score: 90, reciprocity_score: 70, longevity_score: 60, recency_score: 25, relationship_age_days: 62, model_version: 'relationship-score-v2' }],
-      legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_intensite: 10, score_reciprocite: 10, score_longevite: 10 }],
+      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', confiance_score: 88, satisfaction_score: 92, engagement_score: 70, reciprocity_score: 65, ancrage_score: 60, ancrage_carriers: 2, relationship_age_days: 62, model_version: 'relationship-score-v4' }],
+      legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_confiance: 10, score_satisfaction: 10, score_engagement: 10, score_reciprocite: 10, score_ancrage: 10 }],
     }))
     expect(data.relationship.score).toBe(81)
     expect(data.relationship.phase).toBe('growing')
-    expect(data.relationship.dimensions).toEqual({ intensity: 90, reciprocity: 70, recency: 25, longevity: 60 })
+    expect(data.relationship.dimensions).toEqual({ confiance: 88, satisfaction: 92, engagement: 70, reciprocite: 65, ancrage: 60, ancrageCarriers: 2, confianceMeasured: false, satisfactionMeasured: false })
     expect(data.relationship.relationshipAgeDays).toBe(62)
-  })
-
-  it('ne confond pas la récence canonique avec la longévité', () => {
-    const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 65, computed_at: '2026-07-10T00:00:00Z', recency_score: 0, model_version: 'relationship-score-v2' }],
-      legacyScores: [{ score: 65, snapshot_date: '2026-07-10', score_longevite: 55 }],
-    }))
-    expect(data.relationship.dimensions.longevity).toBe(55)
-  })
-
-  it('relit encore la longévité des snapshots v1 historiques', () => {
-    const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 65, computed_at: '2026-07-10T00:00:00Z', recency_score: 42, model_version: 'relationship-score-v1' }],
-    }))
-    expect(data.relationship.dimensions.longevity).toBe(42)
   })
 
   it('sans snapshot canonique, contact_score_history fournit score, phase et dimensions', () => {
     const data = buildPersonDetail(raw({
       legacyScores: [
-        { score: 72, phase: 'stable', snapshot_date: '2026-07-01', score_intensite: 80, score_reciprocite: 64, score_longevite: 55 },
+        { score: 72, phase: 'stable', snapshot_date: '2026-07-01', score_confiance: 80, score_satisfaction: 70, score_engagement: 64, score_reciprocite: 64, score_ancrage: 55 },
         { score: 60, phase: 'growing', snapshot_date: '2026-06-01' },
       ],
     }))
     expect(data.relationship.score).toBe(72)
     expect(data.relationship.phase).toBe('stable')
-    expect(data.relationship.dimensions).toEqual({ intensity: 80, reciprocity: 64, recency: null, longevity: 55 })
+    expect(data.relationship.dimensions).toEqual({ confiance: 80, satisfaction: 70, engagement: 64, reciprocite: 64, ancrage: 55, ancrageCarriers: null, confianceMeasured: false, satisfactionMeasured: false })
     expect(data.scoreHistory.map((point) => point.score)).toEqual([60, 72])
   })
 
-  it('le profil cognitif sert de dernier repli (engagement_score, score_phase)', () => {
-    const data = buildPersonDetail(raw({ cognitiveProfile: { engagement_score: 66, score_phase: 'growing', global_confidence: 58, score_intensite: 61 } }))
+  it('le profil cognitif sert de dernier repli (engagement_score, score_phase) et signale les axes IA mesurés', () => {
+    const data = buildPersonDetail(raw({ cognitiveProfile: { engagement_score: 66, score_phase: 'growing', global_confidence: 58, score_engagement: 61, trust_score: 74 } }))
     expect(data.relationship.score).toBe(66)
     expect(data.relationship.phase).toBe('growing')
     expect(data.relationship.confidence).toBe(58)
-    expect(data.relationship.dimensions.intensity).toBe(61)
+    expect(data.relationship.dimensions.engagement).toBe(61)
+    expect(data.relationship.dimensions.confianceMeasured).toBe(true)
+    expect(data.relationship.dimensions.satisfactionMeasured).toBe(false)
   })
 
   it('compte les interactions réelles (emails + réunions) et bornes de dates', () => {

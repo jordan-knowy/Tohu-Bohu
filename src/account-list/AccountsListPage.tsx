@@ -247,7 +247,7 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
     try {
       const chosen = ids.map((id) => byId.get(id)).filter((candidate): candidate is AccountCandidate => candidate !== undefined && !candidate.alreadyTracked)
       if (chosen.length) await trackCandidates(workspaceId, chosen.map((candidate) => ({ companyId: candidate.companyId, name: candidate.name, domain: candidate.domain })))
-      toast(`${chosen.length} compte${chosen.length > 1 ? 's' : ''} intégré${chosen.length > 1 ? 's' : ''} au portefeuille.`)
+      toast(`${chosen.length} compte${chosen.length > 1 ? 's' : ''} intégré${chosen.length > 1 ? 's' : ''} au portefeuille — analyse de la relation en cours à partir des échanges.`)
       await refresh()
       onClose()
     } catch (reason) {

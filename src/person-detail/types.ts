@@ -297,15 +297,25 @@ export interface PersonDetailData {
     meetingInteractions: number
     firstInteractionAt: string | null
     lastInteractionAt: string | null
-    // Ancienneté observée en jours (fait) — depuis V57, ne pondère plus le score
-    // composite (voir dimensions.longevity, conservé pour compatibilité d'affichage).
+    // Ancienneté observée en jours (fait) — n'entre plus dans le calcul du
+    // score composite (5 axes), affichée à titre de contexte.
     relationshipAgeDays: number | null
+    // Score PERSONNE 5 axes (Confiance 25% / Satisfaction 25% / Engagement 20% /
+    // Réciprocité 20% / Ancrage 10%). Confiance/Satisfaction viennent de
+    // l'analyse IA du contenu des échanges (voir cognitive_profiles) : null tant
+    // qu'aucune analyse n'a encore eu lieu pour ce contact — jamais fabriqué.
     dimensions: {
-      intensity: number | null
-      reciprocity: number | null
-      recency: number | null
-      longevity: number | null
+      confiance: number | null
+      satisfaction: number | null
+      engagement: number | null
+      reciprocite: number | null
+      ancrage: number | null
+      ancrageCarriers: number | null
+      confianceMeasured: boolean
+      satisfactionMeasured: boolean
     }
+    /** Phrase déterministe générée depuis les 5 axes (voir score-batch), jamais un simple "score/100". */
+    axisInterpretation: string | null
   }
 
   scoreHistory: PersonScorePoint[]

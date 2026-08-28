@@ -16,10 +16,13 @@ import type { Session } from '@supabase/supabase-js'
 import { getSupabase } from '../lib/supabase'
 import {
   createEmailSyncJob,
+  deleteHomeCommitment,
   detectAccountCandidates,
+  fetchArchivedActions,
   getHomeDashboard,
   getJob,
   markHomeSeen,
+  resolveHomeCommitment,
   saveActionState,
   saveInsightFeedback,
   setTrackedCompanies,
@@ -30,6 +33,7 @@ import { tickerDurationSeconds } from '../account-list/mapping'
 import { relationLevel } from './types'
 import type {
   HomeAccountCandidate,
+  HomeArchivedAction,
   HomeCoaching,
   HomeDashboardData,
   HomePriorityAction,
@@ -46,6 +50,9 @@ export type HomeContext = {
   goView: (view: 'cerveau' | 'acc' | 'per' | 'connecteurs' | 'me') => void
   /** Ouvre Ask Bohu avec un contexte prérempli (mode simulation). */
   askSimulation: (prompt: string) => void
+  /** Navigation directe (drawers hors de `container` : la délégation de clic du shell ne les couvre pas). */
+  openAccount?: (accountId: string) => void
+  openPerson?: (personId: string) => void
   onCounts?: (accounts: number, people: number) => void
   /** Injection (tests, prévisualisation dev) : remplace le service par défaut. */
   loadDashboard?: (organizationId: string, userId: string) => Promise<HomeDashboardData>
@@ -548,6 +555,7 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
               <button data-action-filter="relationship">Relationnels</button>
               <button data-action-filter="commercial">Commerciaux</button>
             </div>
+            <button type="button" class="krs-archive-link" data-home="open-archive">${HICON.clipboard} Archive</button>
           </div>
           <div class="krs-stack" id="home-actions">${actionsMarkup(data.priorityActions)}</div>
         </section>
@@ -877,9 +885,15 @@ function bindCockpit(ctx: HomeContext, data: HomeDashboardData): void {
     root.querySelectorAll<HTMLElement>('[data-sig-extra]').forEach((node) => { node.hidden = false })
     ;(event.currentTarget as HTMLElement).closest('.sig-foot')?.remove()
   })
+  root.querySelector('[data-home="open-archive"]')?.addEventListener('click', () => void openArchiveDrawer(ctx))
   bindActions(ctx, data)
   bindSignalDrawer(ctx, data)
   bindCoaching(ctx, data)
+}
+
+/** Id de l'entrée `person_memory_entries` source d'une action `engagement:<id>`. */
+function commitmentEntryId(action: HomePriorityAction): string | null {
+  return action.type === 'engagement' ? action.actionId.slice('engagement:'.length) || null : null
 }
 
 function bindActions(ctx: HomeContext, data: HomeDashboardData): void {
@@ -893,23 +907,39 @@ function bindActions(ctx: HomeContext, data: HomeDashboardData): void {
     if (!card || !action) return
     const kind = button.dataset.home === 'action-done' ? 'completed' : button.dataset.home === 'action-postpone' ? 'postponed' : 'dismissed'
     const postponedUntil = kind === 'postponed' ? new Date(Date.now() + 86_400_000).toISOString() : null
-    void saveActionState({
-      organizationId: ctx.organizationId,
-      userId: ctx.session.user.id,
-      actionId: action.actionId,
-      actionType: action.type,
-      status: kind,
-      accountId: action.accountId,
-      personId: action.personId,
-      sourceSignalId: action.sourceSignalId,
-      postponedUntil,
-    }).then(() => {
+    // Un « Fait »/« Écarté » sur un engagement doit clôturer la source
+    // (person_memory_entries), pas seulement l'état Home — sinon la même
+    // promesse peut ressurgir sous un nouvel id après une future analyse IA.
+    const entryId = kind !== 'postponed' ? commitmentEntryId(action) : null
+    const resolveSource = entryId
+      ? (kind === 'completed' ? resolveHomeCommitment(ctx.organizationId, entryId, ctx.session.user.id) : deleteHomeCommitment(ctx.organizationId, entryId))
+      : Promise.resolve()
+    void Promise.all([
+      saveActionState({
+        organizationId: ctx.organizationId,
+        userId: ctx.session.user.id,
+        actionId: action.actionId,
+        actionType: action.type,
+        status: kind,
+        accountId: action.accountId,
+        personId: action.personId,
+        sourceSignalId: action.sourceSignalId,
+        postponedUntil,
+        title: action.title,
+        summary: action.explanation,
+        accountName: action.accountName,
+        personName: action.personName,
+        sourceLabel: action.source,
+        priority: action.priority,
+      }),
+      resolveSource,
+    ]).then(() => {
       // Mise à jour optimiste : la carte sort, l'action suivante entre.
       data.priorityActions = data.priorityActions.filter((item) => item.actionId !== action.actionId)
       card.classList.add('leaving')
       window.setTimeout(() => {
         const stackNode = ctx.container.querySelector('#home-actions')
-        if (stackNode) stackNode.innerHTML = actionsMarkup(data.priorityActions.slice(0, 3))
+        if (stackNode) stackNode.innerHTML = actionsMarkup(data.priorityActions.slice(0, 6))
       }, 280)
       ctx.toast(kind === 'completed' ? 'Action validée — ajoutée à la mémoire relationnelle.' : kind === 'postponed' ? 'Action reportée à demain.' : 'Action écartée — signal d’apprentissage enregistré.')
     }).catch((error) => ctx.toast(error instanceof Error ? error.message : 'Action non enregistrée.', 'error'))
@@ -995,4 +1025,80 @@ function openSignalDrawer(ctx: HomeContext, signal: HomeSignal): void {
   drawer.querySelector('[data-drawer="dismiss"]')?.addEventListener('click', verdictHandler('dismissed'))
   document.body.appendChild(drawer)
   drawer.querySelector<HTMLButtonElement>('.sig-drawer-close')?.focus()
+}
+
+/**
+ * Drawer « Archive » : actions Home marquées Fait/Écarté (home_action_states),
+ * triées des plus récentes aux plus anciennes, filtrables par statut. Le
+ * libellé affiché est le snapshot pris au moment de la décision (persiste
+ * même si la source — signal, engagement — a depuis disparu).
+ */
+async function openArchiveDrawer(ctx: HomeContext): Promise<void> {
+  document.querySelector('.archive-drawer')?.remove()
+  const drawer = document.createElement('div')
+  drawer.className = 'sig-drawer archive-drawer'
+  drawer.setAttribute('role', 'dialog')
+  drawer.setAttribute('aria-modal', 'true')
+  drawer.setAttribute('aria-label', 'Archive des actions')
+  drawer.innerHTML = `<div class="sig-drawer-panel archive-panel">
+    <div class="sig-drawer-head">
+      <span class="sig-emoji" aria-hidden="true">${HICON.clipboard}</span>
+      <h3>Archive des actions</h3>
+      <button class="sig-drawer-close" data-drawer="close" aria-label="Fermer">×</button>
+    </div>
+    <div class="archive-filters" role="group" aria-label="Filtrer l’archive">
+      <button type="button" class="on" data-archive-filter="all">Toutes</button>
+      <button type="button" data-archive-filter="completed">Faites</button>
+      <button type="button" data-archive-filter="dismissed">Écartées</button>
+    </div>
+    <div class="archive-list" data-archive-list><div class="archive-empty">Chargement…</div></div>
+  </div>`
+  const close = (): void => drawer.remove()
+  drawer.addEventListener('click', (event) => {
+    if (event.target === drawer || (event.target as Element).closest('[data-drawer="close"]')) close()
+    const accountButton = (event.target as Element).closest<HTMLElement>('[data-archive-open-account]')
+    const personButton = (event.target as Element).closest<HTMLElement>('[data-archive-open-person]')
+    if (accountButton?.dataset.archiveOpenAccount) { close(); ctx.openAccount?.(accountButton.dataset.archiveOpenAccount) }
+    else if (personButton?.dataset.archiveOpenPerson) { close(); ctx.openPerson?.(personButton.dataset.archiveOpenPerson) }
+  })
+  document.addEventListener('keydown', function onKey(event) {
+    if (event.key === 'Escape') { close(); document.removeEventListener('keydown', onKey) }
+  })
+  document.body.appendChild(drawer)
+  drawer.querySelector<HTMLButtonElement>('.sig-drawer-close')?.focus()
+
+  const listNode = drawer.querySelector<HTMLElement>('[data-archive-list]')
+  try {
+    const items = await fetchArchivedActions(ctx.organizationId, ctx.session.user.id)
+    if (!drawer.isConnected || !listNode) return
+    let currentFilter: 'all' | 'completed' | 'dismissed' = 'all'
+    const paint = () => { listNode.innerHTML = archiveListMarkup(items.filter((item) => currentFilter === 'all' || item.status === currentFilter), currentFilter) }
+    paint()
+    drawer.querySelectorAll<HTMLButtonElement>('[data-archive-filter]').forEach((filterButton) => filterButton.addEventListener('click', () => {
+      currentFilter = (filterButton.dataset.archiveFilter ?? 'all') as 'all' | 'completed' | 'dismissed'
+      drawer.querySelectorAll<HTMLButtonElement>('[data-archive-filter]').forEach((button) => button.classList.toggle('on', button === filterButton))
+      paint()
+    }))
+  } catch (error) {
+    if (listNode) listNode.innerHTML = `<div class="archive-empty">${esc(error instanceof Error ? error.message : 'Archive indisponible.')}</div>`
+  }
+}
+
+function archiveListMarkup(items: HomeArchivedAction[], filter: 'all' | 'completed' | 'dismissed'): string {
+  if (!items.length) {
+    const noun = filter === 'completed' ? 'faite' : filter === 'dismissed' ? 'écartée' : 'archivée'
+    return `<div class="archive-empty">Aucune action ${noun} pour l’instant.</div>`
+  }
+  return items.map((item) => `<article class="archive-row">
+    <span class="archive-row-badge ${esc(item.status)}">${item.status === 'completed' ? `${HICON.check} Fait` : `${HICON.cross} Écarté`}</span>
+    <div class="archive-row-b">
+      <p class="archive-row-t">${esc(item.title ?? ACTION_LABELS[item.actionType] ?? item.actionType)}</p>
+      ${item.summary ? `<p class="archive-row-s">${esc(item.summary)}</p>` : ''}
+      <p class="archive-row-m">
+        ${item.accountId ? `<button type="button" class="krs-cpt" data-archive-open-account="${esc(item.accountId)}">${HICON.link} ${esc(item.accountName ?? 'Compte')}</button>` : ''}
+        ${item.personId ? `<button type="button" class="krs-cpt" data-archive-open-person="${esc(item.personId)}">${HICON.user} ${esc(item.personName ?? 'Personne')}</button>` : ''}
+        <span class="archive-row-date">${esc(formatDate(item.actedAt))}</span>
+      </p>
+    </div>
+  </article>`).join('')
 }

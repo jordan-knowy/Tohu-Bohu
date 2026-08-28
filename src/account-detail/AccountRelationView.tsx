@@ -396,18 +396,31 @@ function HistorySection({ data, userId, refresh }: { data: AccountDetailData; us
 // ── Modale explicative du score ─────────────────────────────────────────────
 function ScoreModal({ data, onClose }: { data: AccountDetailData; onClose: () => void }) {
   const rel = data.relationship
-  const rows: Array<{ label: string; value: number | null; desc: string }> = [
-    { label: 'Couverture contacts', value: rel.contactCoverage, desc: 'Part des interlocuteurs clés réellement couverts par un échange suivi.' },
-    { label: 'Couverture décideur', value: rel.decisionMakerCoverage, desc: 'Présence d’un lien avec le(s) décideur(s) du compte.' },
-    { label: 'Répartition (anti-concentration)', value: rel.concentrationRisk === null ? null : Math.max(0, 100 - rel.concentrationRisk), desc: 'Un compte porté par un seul contact est plus fragile.' },
+  // Les 3 vraies composantes pondérées du score (0,55 + 0,25 + 0,20, voir score-batch) —
+  // null si le snapshot est antérieur à leur ajout ou si aucun contact n'était engagé
+  // ce mois-là (absence de mesure, jamais un 0 fabriqué).
+  const rows: Array<{ label: string; weight: string; value: number | null; desc: string }> = [
+    { label: 'Engagement', weight: '55%', value: rel.engagementComponent, desc: 'Moyenne pondérée des scores des contacts réellement engagés ce mois-ci (poids selon leur volume d’échanges).' },
+    { label: 'Couverture contacts', weight: '25%', value: rel.contactCoverage, desc: 'Part des interlocuteurs du compte réellement couverts par un échange suivi.' },
+    { label: 'Récence', weight: '20%', value: rel.recencyComponent, desc: 'Fraîcheur de la dernière interaction sur le compte (demi-vie 90 jours).' },
+  ]
+  const riskFactors: Array<{ label: string; value: number | null; desc: string }> = [
+    { label: 'Couverture décideur', value: rel.decisionMakerCoverage, desc: 'Présence d’un lien avec le(s) décideur(s) identifié(s) du compte.' },
+    { label: 'Répartition (anti-concentration)', value: rel.concentrationRisk === null ? null : Math.max(0, 100 - rel.concentrationRisk), desc: 'Un compte porté par un seul contact est plus fragile (risque de départ).' },
   ]
   return createPortal(
     <div className="acr-mask" onClick={onClose}>
       <div className="acr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="mo-h"><p className="mo-t">Comment le score du compte est calculé</p><button className="mo-x" onClick={onClose} aria-label="Fermer">×</button></div>
         <div className="mo-b">
-          <p className="mo-i">Le compte n’est <b>pas une simple somme de dyades</b> : certains faits n’appartiennent à personne — couverture décideur, concentration sur un relais, redondance interne. Score global : <b>{rel.score ?? '—'}</b>{rel.confidence !== null ? ` · fiabilité ${rel.confidence}%` : ''}.</p>
+          <p className="mo-i">Le compte n’est <b>pas une simple somme de dyades</b> : le score agrège les personnes réellement engagées avec ce compte, pas une moyenne brute. Score global : <b>{rel.score ?? '—'}</b>{rel.confidence !== null ? ` · fiabilité ${rel.confidence}%` : ''}.</p>
           {rows.map((r) => <div className="mo-s" key={r.label}>
+            <div className="mo-hd"><p className="mo-l">{r.label} <small>· {r.weight}</small></p><p className="mo-v">{r.value ?? '—'}<small>/100</small></p></div>
+            <span className="mo-g"><i style={{ width: `${r.value ?? 0}%` }} /></span>
+            <p className="mo-d">{r.desc}{r.value === null ? ' Pas encore mesuré ce mois-ci.' : ''}</p>
+          </div>)}
+          <p className="mo-sl">Facteurs de risque affichés à part — pas dans le calcul du score</p>
+          {riskFactors.map((r) => <div className="mo-s" key={r.label}>
             <div className="mo-hd"><p className="mo-l">{r.label}</p><p className="mo-v">{r.value ?? '—'}<small>/100</small></p></div>
             <span className="mo-g"><i style={{ width: `${r.value ?? 0}%` }} /></span>
             <p className="mo-d">{r.desc}</p>

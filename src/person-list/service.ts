@@ -142,6 +142,13 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
     p_contact_id: contactId,
   })
   if (error) throw error
+  const userId = (await client.auth.getUser()).data.user?.id ?? ''
+  const { data: connectors } = await client.from('connectors')
+    .select('provider')
+    .eq('organization_id', workspaceId)
+    .eq('user_id', userId)
+    .eq('status', 'connected')
+    .in('provider', ['google', 'microsoft'])
   void Promise.allSettled([
     client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
     // Historique complet pour ce nouveau contact : reconstruit son score passé
@@ -150,6 +157,14 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
     client.functions.invoke('score-batch', { body: { organizationId: workspaceId, contactId, deepBackfill: true } }),
     client.functions.invoke('monitor-contacts', { body: { organizationId: workspaceId } }),
     triggerBehaviorSyncs(workspaceId),
+    // Relecture ciblée sans limite de temps (au-delà des 2 ans de la découverte
+    // générale) : va chercher tous les échanges réels avec ce contact dans la
+    // boîte mail connectée, puis relance l'analyse IA du profil dessus. Le
+    // corps des emails n'est jamais stocké (analyzed_without_body_storage) —
+    // comportement inchangé, seul le déclenchement devient automatique.
+    ...(connectors ?? []).map((row) =>
+      client.functions.invoke('sync-email-analysis', { body: { organizationId: workspaceId, provider: row.provider, contactId } }),
+    ),
   ])
 }
 
@@ -177,21 +192,28 @@ export async function setPersonOwner(workspaceId: string, contactId: string, use
 /** Supprime une personne de Tohu : archivage (réversible), pas de suppression
  *  physique — préserve l'historique réel (emails, réunions, signaux). */
 export async function setPersonArchived(workspaceId: string, contactId: string, userId: string, archived: boolean): Promise<void> {
-  const { error } = await getSupabase().from('person_settings').upsert({
+  const client = getSupabase()
+  const { error } = await client.from('person_settings').upsert({
     organization_id: workspaceId, contact_id: contactId, archived_at: archived ? new Date().toISOString() : null, updated_by: userId, updated_at: new Date().toISOString(),
   }, { onConflict: 'organization_id,contact_id' })
   if (error) throw error
+  // Recalcul immédiat : une personne archivée/désarchivée doit sortir/rentrer
+  // du score de son compte (et du score global) sans attendre le prochain
+  // cron — le moteur exclut désormais les contacts archivés (score-batch).
+  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 /** Suppression groupée : archive plusieurs personnes en une passe (réversible). */
 export async function archivePeople(workspaceId: string, userId: string, contactIds: string[]): Promise<void> {
   if (!contactIds.length) return
+  const client = getSupabase()
   const now = new Date().toISOString()
-  const { error } = await getSupabase().from('person_settings').upsert(
+  const { error } = await client.from('person_settings').upsert(
     contactIds.map((contactId) => ({ organization_id: workspaceId, contact_id: contactId, archived_at: now, updated_by: userId, updated_at: now })),
     { onConflict: 'organization_id,contact_id' },
   )
   if (error) throw error
+  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 /** Passation : réattribue l'owner des personnes sélectionnées et historise

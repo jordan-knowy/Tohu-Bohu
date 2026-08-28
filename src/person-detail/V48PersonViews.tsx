@@ -45,10 +45,14 @@ type AxisTier = 'legere' | 'moyenne' | 'forte'
 
 function axisTier(predominancePct: number | null): AxisTier {
   const value = predominancePct ?? 0
-  return value < 20 ? 'legere' : value < 65 ? 'moyenne' : 'forte'
+  return value < 40 ? 'legere' : value < 60 ? 'moyenne' : 'forte'
 }
 
-const AXIS_TIER_COLOR: Record<AxisTier, string> = { legere: '#2EA86A', moyenne: '#C97A20', forte: '#D94F63' }
+// Rouge < 40 % (signal faible/ambigu), orange 40-60 % (inchangé), vert > 60 %
+// (signal net et confirmé) — sur demande explicite, à l'inverse de l'intuition
+// « petite variation = anodin (vert) » : ici une faible prédominance est le cas
+// à surveiller, une forte prédominance est le cas rassurant.
+const AXIS_TIER_COLOR: Record<AxisTier, string> = { legere: '#D94F63', moyenne: '#C97A20', forte: '#2EA86A' }
 const AXIS_TIER_WORD: Record<AxisTier, string> = { legere: 'légèrement', moyenne: 'nettement', forte: 'fortement' }
 
 const AXIS_HINT: Record<PrimaryAxisId, string> = {
@@ -142,10 +146,10 @@ function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis
       const valueText = insufficient ? 'À confirmer' : `+${axis.predominancePct ?? 0} % ${activePoleLabel ?? ''}`
       const valueW = valueText.length * 9.6 // largeur approx. de la valeur en unités SVG (police 18)
       const btnW = 32
-      const ix = layout.anchor === 'start' ? layout.x + valueW + 12
+      const ix = layout.anchor === 'start' ? layout.x + valueW + 20
         : layout.anchor === 'end' ? layout.x - valueW - 12 - btnW
-          : layout.x + valueW / 2 + 12
-      const pos = toPercent(ix, layout.y + 8)
+          : layout.x + valueW / 2 + 32
+      const pos = toPercent(ix, layout.y + (layout.anchor === 'end' ? 8 : 13))
       const trendPhrase = axis.trendLabel === 'rising' ? `+${Math.abs(axis.trendPts ?? 0)} pts sur 30 jours.`
         : axis.trendLabel === 'declining' ? `−${Math.abs(axis.trendPts ?? 0)} pts sur 30 jours.`
           : axis.trendLabel === 'stable' ? 'Stable sur 30 jours.' : null
@@ -489,25 +493,28 @@ function ScoreChart({ data }: { data: PersonDetailData }) {
 function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
   const dims = data.relationship.dimensions
   const rows = [
-    { label: 'Intensité', value: dims.intensity, description: 'Fréquence et richesse des échanges — emails, réunions, diversité des canaux.' },
-    { label: 'Réciprocité', value: dims.reciprocity, description: 'Équilibre entre ce que chacun initie et la vitesse de réponse.' },
-    { label: 'Récence', value: dims.recency, description: 'Fraîcheur du dernier contact rapportée au rythme habituel des échanges.' },
+    { label: 'Confiance', weight: '25%', value: dims.confiance, description: 'Peut-on réellement compter l’un sur l’autre ? Engagements tenus, réponses aux demandes importantes, continuité — jamais déduit du seul volume d’échanges.', measured: dims.confianceMeasured },
+    { label: 'Satisfaction', weight: '25%', value: dims.satisfaction, description: 'Les interactions se déroulent-elles positivement ? Retours positifs, remerciements, frustrations ou objections détectés dans le contenu réel des échanges.', measured: dims.satisfactionMeasured },
+    { label: 'Engagement', weight: '20%', value: dims.engagement, description: 'La relation est-elle réellement active ? Rythme récent comparé à la baseline habituelle de cette relation, pas à un seuil absolu.', measured: true },
+    { label: 'Réciprocité', weight: '20%', value: dims.reciprocite, description: 'Les deux entretiennent-ils la relation ? Équilibre des initiatives, nuancé selon le type de relation.', measured: true },
+    { label: 'Ancrage', weight: '10%', value: dims.ancrage, description: dims.ancrageCarriers !== null ? `La relation dépasse-t-elle une seule personne ? ${dims.ancrageCarriers} porteur${dims.ancrageCarriers > 1 ? 's' : ''} interne${dims.ancrageCarriers > 1 ? 's' : ''} détecté${dims.ancrageCarriers > 1 ? 's' : ''}.` : 'La relation dépasse-t-elle une seule personne ? Nombre de membres de l’équipe ayant une relation réelle avec ce contact.', measured: true },
   ] as const
   const connectedSources = data.sources.filter((source) => source.status === 'connected')
   return <div className="rel-mask" onClick={onClose}>
     <div className="rel-modal" onClick={(event) => event.stopPropagation()}>
       <div className="mo-h"><p className="mo-t">Comment le score est calculé</p><button type="button" className="mo-x" onClick={onClose}>×</button></div>
       <div className="mo-b">
-        <p className="mo-i">Le NPS relationnel mesure la <b>solidité du lien</b>, pas la satisfaction déclarée. Il agrège trois signaux issus des échanges réels — jamais d’un questionnaire.</p>
+        <p className="mo-i">Le score relationnel mesure la <b>solidité du lien</b>, pas la satisfaction déclarée. Il agrège 5 axes issus des échanges réels — jamais d’un questionnaire.</p>
+        {data.relationship.axisInterpretation && <p className="mo-i" style={{ fontWeight: 500 }}>{data.relationship.axisInterpretation}</p>}
         {rows.map((row) => <div className="mo-s" key={row.label}>
-          <div className="mo-hd"><p className="mo-l">{row.label}</p><p className="mo-v">{row.value ?? '—'}<small>/100</small></p></div>
+          <div className="mo-hd"><p className="mo-l">{row.label} <small>· {row.weight}</small></p><p className="mo-v">{row.value ?? '—'}<small>/100</small></p></div>
           <span className="mo-g"><i style={{ width: `${Math.max(0, Math.min(100, row.value ?? 0))}%` }} /></span>
-          <p className="mo-d">{row.description}</p>
+          <p className="mo-d">{row.description}{!row.measured && ' Valeur temporairement neutre (50) : analyse IA pas encore effectuée pour ce contact.'}</p>
         </div>)}
         <p className="mo-sl">Sources</p>
         {connectedSources.map((source) => <div className="mo-src" key={source.provider}><span className="src t">{source.label} · Observable</span><span>Mesuré directement depuis les échanges connectés</span></div>)}
-        <div className="mo-src"><span className="src v">NPS · Inféré</span><span>Score dérivé des trois signaux ci-dessus, pas une donnée brute</span></div>
-        <p className="mo-f">Pondération 40 / 30 / 30 · le composite ne peut pas être inférieur à ses trois sous-scores · échelle 0–100</p>
+        <div className="mo-src"><span className="src v">Score · Inféré</span><span>Score dérivé des 5 axes ci-dessus, pas une donnée brute</span></div>
+        <p className="mo-f">Pondération 25 / 25 / 20 / 20 / 10 · moyenne pondérée · échelle 0–100</p>
       </div>
     </div>
   </div>

@@ -12,6 +12,22 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logAiUsage } from './ai-usage.ts'
 
+export type RelationshipAxisResult = {
+  status?: string
+  score?: number | null
+  observation?: string | null
+  confidence?: number | null
+  evidence?: string[]
+}
+
+export type AccountRelationResult = {
+  status?: string
+  category?: string | null
+  observation?: string | null
+  confidence?: number | null
+  evidence?: string[]
+}
+
 export type Analysis = {
   executive_summary?: string
   cognitive_mode?: string
@@ -20,6 +36,17 @@ export type Analysis = {
   behavioral_analysis_data?: Array<{ trait?: string; observation?: string; confidence?: number }>
   communication_style_data?: Record<string, unknown>
   cognitive_profile_data?: Record<string, unknown>
+  // Axes du score relationnel PERSONNE (Confiance/Satisfaction) — distincts du
+  // profil de style de communication ci-dessus. Nécessitent une lecture du
+  // contenu réel des échanges (pas seulement leurs métadonnées), d'où leur
+  // extraction ici plutôt que dans score-batch (pur calcul, sans IA).
+  trust?: RelationshipAxisResult
+  satisfaction?: RelationshipAxisResult
+  // Catégorisation COMPTE (Prospect/Client/Partenaire/Fournisseur/Investisseur) :
+  // indice par contact, agrégé au niveau compte par score-batch. Uniquement
+  // pertinent pour role="contact" (une seule entreprise externe) — toujours
+  // "insufficient" pour role="responsable" (auto-profil interne, multi-comptes).
+  account_relation?: AccountRelationResult
 }
 
 const STATUS_SCHEMA = { type: 'string', enum: ['observed', 'emerging', 'insufficient'] }
@@ -29,6 +56,11 @@ const SOURCE_TYPES_SCHEMA = {
   type: 'array',
   items: { type: 'string', enum: ['email', 'meeting_transcript'] },
 }
+
+// Catégories inférables du contenu d'échanges B2B — distinctes des catégories
+// purement internes (Collègue/Interne/Réseau) qui ne concernent pas un compte
+// externe et ne sont donc jamais suggérées ici.
+export const ACCOUNT_RELATION_CATEGORIES = ['Prospect', 'Client', 'Partenaire', 'Fournisseur / Prestataire', 'Investisseur'] as const
 
 export function strictObject(properties: Record<string, unknown>): Record<string, unknown> {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false }
@@ -85,6 +117,31 @@ const PRIMARY_AXES_OBJECT_SCHEMA = strictObject({
   espace_parole: PRIMARY_AXIS_SCHEMA,
 })
 
+// Axes Confiance/Satisfaction du score relationnel PERSONNE (doc 5-axes) :
+// échelle qualité (0=faible, 100=fort), pas une échelle pôle-à-pôle comme les
+// axes de style ci-dessus. Nécessitent une preuve datée pour compter.
+const RELATIONSHIP_AXIS_SCHEMA = strictObject({
+  status: STATUS_SCHEMA,
+  score: NULLABLE_NUMBER_SCHEMA,
+  observation: NULLABLE_STRING_SCHEMA,
+  confidence: NULLABLE_NUMBER_SCHEMA,
+  evidence: { type: 'array', items: { type: 'string' } },
+  evidence_count: { type: 'integer', minimum: 0 },
+  source_types: SOURCE_TYPES_SCHEMA,
+})
+
+// Catégorisation COMPTE — même logique de preuve que trust/satisfaction
+// (jamais déduite du volume), mais une catégorie plutôt qu'un score continu.
+const ACCOUNT_RELATION_SCHEMA = strictObject({
+  status: STATUS_SCHEMA,
+  category: { type: ['string', 'null'], enum: [...ACCOUNT_RELATION_CATEGORIES, null] },
+  observation: NULLABLE_STRING_SCHEMA,
+  confidence: NULLABLE_NUMBER_SCHEMA,
+  evidence: { type: 'array', items: { type: 'string' } },
+  evidence_count: { type: 'integer', minimum: 0 },
+  source_types: SOURCE_TYPES_SCHEMA,
+})
+
 export const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
   type: 'json_schema',
   json_schema: {
@@ -95,6 +152,9 @@ export const COGNITIVE_PROFILE_RESPONSE_FORMAT = {
       cognitive_mode: NULLABLE_STRING_SCHEMA,
       cognitive_mode_confidence: { type: 'number', minimum: 0, maximum: 100 },
       global_confidence: { type: 'number', minimum: 0, maximum: 100 },
+      trust: RELATIONSHIP_AXIS_SCHEMA,
+      satisfaction: RELATIONSHIP_AXIS_SCHEMA,
+      account_relation: ACCOUNT_RELATION_SCHEMA,
       cognitive_profile_data: strictObject({
         schema_version: { type: 'integer', const: 3 },
         interpersonal: strictObject({
@@ -269,6 +329,9 @@ Règles impératives :
 - pour chaque axe primaire (primary_axes) : "raw_score" est la position 0-100 sur l'axe du pôle gauche (0) vers le pôle droit (100) — rythme Posé(0)→Rapide(100), argumentation Récit(0)→Chiffré(100), engagement Implicite(0)→Explicite(100), registre Formel(0)→Direct(100), tonalité Sobre(0)→Chaleureux(100), espace_parole Écoute(0)→Occupe(100) ; "margin_pts" est TON incertitude estimée en points (peu de preuves → marge large, ex. 15-20 ; preuves nombreuses et convergentes → marge étroite, ex. 5-8) ; "trend_pts" est le delta signé de "raw_score" par rapport au profil précédent sur la période récente (null si aucun profil précédent ou axe alors insuffisant), "trend_label" vaut "rising"/"stable"/"declining" en cohérence avec le signe (stable si |trend_pts| <= 3) ; "evidence" contient 2 à 3 items COURTS mélangeant si possible un verbatim paraphrasé daté (jamais mot pour mot), une observation quantifiée (durée, fréquence), et un ratio/compte ;
 - pour chaque axe secondaire (secondary_axes) : "score" suit la même échelle 0-100 pôle gauche→droit (orientation Tâche(0)→Relation(100), certainty Prudent(0)→Affirmatif(100), novelty Éprouvé(0)→Exploratoire(100), initiative Suit(0)→Mène(100)) ; pas de champ "evidence" ici, seulement "observation" ;
 - evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript".
+- "trust" (Confiance, hors cognitive_profile_data) mesure la FIABILITÉ relationnelle, jamais le volume d'échanges : engagements tenus ou non tenus, réponses effectives aux demandes importantes, continuité, respect des échéances annoncées, stabilité du comportement, ruptures inexpliquées. "score" 0-100 où 100 = très fiable, 0 = peu fiable ; "status":"insufficient" si aucune preuve concrète d'engagement tenu/non tenu n'est disponible (ne jamais déduire la confiance du seul volume d'emails) ; "evidence" cite 1 à 3 faits datés précis (ex. "a confirmé le 12/06 un délai non tenu au 20/06" ou "répond systématiquement sous 24h aux demandes explicites").
+- "satisfaction" (hors cognitive_profile_data) mesure la QUALITÉ perçue des interactions, distincte de l'activité : retours positifs, remerciements, validations explicites, résolution d'objections d'un côté ; frustrations répétées, désaccords, demandes non satisfaites, objections récurrentes de l'autre. "score" 0-100 où 100 = très satisfaisant, 0 = insatisfaisant ; "status":"insufficient" si aucun signal de tonalité positive/négative explicite n'apparaît (jamais déduit du seul volume d'échanges — une personne très active peut être mécontente) ; "evidence" cite 1 à 3 faits datés précis.
+- "account_relation" (hors cognitive_profile_data) identifie la NATURE de la relation commerciale avec l'organisation externe de cette personne, à partir d'indices CONCRETS dans les échanges — jamais du volume ni d'une supposition générique. "category" vaut exactement l'une de "Prospect" (devis/offre envoyée par nous, pas encore de contrat signé, relance commerciale), "Client" (contrat/facture émise par nous, prestation en cours ou livrée), "Fournisseur / Prestataire" (devis/facture REÇUE, nous sommes l'acheteur), "Partenaire" (collaboration mutuelle, co-organisation, accord réciproque sans facturation dans un sens unique), "Investisseur" (financement, cap table, reporting actionnarial) — ou null si cette personne est le "responsable de compte connecté" (auto-profil interne, pas une relation à un compte externe unique) ou si aucun indice concret ne permet de trancher. "status":"insufficient" tant que "category" est null ; "evidence" cite 1 à 2 faits datés précis (ex. "devis envoyé le 03/04 pour la prestation X", "facture n°123 reçue le 12/05").
 - "approach_guidance" : 2 à 4 scénarios CONCRETS et CONTEXTUELS indiquant comment aborder AU MIEUX cette personne, déduits UNIQUEMENT des preuves observées (jamais un conseil générique applicable à n'importe qui). Chaque scénario : "context" = une situation précise et variée ("Avant un rendez-vous", "Par email", "Quand il/elle temporise ou hésite", "Pour obtenir une décision", "Après un désaccord ou une friction", "Pour embarquer sur un nouveau sujet"…) ; "summary" = une phrase expliquant le levier relationnel PROPRE à cette personne dans ce contexte ; "do" = 1 à 3 actions précises qui fonctionnent avec elle, ancrées sur son style réel (rythme, registre, argumentation, engagement…) et cohérentes avec les axes ci-dessus ; "dont" = 1 à 3 pièges concrets à éviter avec elle. Formulation opérationnelle (impératif), directement utile avant de la contacter ou de la voir. Renvoie une liste vide si les preuves sont insuffisantes pour être pertinent.
 
 Réponds uniquement avec ce JSON strict :
@@ -277,6 +340,9 @@ Réponds uniquement avec ce JSON strict :
   "cognitive_mode": "posture dominante personnalisée ou null",
   "cognitive_mode_confidence": 0,
   "global_confidence": 0,
+  "trust": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+  "satisfaction": {"status":"insufficient","score":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
+  "account_relation": {"status":"insufficient","category":null,"observation":null,"confidence":null,"evidence":[],"evidence_count":0,"source_types":[]},
   "cognitive_profile_data": {
     "schema_version": 3,
     "interpersonal": {
@@ -420,6 +486,17 @@ export async function persistContactProfile(
   const now = new Date().toISOString()
   const observedAt = params.observedAt ?? now
   const sourceRef = params.sourceRef ?? `sync:${now}`
+  // Confiance/Satisfaction (score PERSONNE, 5 axes) : "insufficient" ne doit
+  // jamais écraser une valeur déjà mesurée par un run précédent qui aurait
+  // eu moins de matière — on ne régresse une mesure réelle vers null que si
+  // ce run-ci l'a explicitement invalidée en trouvant un statut différent
+  // n'est pas possible ici ; on garde donc simplement : mesuré si "observed"
+  // ou "emerging" avec un score non nul, sinon null (zéro hallucination).
+  const trust = result.trust?.status && result.trust.status !== 'insufficient' && result.trust.score != null ? result.trust : null
+  const satisfaction = result.satisfaction?.status && result.satisfaction.status !== 'insufficient' && result.satisfaction.score != null ? result.satisfaction : null
+  const accountRelation = result.account_relation?.status && result.account_relation.status !== 'insufficient'
+    && result.account_relation.category && (ACCOUNT_RELATION_CATEGORIES as readonly string[]).includes(result.account_relation.category)
+    ? result.account_relation : null
   const { data: cognitiveProfile, error: profileError } = await supabase.from('cognitive_profiles').upsert({
     organization_id: organizationId,
     contact_id: contactId,
@@ -440,6 +517,9 @@ export async function persistContactProfile(
     last_analyzed_at: now,
     updated_from: updatedFrom,
     updated_at: now,
+    ...(trust ? { trust_score: pct(trust.score), trust_reasoning: trust.observation ?? null, trust_analyzed_at: now } : {}),
+    ...(satisfaction ? { satisfaction_score: pct(satisfaction.score), satisfaction_reasoning: satisfaction.observation ?? null, satisfaction_analyzed_at: now } : {}),
+    ...(accountRelation ? { account_relation_hint: accountRelation.category, account_relation_hint_confidence: pct(accountRelation.confidence), account_relation_hint_reasoning: accountRelation.observation ?? null, account_relation_hint_analyzed_at: now } : {}),
   }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
   if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')
   const signals = structuredSignals.map((item) => ({ organization_id: organizationId, contact_id: contactId, profile_id: cognitiveProfile.id, signal_type: item.trait, text: item.observation, inference: item.trait, inference_level: 'observable', confidence: pct(item.confidence), source_type: signalSource, source_ref: sourceRef, observed_at: observedAt }))

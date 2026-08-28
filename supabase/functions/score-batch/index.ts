@@ -1,4 +1,4 @@
-// Scoring relationnel EN MASSE (doc 08) → cognitive_profiles + historique mensuel (contact_score_history) + NPS (nps_snapshots).
+// Scoring relationnel EN MASSE (doc 08) → cognitive_profiles + historique mensuel (contact_score_history).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { observedRelationshipAgeInDays, scoreLongevite } from '../_shared/relationship-longevity.ts';
 
@@ -11,39 +11,105 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-// Score composite V57 : Intensité(40%)/Réciprocité(30%)/Récence(30%), sans ancrage
-// à un neutre artificiel — un signal faible (peu d'échanges, peu de réciprocité)
-// donne directement un score bas, un signal fort un score haut. Règle plancher :
-// le composite ne descend jamais sous le plus bas des 3 sous-scores (une relation
-// ne peut pas paraître pire que sa pire dimension mesurée).
-// La longévité (sl) sort du calcul composite : affichée séparément (fait, pas un
-// score), voir relationship_age_days sur person_relationship_score_snapshots.
-const PRIMARY_WEIGHTS = { intensite: 0.40, reciprocite: 0.30, recency: 0.30 };
-const PHASE_DELTA = 8.0, PHASE_DECLINE_MAX = 70, HL_MIN = 30, HL_MAX = 180;
+// Score composite PERSONNE — 5 axes (doc 5-axes) :
+//   Confiance(25%) + Satisfaction(25%) + Engagement(20%) + Réciprocité(20%) + Ancrage(10%)
+// Remplace la V57 (Intensité/Réciprocité/Récence). Moyenne pondérée pure, SANS
+// règle plancher (le document de référence donne un exemple chiffré — 92/88/76/81/40
+// → 80,4 — où le résultat dépasse largement l'axe le plus faible : la Confiance et la
+// Satisfaction pèsent volontairement plus que l'Ancrage, un point de fragilité isolé
+// (ex. bus factor) ne doit pas noyer une relation par ailleurs solide).
+// Confiance et Satisfaction nécessitent une lecture du CONTENU des échanges (pas
+// seulement leurs métadonnées) : elles sont extraites par IA dans sync-email-analysis
+// (voir _shared/behavior-analysis.ts, champs trust/satisfaction) et lues ici depuis
+// cognitive_profiles — score-batch reste un pur calcul, jamais d'appel IA lui-même.
+const AXIS_WEIGHTS = { confiance: 0.25, satisfaction: 0.25, engagement: 0.20, reciprocite: 0.20, ancrage: 0.10 };
+const PHASE_DELTA = 8.0, PHASE_DECLINE_MAX = 70;
 // Score compte : mêmes seuils de phase que le score personne (cohérence de lecture),
 // demi-vie de récence plus longue car un compte reste "vivant" plus longtemps qu'un contact isolé.
 const ACCOUNT_PHASE_DELTA = 8, ACCOUNT_PHASE_DECLINE_MAX = 70, ACCOUNT_RECENCY_HALFLIFE_DAYS = 90;
 const RECENT_WINDOW_MS = 14 * 86400000;
 const clamp = (v: number, min = 0, max = 1) => Math.max(min, Math.min(max, v));
-const temporalDecay = (days: number, depth: number) => Math.exp(-(Math.LN2 / (HL_MIN + depth * (HL_MAX - HL_MIN))) * days);
+// Types de relation où une asymétrie d'initiative est structurellement normale
+// (ex. un prospect ne relance pas autant qu'un commercial) — atténue la
+// pénalité de réciprocité plutôt que de la supprimer (voir scoreReciprocite).
+const ASYMMETRIC_RELATIONSHIP_TYPES = new Set(['Prospect', 'Client', 'Fournisseur / Prestataire', 'Investisseur']);
+// Nombre de messages minimum avec un même membre interne pour le compter comme
+// « porteur » de la relation (ancrage) — évite qu'un simple CC ponctuel compte.
+const ANCRAGE_MIN_MESSAGES_PER_CARRIER = 3;
 
-interface Stats { emailsLast30: number; meetingsLast90: number; avgThreadDepth: number; channelCount: number; initiationRatio: number; responseRate: number; responseTimeRatio: number; ageInDays: number; daysSinceLastContact: number; monthlyExchangeCounts: number[]; quartersWithMeetings: number; totalInteractions: number; }
-
-function scoreIntensite(s: Stats): number {
-  const emailFreqNorm = clamp(s.emailsLast30 / 4);
-  const emailFreqCapped = (s.initiationRatio > 0.85 || s.initiationRatio < 0.15) ? Math.min(emailFreqNorm, 0.50) : emailFreqNorm;
-  const meetingFreqNorm = clamp((s.meetingsLast90 / 90) / (1 / 30));
-  const richness = s.channelCount >= 3 ? 1.0 : s.channelCount === 2 ? 0.65 : 0.25;
-  return emailFreqCapped * 0.40 + meetingFreqNorm * 0.35 + richness * 0.15 + clamp(s.avgThreadDepth / 5) * 0.10;
+interface Stats {
+  emailsLast90: number; meetingsLast90: number; avgThreadDepth: number; channelCount: number;
+  initiationRatio: number; responseRate: number; responseTimeRatio: number; ageInDays: number;
+  daysSinceLastContact: number; monthlyExchangeCounts: number[]; quartersWithMeetings: number;
+  totalInteractions: number;
 }
-function scoreReciprocite(s: Stats): number {
+
+// Engagement (20%) : intensité de la relation comparée à SA PROPRE baseline
+// (moyenne d'interactions/90j sur toute la relation observée), pas à un seuil
+// absolu — 20 échanges avec quelqu'un contacté 2x/mois est un signal fort, 20
+// échanges avec quelqu'un contacté quotidiennement ne l'est pas. Sous la
+// baseline → signal dégradé ; au-dessus → signal fort, plafonné à 2x la
+// baseline. Une relation trop jeune (<45j) n'a pas encore de baseline fiable :
+// traitée neutre plutôt que biaisée par sa propre activité de démarrage.
+function scoreEngagement(s: Stats): number {
+  const periods = Math.max(1, s.ageInDays / 90);
+  const baselineRate = s.totalInteractions / periods;
+  const recentRate = s.emailsLast90 + s.meetingsLast90 * 4;
+  const ratio = s.ageInDays < 45 ? 1 : (baselineRate > 0 ? Math.min(4, recentRate / baselineRate) : (recentRate > 0 ? 2 : 0));
+  const baselineComponent = ratio <= 1 ? ratio * 60 : Math.min(100, 60 + (ratio - 1) * 40);
+  const richness = s.channelCount >= 3 ? 100 : s.channelCount === 2 ? 65 : 25;
+  const depth = clamp(s.avgThreadDepth / 5) * 100;
+  return clamp(baselineComponent * 0.70 + richness * 0.15 + depth * 0.15, 0, 100);
+}
+
+// Réciprocité (20%) : équilibre des initiatives, atténué selon le type de
+// relation déclaré (une asymétrie commercial↔prospect est normale, une
+// asymétrie partenaire↔partenaire l'est moins).
+function scoreReciprocite(s: Stats, relationshipType: string | null): number {
   const asym = Math.abs(s.initiationRatio - 0.5) * 2;
-  return Math.max(0.40, 1.0 - asym * 0.60) * 0.50 + clamp(s.responseRate) * 0.30 + clamp(s.responseTimeRatio / 2) * 0.20;
+  const asymWeight = relationshipType && ASYMMETRIC_RELATIONSHIP_TYPES.has(relationshipType) ? 0.35 : 0.60;
+  const balance = Math.max(0.40, 1.0 - asym * asymWeight);
+  return clamp(balance * 0.50 + clamp(s.responseRate) * 0.30 + clamp(s.responseTimeRatio / 2) * 0.20, 0, 1) * 100;
 }
+
+// Ancrage (10%) : nombre de membres internes distincts ayant une relation
+// réelle (≥3 messages) avec ce contact — 1 porteur = risque bus factor,
+// 3+ = relation intégrée à l'organisation, résiliente au départ d'un individu.
+function scoreAncrage(carriers: number): number {
+  if (carriers <= 0) return 0;
+  if (carriers === 1) return 25;
+  if (carriers === 2) return 60;
+  return 100;
+}
+
+// Catégorisation COMPTE (chargement des comptes) : agrège les indices par
+// contact (account_relation_hint, un par personne suivie du compte) en une
+// suggestion unique — majorité PONDÉRÉE par confiance (un indice à 90% pèse
+// plus que trois à 20%), jamais un simple décompte. Aucune suggestion tant que
+// le signal est faible ou trop partagé entre catégories : mieux vaut laisser
+// « à qualifier » qu'une catégorie hasardeuse (zéro hallucination).
+const ACCOUNT_RELATION_MIN_CONFIDENCE = 55;
+const ACCOUNT_RELATION_MIN_SHARE = 0.55;
+function aggregateAccountRelation(hints: Array<{ category: string; confidence: number }>): { category: string; confidence: number } | null {
+  const usable = hints.filter((hint) => hint.confidence >= ACCOUNT_RELATION_MIN_CONFIDENCE);
+  if (!usable.length) return null;
+  const weightByCategory = new Map<string, number>();
+  let totalWeight = 0;
+  for (const hint of usable) {
+    weightByCategory.set(hint.category, (weightByCategory.get(hint.category) ?? 0) + hint.confidence);
+    totalWeight += hint.confidence;
+  }
+  const [topCategory, topWeight] = [...weightByCategory.entries()].reduce((max, entry) => entry[1] > max[1] ? entry : max);
+  if (totalWeight <= 0 || topWeight / totalWeight < ACCOUNT_RELATION_MIN_SHARE) return null;
+  const contributingHints = usable.filter((hint) => hint.category === topCategory);
+  const avgConfidence = contributingHints.reduce((sum, hint) => sum + hint.confidence, 0) / contributingHints.length;
+  return { category: topCategory, confidence: Math.round(avgConfidence) };
+}
+
 function buildStats(allMsgs: any[], allMeets: any[], nowMs: number): Stats {
   const messages = allMsgs.filter(m => m.sent_at && new Date(m.sent_at).getTime() <= nowMs);
   const meetings = allMeets.filter(m => m.starts_at && new Date(m.starts_at).getTime() <= nowMs);
-  const c30 = nowMs - 30 * 86400000, c90 = nowMs - 90 * 86400000;
+  const c90 = nowMs - 90 * 86400000;
   const outbound = messages.filter(m => m.direction === 'outbound').length;
   const inbound = messages.filter(m => m.direction === 'inbound').length;
   const total = messages.length || 1;
@@ -75,39 +141,30 @@ function buildStats(allMsgs: any[], allMeets: any[], nowMs: number): Stats {
     return meetings.some(m => { const t = new Date(m.starts_at).getTime(); return t > start && t <= end; });
   }).length;
   return {
-    emailsLast30: messages.filter(m => new Date(m.sent_at).getTime() > c30).length,
+    emailsLast90: messages.filter(m => new Date(m.sent_at).getTime() > c90).length,
     meetingsLast90: meetings.filter(m => new Date(m.starts_at).getTime() > c90).length,
     avgThreadDepth, channelCount, initiationRatio, responseRate, responseTimeRatio, ageInDays, daysSinceLastContact,
     monthlyExchangeCounts, quartersWithMeetings, totalInteractions: messages.length + meetings.length * 4,
   };
 }
-function computeScore(stats: Stats, prevScore: number | null) {
-  const si = scoreIntensite(stats), sr = scoreReciprocite(stats);
-  // Longévité : conservée pour affichage (sl, ageInDays) mais ne pèse plus dans le composite.
-  const { score: sl } = scoreLongevite(stats);
-  const recency = temporalDecay(stats.daysSinceLastContact, clamp(stats.totalInteractions / 500));
-  const si100 = Math.round(si * 100);
-  const sr100 = Math.round(sr * 100);
-  const recency100 = Math.round(recency * 100);
-  const sl100 = Math.round(sl * 100);
-  const weighted = si100 * PRIMARY_WEIGHTS.intensite + sr100 * PRIMARY_WEIGHTS.reciprocite + recency100 * PRIMARY_WEIGHTS.recency;
-  // Règle plancher V57 : le composite ne descend jamais sous le plus bas des 3 sous-scores.
-  const floor = Math.min(si100, sr100, recency100);
-  const finalScore = Math.round(clamp(Math.max(weighted, floor), 0, 100));
-  const delta = finalScore - (prevScore ?? finalScore);
-  let phase: 'growth' | 'stagnant' | 'decline' = 'stagnant';
-  if (delta >= PHASE_DELTA) phase = 'growth';
-  else if (delta <= -PHASE_DELTA && finalScore <= PHASE_DECLINE_MAX) phase = 'decline';
-  return {
-    finalScore,
-    delta,
-    phase,
-    si: si100,
-    sr: sr100,
-    sl: sl100,
-    recency: recency100,
-    confidence: Math.min(90, 30 + stats.totalInteractions * 3),
-  };
+
+type AxisInputs = { trustScore: number | null; satisfactionScore: number | null; relationshipType: string | null; ancrageCarriers: number };
+
+// Interprétation déterministe (jamais un appel IA séparé) : identifie l'axe le
+// plus faible et le formule en phrase actionnable, à l'image du document de
+// référence — jamais un simple "score : X/100".
+function interpretAxes(axes: { confiance: number; satisfaction: number; engagement: number; reciprocite: number; ancrage: number }): string {
+  const labels: Record<keyof typeof axes, string> = { confiance: 'la confiance', satisfaction: 'la satisfaction', engagement: "l'engagement", reciprocite: 'la réciprocité', ancrage: "l'ancrage organisationnel" };
+  const entries = Object.entries(axes) as Array<[keyof typeof axes, number]>;
+  const [weakestKey, weakestValue] = entries.reduce((min, entry) => entry[1] < min[1] ? entry : min);
+  const [strongestKey, strongestValue] = entries.reduce((max, entry) => entry[1] > max[1] ? entry : max);
+  const overall = axes.confiance * AXIS_WEIGHTS.confiance + axes.satisfaction * AXIS_WEIGHTS.satisfaction + axes.engagement * AXIS_WEIGHTS.engagement + axes.reciprocite * AXIS_WEIGHTS.reciprocite + axes.ancrage * AXIS_WEIGHTS.ancrage;
+  const level = overall >= 70 ? 'Relation solide' : overall >= 50 ? 'Relation intermédiaire' : 'Relation fragile';
+  const strength = strongestValue >= 70 ? `, portée par ${labels[strongestKey]}` : '';
+  const weakness = weakestValue < 60
+    ? `. Le principal point de fragilité vient de ${labels[weakestKey]} (${weakestValue}/100)${weakestKey === 'ancrage' ? " : la relation reste trop dépendante d'un nombre limité de porteurs internes" : ''}.`
+    : '.';
+  return `${level}${strength}${weakness}`;
 }
 
 // Le projet Supabase plafonne chaque requête PostgREST à 1000 lignes côté
@@ -157,11 +214,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  // deepBackfill : reconstruit tout l'historique réel (jusqu'à la première
-  // interaction observée, plafonné à 36 mois) au lieu de la fenêtre glissante
-  // de 6 mois du cron normal — même formule, aucune divergence entre score
-  // passé et présent. Toujours borné à une organisation (jamais un backfill
-  // global non scopé) pour contenir le coût d'un seul appel.
+  // deepBackfill : reconstruit tout l'historique réel (jusqu'à la toute
+  // première interaction observée, sans plafond métier) au lieu de la fenêtre
+  // glissante de 6 mois du cron normal — même formule, aucune divergence entre
+  // score passé et présent. Toujours borné à une organisation (jamais un
+  // backfill global non scopé) pour contenir le coût d'un seul appel.
   const deepBackfill = body.deepBackfill === true;
   if (deepBackfill && !body.organizationId) return jsonResponse({ error: 'deepBackfill nécessite organizationId' }, 400);
   // forceRecompute : ignore le « déjà couvert » et RECALCULE (upsert, jamais un
@@ -182,18 +239,33 @@ Deno.serve(async (req) => {
     cq = cq.eq('organization_id', body.organizationId);
   }
   if (body.contactId) cq = cq.eq('id', body.contactId);
-  const { data: contacts } = await cq.limit(2000);
-  if (!contacts?.length) return jsonResponse({ success: true, scored: 0 });
+  const { data: rawContacts } = await cq.limit(2000);
+  if (!rawContacts?.length) return jsonResponse({ success: true, scored: 0 });
+
+  // Un contact archivé (person_settings.archived_at) n'alimente plus aucun
+  // score — ni le sien, ni celui de son compte — tant qu'il reste archivé.
+  // L'archivage produit ne touche jamais contacts.is_tracked (qui reste vrai),
+  // donc l'exclusion se fait ici, explicitement. On récupère au passage le
+  // type de relation déclaré (utilisé pour nuancer la réciprocité).
+  const { data: personSettingsRows } = await supabase.from('person_settings').select('contact_id, archived_at, relationship_type').in('contact_id', rawContacts.map((c: any) => c.id));
+  const archivedContactIds = new Set((personSettingsRows ?? []).filter((r: any) => r.archived_at).map((r: any) => r.contact_id));
+  const relationshipTypeByContact = new Map<string, string | null>((personSettingsRows ?? []).map((r: any) => [r.contact_id, r.relationship_type ?? null]));
+  const contacts = rawContacts.filter((c: any) => !archivedContactIds.has(c.id));
+  if (!contacts.length) return jsonResponse({ success: true, scored: 0 });
 
   const ids = contacts.map((c: any) => c.id);
   const orgIds = Array.from(new Set(contacts.map((c: any) => c.organization_id)));
   const contactOrgMap = new Map<string, string>(contacts.map((c: any) => [c.id, c.organization_id]));
+  const contactCompanyMap = new Map<string, string>(contacts.filter((c: any) => c.company_id).map((c: any) => [c.id, c.company_id]));
   const companyIds = Array.from(new Set(contacts.map((c: any) => c.company_id).filter(Boolean))) as string[];
 
   const [msgs, parts, { data: prevProfiles }, { data: mems }] = await Promise.all([
     fetchAllPages<any>((from, to) => supabase.from('communication_messages').select('contact_id, direction, sent_at, thread_id, metadata').in('contact_id', ids).order('id', { ascending: true }).range(from, to)),
     fetchAllPages<any>((from, to) => supabase.from('meeting_participants').select('contact_id, meetings(starts_at)').in('contact_id', ids).order('id', { ascending: true }).range(from, to)),
-    supabase.from('cognitive_profiles').select('contact_id, engagement_score').in('contact_id', ids),
+    // trust_score/satisfaction_score/account_relation_hint : derniers signaux IA
+    // connus (voir sync-email-analysis) — score-batch les LIT, ne les calcule
+    // jamais lui-même (pas d'appel IA ici).
+    supabase.from('cognitive_profiles').select('contact_id, engagement_score, trust_score, satisfaction_score, account_relation_hint, account_relation_hint_confidence').in('contact_id', ids),
     supabase.from('memberships').select('organization_id, user_id, role').in('organization_id', orgIds),
   ]);
 
@@ -227,6 +299,8 @@ Deno.serve(async (req) => {
   const decisionMakersByCompany = new Map<string, Set<string>>();
   const prevAccountScoreByCompany = new Map<string, number>();
   const accountSignalsByCompany = new Map<string, any[]>();
+  const companyRelationshipStatus = new Map<string, string | null>();
+  const companyRelationshipSource = new Map<string, string | null>();
   const companyContactTotal = new Map<string, number>();
   const companyOrgId = new Map<string, string>();
   for (const c of contacts as any[]) {
@@ -238,13 +312,22 @@ Deno.serve(async (req) => {
     const recentCutoff = new Date(Date.now() - RECENT_WINDOW_MS).toISOString();
     const [{ data: trackedCompanies }, { data: accountSettingsRows }, { data: contactRoles }, { data: prevAccountScores }, { data: recentAccountSignals }] = await Promise.all([
       supabase.from('companies').select('id').in('id', companyIds).eq('is_tracked', true),
-      supabase.from('account_settings').select('company_id, strategic, primary_owner_user_id').in('company_id', companyIds),
+      supabase.from('account_settings').select('company_id, strategic, primary_owner_user_id, archived_at, relationship_status, relationship_status_source').in('company_id', companyIds),
       supabase.from('account_contact_roles').select('company_id, contact_id').in('company_id', companyIds).eq('active', true).not('decision_role', 'is', null),
       supabase.from('account_relationship_score_snapshots').select('company_id, score, computed_at').in('company_id', companyIds).order('computed_at', { ascending: false }),
       supabase.from('company_signals').select('id, company_id, family, title, observed_at').in('company_id', companyIds).in('family', ['risque', 'churn']).eq('status', 'candidate').gte('observed_at', recentCutoff),
     ]);
-    for (const row of (trackedCompanies ?? []) as any[]) trackedCompanySet.add(row.id);
-    for (const row of (accountSettingsRows ?? []) as any[]) { companyStrategic.set(row.company_id, row.strategic === true); companyOwner.set(row.company_id, row.primary_owner_user_id ?? null); }
+    // Un compte archivé (account_settings.archived_at) sort du calcul : plus
+    // aucun account_relationship_score_snapshots/recommandation n'est produit
+    // pour lui tant qu'il reste archivé (même logique que pour les contacts).
+    const archivedCompanyIds = new Set((accountSettingsRows ?? []).filter((row: any) => row.archived_at).map((row: any) => row.company_id));
+    for (const row of (trackedCompanies ?? []) as any[]) { if (!archivedCompanyIds.has(row.id)) trackedCompanySet.add(row.id); }
+    for (const row of (accountSettingsRows ?? []) as any[]) {
+      companyStrategic.set(row.company_id, row.strategic === true);
+      companyOwner.set(row.company_id, row.primary_owner_user_id ?? null);
+      companyRelationshipStatus.set(row.company_id, row.relationship_status ?? null);
+      companyRelationshipSource.set(row.company_id, row.relationship_status_source ?? null);
+    }
     for (const row of (contactRoles ?? []) as any[]) { if (!decisionMakersByCompany.has(row.company_id)) decisionMakersByCompany.set(row.company_id, new Set()); decisionMakersByCompany.get(row.company_id)!.add(row.contact_id); }
     for (const row of (prevAccountScores ?? []) as any[]) { if (!prevAccountScoreByCompany.has(row.company_id) && row.score != null) prevAccountScoreByCompany.set(row.company_id, row.score); }
     for (const row of (recentAccountSignals ?? []) as any[]) { if (!accountSignalsByCompany.has(row.company_id)) accountSignalsByCompany.set(row.company_id, []); accountSignalsByCompany.get(row.company_id)!.push(row); }
@@ -270,8 +353,71 @@ Deno.serve(async (req) => {
   for (const p of (parts ?? [])) { const mt = (p as any).meetings; if (!mt) continue; if (!meetsByC.has(p.contact_id)) meetsByC.set(p.contact_id, []); meetsByC.get(p.contact_id)!.push(mt); }
   const prevByC = new Map<string, number>();
   for (const p of (prevProfiles ?? [])) if ((p as any).engagement_score != null) prevByC.set(p.contact_id, (p as any).engagement_score);
+  const axisInputsByContact = new Map<string, { trustScore: number | null; satisfactionScore: number | null }>();
+  for (const p of (prevProfiles ?? []) as any[]) axisInputsByContact.set(p.contact_id, { trustScore: p.trust_score ?? null, satisfactionScore: p.satisfaction_score ?? null });
   const orgOwner = new Map<string, string>();
   for (const m of (mems ?? []) as any[]) { if (!orgOwner.has(m.organization_id) || m.role === 'owner') orgOwner.set(m.organization_id, m.user_id); }
+
+  // Catégorisation COMPTE : indice par contact (voir _shared/behavior-analysis.ts,
+  // champ account_relation, même appel IA que trust/satisfaction), agrégé par
+  // compte plus bas (aggregateAccountRelation) pour suggérer relationship_status.
+  const relationHintsByCompany = new Map<string, Array<{ category: string; confidence: number }>>();
+  for (const p of (prevProfiles ?? []) as any[]) {
+    if (!p.account_relation_hint) continue;
+    const companyId = contactCompanyMap.get(p.contact_id);
+    if (!companyId) continue;
+    if (!relationHintsByCompany.has(companyId)) relationHintsByCompany.set(companyId, []);
+    relationHintsByCompany.get(companyId)!.push({ category: p.account_relation_hint, confidence: Number(p.account_relation_hint_confidence) || 0 });
+  }
+
+  // Ancrage : porteurs internes distincts par contact, calculés sur TOUT
+  // l'historique de messages disponible pour ce run (pas seulement la fenêtre
+  // récente) — la résilience organisationnelle d'une relation ne se mesure
+  // pas sur 90 jours. metadata.user_id n'est pas toujours renseigné selon la
+  // voie d'ingestion : le propriétaire déclaré du contact compte toujours
+  // comme au moins 1 porteur (jamais 0 par simple absence de métadonnée).
+  const ancrageCarriersByContact = new Map<string, number>();
+  for (const c of contacts as any[]) {
+    const contactMsgs = msgsByC.get(c.id) ?? [];
+    const countsByUser = new Map<string, number>();
+    for (const m of contactMsgs) {
+      const uid = (m.metadata as any)?.user_id;
+      if (!uid) continue;
+      countsByUser.set(uid, (countsByUser.get(uid) ?? 0) + 1);
+    }
+    const detected = Array.from(countsByUser.values()).filter((n) => n >= ANCRAGE_MIN_MESSAGES_PER_CARRIER).length;
+    ancrageCarriersByContact.set(c.id, c.owner_user_id ? Math.max(detected, 1) : detected);
+  }
+
+  function computeScore(stats: Stats, prevScore: number | null, axisInputs: AxisInputs) {
+    const engagement = scoreEngagement(stats);
+    const reciprocite = scoreReciprocite(stats, axisInputs.relationshipType);
+    const ancrage = scoreAncrage(axisInputs.ancrageCarriers);
+    // Confiance/Satisfaction : valeur IA si déjà mesurée, sinon neutre (50) en
+    // attendant l'analyse — jamais fabriquée à partir du seul volume d'emails
+    // (voir _shared/behavior-analysis.ts). `*Measured` distingue les deux cas
+    // pour l'interprétation et la confiance affichées.
+    const confianceMeasured = axisInputs.trustScore != null;
+    const satisfactionMeasured = axisInputs.satisfactionScore != null;
+    const confiance = axisInputs.trustScore ?? 50;
+    const satisfaction = axisInputs.satisfactionScore ?? 50;
+    const { score: sl } = scoreLongevite(stats);
+    const weighted = confiance * AXIS_WEIGHTS.confiance + satisfaction * AXIS_WEIGHTS.satisfaction
+      + engagement * AXIS_WEIGHTS.engagement + reciprocite * AXIS_WEIGHTS.reciprocite + ancrage * AXIS_WEIGHTS.ancrage;
+    const finalScore = Math.round(clamp(weighted, 0, 100));
+    const delta = finalScore - (prevScore ?? finalScore);
+    let phase: 'growth' | 'stagnant' | 'decline' = 'stagnant';
+    if (delta >= PHASE_DELTA) phase = 'growth';
+    else if (delta <= -PHASE_DELTA && finalScore <= PHASE_DECLINE_MAX) phase = 'decline';
+    const measuredAxisCount = 3 + (confianceMeasured ? 1 : 0) + (satisfactionMeasured ? 1 : 0);
+    return {
+      finalScore, delta, phase,
+      engagement: Math.round(engagement), reciprocite: Math.round(reciprocite), ancrage: Math.round(ancrage),
+      confiance: Math.round(confiance), satisfaction: Math.round(satisfaction), confianceMeasured, satisfactionMeasured,
+      sl: Math.round(sl * 100),
+      confidence: Math.min(90, 20 + stats.totalInteractions * 2 + measuredAxisCount * 8),
+    };
+  }
 
   const profileRows: any[] = [];
   const histRows: any[] = [];
@@ -284,7 +430,11 @@ Deno.serve(async (req) => {
   // « aujourd'hui »), sans alourdir le cron normal (ma===0 uniquement).
   const companyEngagedByMonth = new Map<number, Map<string, CompanyEngaged[]>>();
   const DEFAULT_MONTHS = [5, 4, 3, 2, 1, 0];
-  const DEEP_BACKFILL_CAP_MONTHS = 36;
+  // Aucun plafond métier : on remonte jusqu'à la toute première interaction
+  // réelle du contact (les emails/réunions existent, l'historique ne doit
+  // jamais être amputé). Seul un garde-fou technique très large empêche une
+  // donnée de date corrompue de générer une boucle démesurée.
+  const DEEP_BACKFILL_SAFETY_CAP_MONTHS = 600;
   const now = Date.now();
 
   for (const c of contacts as any[]) {
@@ -292,15 +442,21 @@ Deno.serve(async (req) => {
     const cmeet = meetsByC.get(c.id) ?? [];
     const userId = c.owner_user_id ?? orgOwner.get(c.organization_id) ?? null;
     let lastScore: number | null = null;
+    const axisInputs: AxisInputs = {
+      trustScore: axisInputsByContact.get(c.id)?.trustScore ?? null,
+      satisfactionScore: axisInputsByContact.get(c.id)?.satisfactionScore ?? null,
+      relationshipType: relationshipTypeByContact.get(c.id) ?? null,
+      ancrageCarriers: ancrageCarriersByContact.get(c.id) ?? 0,
+    };
 
     // deepBackfill : fenêtre étendue jusqu'à la première interaction réelle de
     // CE contact (pas une fenêtre globale) — un contact récent ne recalcule
-    // pas 36 mois de silence pour rien.
+    // pas des dizaines de mois de silence pour rien.
     let contactMonths: number[] = DEFAULT_MONTHS;
     if (deepBackfill) {
       const allTimes = [...cm.map((m: any) => new Date(m.sent_at).getTime()), ...cmeet.map((m: any) => new Date(m.starts_at).getTime())].filter(Number.isFinite);
       if (allTimes.length) {
-        const monthsBack = Math.min(DEEP_BACKFILL_CAP_MONTHS, Math.ceil((now - Math.min(...allTimes)) / (30 * 86400000)));
+        const monthsBack = Math.min(DEEP_BACKFILL_SAFETY_CAP_MONTHS, Math.ceil((now - Math.min(...allTimes)) / (30 * 86400000)));
         contactMonths = Array.from({ length: monthsBack + 1 }, (_, i) => monthsBack - i);
       } else {
         contactMonths = [0];
@@ -316,9 +472,9 @@ Deno.serve(async (req) => {
       if (coveredMonths && ma !== 0 && coveredMonths.has(snapDate.slice(0, 7))) continue;
       const stats = buildStats(cm, cmeet, nowMs);
       if (stats.totalInteractions === 0) continue;
-      const r = computeScore(stats, ma === 0 ? (prevByC.get(c.id) ?? null) : lastScore);
+      const r = computeScore(stats, ma === 0 ? (prevByC.get(c.id) ?? null) : lastScore, axisInputs);
       lastScore = r.finalScore;
-      if (userId) histRows.push({ organization_id: c.organization_id, contact_id: c.id, user_id: userId, score: r.finalScore, phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, snapshot_date: snapDate });
+      if (userId) histRows.push({ organization_id: c.organization_id, contact_id: c.id, user_id: userId, score: r.finalScore, phase: r.phase, score_engagement: r.engagement, score_reciprocite: r.reciprocite, score_confiance: r.confiance, score_satisfaction: r.satisfaction, score_ancrage: r.ancrage, snapshot_date: snapDate });
 
       // relationship_snapshots (tendance Home « 1 mois / trimestre / année »)
       // + agrégation compte plus bas : reconstruits mois par mois UNIQUEMENT en
@@ -326,7 +482,7 @@ Deno.serve(async (req) => {
       // comportement inchangé).
       if (ma === 0 || deepBackfill) {
         const cutoffLastInteractionAt = stats.daysSinceLastContact < 999 ? new Date(nowMs - stats.daysSinceLastContact * 86400000).toISOString() : null;
-        if (userId) relationshipRows.push({ organization_id: c.organization_id, user_id: userId, contact_id: c.id, engagement_score: r.finalScore, score_evolution: r.delta, phase: r.phase, phase_started_at: new Date(nowMs).toISOString(), last_contact_at: cutoffLastInteractionAt, last_contact_type: cm.length ? 'email' : cmeet.length ? 'meeting' : null, reciprocity_pct: r.sr, snapshot_date: snapDate });
+        if (userId) relationshipRows.push({ organization_id: c.organization_id, user_id: userId, contact_id: c.id, engagement_score: r.finalScore, score_evolution: r.delta, phase: r.phase, phase_started_at: new Date(nowMs).toISOString(), last_contact_at: cutoffLastInteractionAt, last_contact_type: cm.length ? 'email' : cmeet.length ? 'meeting' : null, reciprocity_pct: r.reciprocite, snapshot_date: snapDate });
         if (c.company_id && trackedCompanySet.has(c.company_id)) {
           if (!companyEngagedByMonth.has(ma)) companyEngagedByMonth.set(ma, new Map());
           const monthMap = companyEngagedByMonth.get(ma)!;
@@ -341,8 +497,9 @@ Deno.serve(async (req) => {
           ...cmeet.map((meeting: any) => meeting.starts_at),
         ].filter(Boolean).map((value: string) => new Date(value).getTime()).filter(Number.isFinite);
         const lastInteractionAt = interactionDates.length ? new Date(Math.max(...interactionDates)).toISOString() : null;
-        profileRows.push({ organization_id: c.organization_id, contact_id: c.id, profile_version: 1, engagement_score: r.finalScore, score_delta: r.delta, score_phase: r.phase, score_intensite: r.si, score_reciprocite: r.sr, score_longevite: r.sl, global_confidence: r.confidence, updated_at: new Date().toISOString() });
-        personSnapshotRows.push({ organization_id: c.organization_id, contact_id: c.id, score: r.finalScore, phase: r.phase === 'growth' ? 'growing' : r.phase === 'decline' ? 'declining' : 'stable', phase_delta: r.delta, intensity_score: r.si, reciprocity_score: r.sr, longevity_score: r.sl, recency_score: r.recency, relationship_age_days: stats.ageInDays, confidence: r.confidence, total_interactions: stats.totalInteractions, email_interactions: cm.length, meeting_interactions: cmeet.length, last_interaction_at: lastInteractionAt, computed_at: new Date().toISOString(), model_version: 'relationship-score-v3', source_type: 'computed', source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred' });
+        profileRows.push({ organization_id: c.organization_id, contact_id: c.id, profile_version: 1, engagement_score: r.finalScore, score_delta: r.delta, score_phase: r.phase, score_engagement: r.engagement, score_reciprocite: r.reciprocite, score_confiance: r.confiance, score_satisfaction: r.satisfaction, score_ancrage: r.ancrage, global_confidence: r.confidence, updated_at: new Date().toISOString() });
+        const interpretation = interpretAxes({ confiance: r.confiance, satisfaction: r.satisfaction, engagement: r.engagement, reciprocite: r.reciprocite, ancrage: r.ancrage });
+        personSnapshotRows.push({ organization_id: c.organization_id, contact_id: c.id, score: r.finalScore, phase: r.phase === 'growth' ? 'growing' : r.phase === 'decline' ? 'declining' : 'stable', phase_delta: r.delta, engagement_score: r.engagement, reciprocity_score: r.reciprocite, confiance_score: r.confiance, satisfaction_score: r.satisfaction, ancrage_score: r.ancrage, ancrage_carriers: axisInputs.ancrageCarriers, axis_interpretation: interpretation, relationship_age_days: stats.ageInDays, confidence: r.confidence, total_interactions: stats.totalInteractions, email_interactions: cm.length, meeting_interactions: cmeet.length, last_interaction_at: lastInteractionAt, computed_at: new Date().toISOString(), model_version: 'relationship-score-v4', source_type: 'computed', source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred' });
 
         // ── Recommandations personne : règles déterministes, une seule par run/contact — toujours sur l'état ACTUEL ──
         const recNowIso = new Date().toISOString();
@@ -361,6 +518,15 @@ Deno.serve(async (req) => {
             priority: Math.min(90, 40 + Math.floor(stats.daysSinceLastContact / 5)), title: 'Reprendre contact',
             justification: `Aucun échange détecté depuis ${stats.daysSinceLastContact} jours.`,
             recommended_action: 'Envoyer un message ou proposer un point rapide.',
+            source_type: 'engine', source_label: 'Moteur de recommandations Tohu', observed_at: recNowIso,
+            confidence: r.confidence, inference_level: 'inferred',
+          });
+        } else if (axisInputs.ancrageCarriers <= 1 && stats.totalInteractions >= 8 && !openPersonRecKey.has(`${c.id}|ancrage`)) {
+          personRecRows.push({
+            organization_id: c.organization_id, contact_id: c.id, kind: 'action', category: 'ancrage',
+            priority: 45, title: "Élargir les porteurs de la relation",
+            justification: `Cette relation repose sur un seul interlocuteur interne (ancrage faible) malgré ${stats.totalInteractions} interactions.`,
+            recommended_action: 'Impliquer un autre membre de l’équipe dans les prochains échanges.',
             source_type: 'engine', source_label: 'Moteur de recommandations Tohu', observed_at: recNowIso,
             confidence: r.confidence, inference_level: 'inferred',
           });
@@ -388,6 +554,7 @@ Deno.serve(async (req) => {
   // rejoue la même agrégation pour chaque mois reconstruit — même formule.
   const accountScoreRows: any[] = [];
   const accountRecRows: any[] = [];
+  const accountRelationSuggestionRows: any[] = [];
   const accountMonths = Array.from(new Set([0, ...companyEngagedByMonth.keys()])).sort((a, b) => b - a);
   const lastAccountScore = new Map<string, number>();
   for (const ma of accountMonths) {
@@ -445,11 +612,32 @@ Deno.serve(async (req) => {
         confidence, concentration_risk: concentrationRisk, contact_coverage: contactCoverage,
         decision_maker_coverage: decisionMakerCoverage, total_interactions: totalInteractions,
         interaction_frequency_30d: interactionFrequency30d, last_interaction_at: lastInteractionAt,
+        // Composantes réelles du score (0,55 engagement + 0,25 couverture + 0,20 récence) —
+        // null (pas 0) quand aucun contact engagé ce mois-là : une absence de mesure
+        // n'est pas un mauvais score, jamais fabriquée (voir §2.4 doc scoring).
+        engagement_component: engaged.length > 0 ? Math.round(engagementComponent) : null,
+        recency_component: engaged.length > 0 ? Math.round(recencyComponent) : null,
         computed_at: accountNowIso, model_version: 'account-relationship-score-v1', source_type: 'computed',
         source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred',
       });
 
       if (ma !== 0) continue; // recommandations : toujours sur l'état actuel, jamais rétroactives
+
+      // Catégorisation compte : ne retouche JAMAIS un choix humain confirmé
+      // (relationship_status_source === 'manual'). Tant que non confirmée, la
+      // suggestion peut être raffinée à chaque run à mesure que d'autres
+      // contacts du compte sont analysés — sans jamais effacer une suggestion
+      // déjà posée si ce run-ci manque simplement de signal frais.
+      if (companyRelationshipSource.get(companyId) !== 'manual') {
+        const suggestion = aggregateAccountRelation(relationHintsByCompany.get(companyId) ?? []);
+        if (suggestion) {
+          accountRelationSuggestionRows.push({
+            organization_id: orgId, company_id: companyId,
+            relationship_status: suggestion.category, relationship_status_source: 'suggested',
+            relationship_status_confidence: suggestion.confidence, updated_by: null, updated_at: accountNowIso,
+          });
+        }
+      }
 
       if (phase === 'declining' && !openAccountRecKey.has(`${companyId}|risque`)) {
         accountRecRows.push({
@@ -513,30 +701,18 @@ Deno.serve(async (req) => {
   for (let i = 0; i < accountRecRows.length; i += 200) {
     await supabase.from('account_recommendations').insert(accountRecRows.slice(i, i + 200));
   }
+  for (let i = 0; i < accountRelationSuggestionRows.length; i += 200) {
+    await supabase.from('account_settings').upsert(accountRelationSuggestionRows.slice(i, i + 200), { onConflict: 'organization_id,company_id' });
+  }
   for (let i = 0; i < personRecRows.length; i += 200) {
     await supabase.from('person_recommendations').insert(personRecRows.slice(i, i + 200));
   }
 
-  const npsByOrgDate = new Map<string, { org: string; date: string; scores: number[] }>();
-  for (const h of histRows) {
-    const k = `${h.organization_id}|${h.snapshot_date}`;
-    if (!npsByOrgDate.has(k)) npsByOrgDate.set(k, { org: h.organization_id, date: h.snapshot_date, scores: [] });
-    npsByOrgDate.get(k)!.scores.push(h.score);
-  }
-  const npsRows = Array.from(npsByOrgDate.values()).map(v => {
-    const promoters = v.scores.filter(s => s >= 70).length;
-    const detractors = v.scores.filter(s => s <= 50).length;
-    const total = v.scores.length;
-    return { organization_id: v.org, snapshot_date: v.date, nps_value: Math.round((promoters / total) * 100 - (detractors / total) * 100), avg_score: Math.round(v.scores.reduce((a, b) => a + b, 0) / total), promoters, detractors, total };
-  });
-  for (let i = 0; i < npsRows.length; i += 200) {
-    await supabase.from('nps_snapshots').upsert(npsRows.slice(i, i + 200), { onConflict: 'organization_id,snapshot_date' });
-  }
-
   return jsonResponse({
     success: true, scored, history_points: histRows.length, relationship_snapshots: relationshipRows.length,
-    person_snapshots: newPersonSnapshots.length, nps_points: npsRows.length,
+    person_snapshots: newPersonSnapshots.length,
     account_snapshots: accountScoreRows.length, account_recommendations: accountRecRows.length, person_recommendations: personRecRows.length,
+    account_relation_suggestions: accountRelationSuggestionRows.length,
     mode: isCron ? 'cron' : 'user',
   });
 });

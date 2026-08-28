@@ -24,6 +24,7 @@ import {
 } from './priority'
 import type {
   HomeAccountCandidate,
+  HomeArchivedAction,
   HomeCoaching,
   HomeDashboardData,
   HomeSignal,
@@ -261,7 +262,9 @@ function mapCompanySignal(row: DbRow, feedback: Map<string, 'confirmed' | 'dismi
     personName: null,
     source: str(row.source) ?? 'Veille entreprise',
     observedAt: str(row.observed_at) ?? str(row.created_at) ?? new Date(0).toISOString(),
-    confidence: num(row.confidence),
+    // company_signals.confidence est stocké 0-1 (colonne numeric(3,2)) — converti
+    // en 0-100 pour confidenceLevel(), sinon toujours affiché « confiance faible ».
+    confidence: num(row.confidence) !== null ? Math.round(num(row.confidence)! * 100) : null,
     inferenceLevel: str(row.inference_level),
     userVerdict: feedback.get(String(row.id)) ?? null,
   }
@@ -379,7 +382,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
 
-  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData, behaviorProfileData, insightFeedbackData] = await Promise.all([
+  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData, behaviorProfileData, insightFeedbackData, archivedAccountsData, archivedPeopleData] = await Promise.all([
     safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
     safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
@@ -400,6 +403,11 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeQuery<DbRow[]>(client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', organizationId).order('computed_at', { ascending: false }).limit(2000), 'snapshots du score compte', degradedReasons),
     safeBehaviorProfile(userId, organizationId, degradedReasons),
     safeQuery<DbRow[]>(client.from('insight_feedback').select('insight_id,feedback_type').eq('organization_id', organizationId).eq('user_id', userId).limit(200), 'table insight_feedback', degradedReasons),
+    // Un compte/une personne archivé(e) doit sortir du score global à l'instant
+    // même (pas seulement au prochain passage du moteur backend) : lu ici en
+    // temps réel, indépendamment de account_relationship_score_snapshots.
+    safeQuery<DbRow[]>(client.from('account_settings').select('company_id').eq('organization_id', organizationId).not('archived_at', 'is', null), 'table account_settings', degradedReasons),
+    safeQuery<DbRow[]>(client.from('person_settings').select('contact_id').eq('organization_id', organizationId).not('archived_at', 'is', null), 'table person_settings', degradedReasons),
   ])
 
   if (!companiesData || !contactsData || !connectorsData) {
@@ -442,7 +450,11 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     const score = num(row.score)
     if (score !== null) accountScores.set(companyId, score)
   }
-  const scoredAccounts = buildScoredAccounts(companies, contacts, trackingColumnAvailable, now, accountScores)
+  const archivedCompanyIds = new Set(rows(archivedAccountsData).map((row) => str(row.company_id)).filter((value): value is string => value !== null))
+  const archivedContactIds = new Set(rows(archivedPeopleData).map((row) => str(row.contact_id)).filter((value): value is string => value !== null))
+  const scorableCompanies = companies.filter((company) => !archivedCompanyIds.has(String(company.id)))
+  const scorableContacts = contacts.filter((contact) => !archivedContactIds.has(String(contact.id)))
+  const scoredAccounts = buildScoredAccounts(scorableCompanies, scorableContacts, trackingColumnAvailable, now, accountScores)
   const tracked = scoredAccounts.filter((account) => account.tracked)
 
   // Forfait — la limite vient de subscription_plans.max_tracked_accounts.
@@ -637,6 +649,13 @@ export async function saveActionState(input: {
   sourceSignalId: string | null
   reason?: string | null
   postponedUntil?: string | null
+  /** Snapshot lisible au moment de la décision, pour l'archive (§ fetchArchivedActions). */
+  title?: string | null
+  summary?: string | null
+  accountName?: string | null
+  personName?: string | null
+  sourceLabel?: string | null
+  priority?: number | null
 }): Promise<void> {
   const { error } = await getSupabase().from('home_action_states').upsert({
     organization_id: input.organizationId,
@@ -650,11 +669,68 @@ export async function saveActionState(input: {
     reason: input.reason ?? null,
     postponed_until: input.postponedUntil ?? null,
     acted_at: new Date().toISOString(),
+    title: input.title ?? null,
+    summary: input.summary ?? null,
+    account_name: input.accountName ?? null,
+    person_name: input.personName ?? null,
+    source_label: input.sourceLabel ?? null,
+    priority: input.priority ?? null,
   }, { onConflict: 'organization_id,user_id,action_id' })
   if (error) {
     if (isMissingSchemaError(error)) throw new Error('La persistance des actions nécessite la migration 202607150009_home_foundation.sql.')
     throw new Error(String(record(error).message ?? 'Action non enregistrée'))
   }
+}
+
+/**
+ * Clôture réelle d'un engagement pris (person_memory_entries) suite à un
+ * « Fait » sur la Home — sans ça, seule home_action_states était mise à jour :
+ * la ligne source restait `resolved_at: null` et pouvait ressurgir comme
+ * « nouvelle » action après une future analyse IA (nouveau libellé détecté).
+ * Miroir exact de resolvePersonMemoryEntry (src/person-detail/service.ts) :
+ * conservé en mémoire relationnelle, seulement sorti du suivi actif.
+ */
+export async function resolveHomeCommitment(organizationId: string, entryId: string, userId: string): Promise<void> {
+  const now = new Date().toISOString()
+  const { error } = await getSupabase().from('person_memory_entries')
+    .update({ resolved_at: now, resolved_by: userId, updated_at: now })
+    .eq('id', entryId).eq('organization_id', organizationId)
+  if (error) throw new Error(String(record(error).message ?? 'Engagement non clôturé'))
+}
+
+/** Écart d'un engagement pris depuis la Home — miroir de deletePersonMemoryEntry. */
+export async function deleteHomeCommitment(organizationId: string, entryId: string): Promise<void> {
+  const { error } = await getSupabase().from('person_memory_entries')
+    .delete().eq('id', entryId).eq('organization_id', organizationId)
+  if (error) throw new Error(String(record(error).message ?? 'Engagement non écarté'))
+}
+
+/** Actions Home archivées (Fait/Écarté), triées des plus récentes aux plus anciennes. */
+export async function fetchArchivedActions(organizationId: string, userId: string, limit = 200): Promise<HomeArchivedAction[]> {
+  const { data, error } = await getSupabase().from('home_action_states')
+    .select('id,action_id,action_type,status,title,summary,company_id,account_name,contact_id,person_name,source_label,acted_at')
+    .eq('organization_id', organizationId).eq('user_id', userId)
+    .in('status', ['completed', 'dismissed'])
+    .order('acted_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    if (isMissingSchemaError(error)) throw new Error('L’archive nécessite la migration home_action_states_archive_snapshot.')
+    throw new Error(String(record(error).message ?? 'Archive indisponible'))
+  }
+  return rows(data).map((row) => ({
+    id: String(row.id),
+    actionId: String(row.action_id),
+    actionType: String(row.action_type),
+    status: String(row.status) === 'dismissed' ? 'dismissed' : 'completed',
+    title: str(row.title),
+    summary: str(row.summary),
+    accountId: str(row.company_id),
+    accountName: str(row.account_name),
+    personId: str(row.contact_id),
+    personName: str(row.person_name),
+    sourceLabel: str(row.source_label),
+    actedAt: str(row.acted_at) ?? new Date().toISOString(),
+  }))
 }
 
 /** Feedback binaire sur un insight de coaching (Utile/Pas juste — SPEC-05 §15). */

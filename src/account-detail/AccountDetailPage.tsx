@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -7,12 +7,14 @@ import { displayName, initials } from '../lib/auth'
 import { confidenceLevel } from '../person-detail/ui'
 import { saveSignalFeedback } from '../services/data'
 import { verifySuperAdmin } from '../super-admin/service'
+import { RELATION_COLORS } from '../account-list/mapping'
 import {
   addAccountNote,
   getAccountDetail,
   setAccountArchived,
   setAccountFavorite,
   setAccountLock,
+  setAccountRelationType,
   setAccountWatch,
   triggerAccountEnrichment,
   updateRecommendationStatus,
@@ -404,7 +406,78 @@ function EnrichAccountButton({ companyId, accountName }: { companyId: string; ac
   return <span className="account-enrich"><button className="kfav-star" onClick={() => void run()} disabled={busy} title="Enrichir maintenant (super admin)" aria-label="Enrichir maintenant"><Icon name="sparkles" /></button>{feedback && <small>{feedback}</small>}</span>
 }
 
-function AccountHero({ data, toggleFavorite, openPeople }: { data: AccountDetailData; toggleFavorite: () => Promise<void>; openPeople: () => void }) {
+const ACCOUNT_RELATION_TYPES = Object.keys(RELATION_COLORS)
+
+/** Chip « Relation » de la fiche compte — éditable (portail menu, même
+ *  interaction que la liste des comptes) et marquée « Suggéré par Tohu » tant
+ *  qu'aucun humain n'a confirmé la catégorisation automatique (voir score-batch
+ *  aggregateAccountRelation). Choisir une valeur ici la fige côté moteur. */
+function RelationChip({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
+  const account = data.account
+  const [open, setOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 })
+  const [error, setError] = useState<string | null>(null)
+  const rootRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
+    }
+    const closeOnViewportChange = () => setOpen(false)
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
+  }, [open])
+  const toggleMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (open) { setOpen(false); return }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 246
+    const menuHeight = ACCOUNT_RELATION_TYPES.length * 40 + 12
+    const gap = 7
+    const viewportPadding = 10
+    const opensUp = window.innerHeight - rect.bottom < menuHeight + gap
+    setMenuPosition({
+      left: Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - menuWidth - viewportPadding)),
+      top: opensUp ? Math.max(viewportPadding, rect.top - menuHeight - gap) : Math.min(window.innerHeight - menuHeight - viewportPadding, rect.bottom + gap),
+    })
+    setOpen(true)
+  }
+  const pick = async (value: string) => {
+    setOpen(false)
+    setError(null)
+    try { await setAccountRelationType(data, userId, value); await refresh() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Enregistrement impossible') }
+  }
+  const suggested = account.relationshipStatusSource === 'suggested' && account.relationshipStatus !== null
+  return <span style={{ position: 'relative', display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+    <button type="button" ref={rootRef} className={`crel2-chip ${suggested ? 'suggested' : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={toggleMenu}>
+      <span className="crel2-k">Relation</span>
+      <span className="crel2-dot" style={{ background: account.relationshipStatus ? RELATION_COLORS[account.relationshipStatus] ?? '#8C86A8' : '#8C86A8' }} />
+      <span className="crel2-v">{account.relationshipStatus ?? account.accountType ?? 'À confirmer'}</span>
+      {suggested && <span className="crel2-ai" title="Proposé par Tohu à partir des échanges — clique pour confirmer">IA</span>}
+      <span className="crel2-c">⌄</span>
+    </button>
+    {error && <small className="crel2-err">{error}</small>}
+    {open && createPortal(<div ref={menuRef} className="pa-relmenu" role="menu" style={menuPosition} onClick={(event) => event.stopPropagation()}>
+      {ACCOUNT_RELATION_TYPES.map((value) => <button key={value} type="button" role="menuitem" className="pa-relmenu-option" onClick={() => void pick(value)}>
+        <span className="dxp-rf-o-dot" style={{ background: RELATION_COLORS[value] }} />{value}
+      </button>)}
+    </div>, document.body)}
+  </span>
+}
+
+function AccountHero({ data, userId, toggleFavorite, openPeople, refresh }: { data: AccountDetailData; userId: string; toggleFavorite: () => Promise<void>; openPeople: () => void; refresh: () => Promise<void> }) {
   const account = data.account
   return <section className={`hero-header account-detail-hero v48-identity-card ${account.archivedAt ? 'archived' : ''}`}>
     <div className="hero-body v48-identity-body">
@@ -417,7 +490,7 @@ function AccountHero({ data, toggleFavorite, openPeople }: { data: AccountDetail
           </button></h1></div>
           <div className="hero-sub"><span>{account.sector ?? 'Secteur à confirmer'}</span><span className="hero-dot" /><span>{account.location ?? 'Ville à confirmer'}</span>{account.relationshipStartedAt && <><span className="hero-dot" /><span>{account.accountType?.toLowerCase() || 'relation'} depuis {formatDate(account.relationshipStartedAt)}</span></>}</div>
           <div className="hero-meta v48-account-chips">
-            <span className="crel2-chip"><span className="crel2-k">Relation</span><span className="crel2-dot" /><span className="crel2-v">{account.relationshipStatus ?? account.accountType ?? 'À confirmer'}</span><span className="crel2-c">⌄</span></span>
+            <RelationChip data={data} userId={userId} refresh={refresh} />
             <button className="v48-account-chip" onClick={openPeople}><span className="v48-account-chip-label">Interlocuteurs</span><span className="v48-account-chip-logo">{data.people.length}</span><strong>Organigramme</strong><span>→</span></button>
             <span className="v48-account-chip"><span className="v48-account-chip-label">Ancienneté</span><strong>{tenureLabel(account.relationshipStartedAt)}</strong></span>
           </div>
@@ -487,7 +560,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       </button>
       <AccountConnectorsPill sources={data.sources} />
     </nav>
-    <AccountHero data={data} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} />
+    <AccountHero data={data} userId={context.session.user.id} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} refresh={refresh} />
     {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><AccountRelationView data={data} userId={context.session.user.id} currentUserName={displayName(context.session.user)} refresh={refresh} navigate={navigate} /></main>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
     <V48AccountSourceNote data={data} />

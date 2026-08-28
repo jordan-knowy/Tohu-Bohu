@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase'
+import { trackPersonCandidate } from '../person-list/service'
 import {
   buildAccountRows, buildPortfolioSeries, buildTickerItems, evolutionPercents,
   object, rows, text, num,
@@ -114,7 +115,12 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   })
 
   const scored = accounts.filter((account) => account.score !== null)
-  const series36 = buildPortfolioSeries(scoreHistory, contacts, 36, now)
+  // Un compte archivé n'apparaît plus dans `accounts` (buildAccountRows le
+  // filtre déjà) mais buildPortfolioSeries reçoit `contacts` brut : sans ce
+  // filtre, son historique restait mélangé dans le graphe de portefeuille.
+  const archivedCompanyIds = new Set(settings.filter((row) => row.archived_at).map((row) => text(row.company_id)))
+  const scorableContacts = contacts.filter((contact) => !archivedCompanyIds.has(text(contact.company_id)))
+  const series36 = buildPortfolioSeries(scoreHistory, scorableContacts, 36, now)
   return {
     workspaceId,
     generatedAt: now.toISOString(),
@@ -160,12 +166,14 @@ export async function setListOwner(workspaceId: string, companyId: string, userI
 /** Suppression groupée : archive plusieurs comptes en une passe (réversible). */
 export async function archiveAccounts(workspaceId: string, userId: string, companyIds: string[]): Promise<void> {
   if (!companyIds.length) return
+  const client = getSupabase()
   const now = new Date().toISOString()
-  const { error } = await getSupabase().from('account_settings').upsert(
+  const { error } = await client.from('account_settings').upsert(
     companyIds.map((companyId) => ({ organization_id: workspaceId, company_id: companyId, archived_at: now, updated_by: userId, updated_at: now })),
     { onConflict: 'organization_id,company_id' },
   )
   if (error) throw error
+  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 /** Passation : réattribue l'owner des comptes sélectionnés et de leurs contacts,
@@ -231,18 +239,65 @@ export async function detectAccountCandidates(workspaceId: string): Promise<Acco
   }))
 }
 
+// Suivre un compte (add_tracked_company) ne suit aucun de ses contacts : sans
+// ça, aucune analyse (Confiance/Satisfaction/Relation) ne se déclenche jamais
+// pour lui — il faudrait sinon tracker chaque personne à la main pour que le
+// moteur ait quoi que ce soit à lire. On active ici les interlocuteurs les
+// plus récemment actifs (borné, pas tout l'annuaire) pour que la
+// catégorisation de la relation (Prospect/Client/Partenaire…) se déduise des
+// échanges réels dès l'intégration, pas seulement au prochain suivi manuel.
+const INTEGRATION_CONTACTS_PER_COMPANY = 5
+const INTEGRATION_ANALYSIS_CONCURRENCY = 3
+
+async function topUntrackedContacts(workspaceId: string, companyId: string): Promise<string[]> {
+  const { data } = await getSupabase().from('contacts')
+    .select('id')
+    .eq('organization_id', workspaceId)
+    .eq('company_id', companyId)
+    .eq('is_tracked', false)
+    .is('merged_into_contact_id', null)
+    .order('updated_at', { ascending: false })
+    .limit(INTEGRATION_CONTACTS_PER_COMPANY)
+  return (data ?? []).map((row) => String(row.id))
+}
+
 export async function trackCandidates(workspaceId: string, selection: Array<{ companyId: string | null; name: string; domain: string | null }>): Promise<void> {
   const client = getSupabase()
+  const trackedCompanyIds: string[] = []
   for (const item of selection) {
-    const { error } = await client.rpc('add_tracked_company', {
+    const { data: companyId, error } = await client.rpc('add_tracked_company', {
       p_organization_id: workspaceId,
       p_company_id: item.companyId,
       p_name: item.name,
       p_domain: item.domain,
     })
     if (error) throw error
+    if (companyId) trackedCompanyIds.push(String(companyId))
   }
   void client.functions.invoke('monitor-company-news', {
     body: { organizationId: workspaceId, limit: Math.min(selection.length, 8) },
   })
+  // Score immédiat (pas seulement au prochain cron 6h) : même moteur, même
+  // formule — reconstruit aussi l'historique réel des contacts déjà
+  // synchronisés de ces comptes (deepBackfill), comme au suivi d'une personne.
+  void Promise.allSettled([
+    client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
+    client.functions.invoke('score-batch', { body: { organizationId: workspaceId, deepBackfill: true } }),
+  ])
+  // Active + analyse les contacts les plus actifs de chaque compte (même appel
+  // Gemini, même coût que trackPersonCandidate), puis ré-agrège une fois fait
+  // pour que la suggestion de relation soit posée sans attendre le cron.
+  void (async () => {
+    const contactIds = (await Promise.all(trackedCompanyIds.map((companyId) => topUntrackedContacts(workspaceId, companyId)))).flat()
+    if (!contactIds.length) return
+    let index = 0
+    const next = async (): Promise<void> => {
+      const current = index++
+      if (current >= contactIds.length) return
+      await trackPersonCandidate(workspaceId, contactIds[current]!).catch(() => {})
+      return next()
+    }
+    await Promise.all(Array.from({ length: Math.min(INTEGRATION_ANALYSIS_CONCURRENCY, contactIds.length) }, () => next()))
+    void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
+  })()
 }

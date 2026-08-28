@@ -86,6 +86,10 @@ async function processCompany(supabase: any, key: string, c: Company): Promise<{
       source: it.source ?? 'Web',
       source_url: it.source_url ?? null,
       observed_at: observedAt,
+      // Échelle 0-1 : company_signals.confidence est numeric(3,2) (plafond ~9.99),
+      // pensé pour une fraction — PAS le 0-100 utilisé ailleurs dans l'app
+      // (trust_score, satisfaction_score...). Ne pas « corriger » vers 60 sans
+      // migrer la colonne : ça produit une erreur numeric field overflow.
       confidence: 0.6,
       status: 'candidate',
       updated_at: new Date().toISOString(),

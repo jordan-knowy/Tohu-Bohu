@@ -8,6 +8,7 @@ import {
   getMyAccountDeletionRequest,
   inviteTeamMember,
   openBillingPortal,
+  revokeInvitation,
   startPlanChange,
   submitAccountDeletionRequest,
   type AccountCenter,
@@ -18,6 +19,7 @@ import {
 import { displayName, initials, signOut } from '../../lib/auth'
 import { getSupabase } from '../../lib/supabase'
 import { getProfile, type ProfileRow } from '../../services/data'
+import { triggerManualCognitiveAnalysis } from '../../services/behavior-sync'
 import { useToast } from '../../person-detail/ui'
 
 type PageContext = { session: Session; workspaceId: string }
@@ -241,8 +243,17 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
   const displayPlanName = isBeta ? 'Business Beta' : isInternal ? 'Business Interne' : plan?.name
   const memberCount = account?.members.length ?? 0
   const seatLimit = plan?.max_licenses ?? 1
+  // max_licenses = -1 est le sentinel « illimité » (enterprise/super_admin/tester) —
+  // Math.min(-1, paidSeats) donnait -1, donc 0 siège disponible : pire qu'un plan
+  // limité au lieu de mieux. On le traite explicitement à part.
+  const unlimitedSeats = seatLimit < 0
   const paidSeats = Math.max(1, account?.subscription.seat_quantity ?? 1)
-  const availableSeats = Math.max(0, Math.min(seatLimit, paidSeats) - memberCount)
+  const pendingInvitations = useMemo(() => account?.invitations.filter((item) => item.status === 'pending') ?? [], [account])
+  const revokedInvitations = useMemo(() => account?.invitations.filter((item) => item.status === 'revoked') ?? [], [account])
+  // Une invitation en attente réserve un siège (miroir du contrôle côté serveur
+  // dans invite-team-member) : l'annuler libère donc le siège automatiquement.
+  const usedSeats = memberCount + pendingInvitations.length
+  const availableSeats = unlimitedSeats ? Infinity : Math.max(0, Math.min(seatLimit, paidSeats) - usedSeats)
   const connected = useMemo(() => account?.connectors.filter((item) => item.status === 'connected') ?? [], [account])
 
   const saveProfile = async (event: React.FormEvent) => {
@@ -305,6 +316,33 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
       await load()
     } catch (reason) {
       toast(reason instanceof Error ? reason.message : 'Invitation impossible.', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const runRevoke = async (invitationId: string, email: string) => {
+    setBusy(`revoke:${invitationId}`)
+    try {
+      await revokeInvitation(invitationId)
+      toast(`Invitation à ${email} annulée — le siège est de nouveau disponible.`)
+      await load()
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Annulation impossible.', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const runAiAnalysisNow = async () => {
+    setBusy('ai-analysis')
+    try {
+      const result = await triggerManualCognitiveAnalysis(context.workspaceId, context.session.user.id)
+      if (result.total === 0) toast('Aucune personne suivie à analyser pour l’instant.')
+      else if (result.analyzed === 0) toast(`Analyse échouée pour les ${result.failed} personne${result.failed > 1 ? 's' : ''} traitée${result.failed > 1 ? 's' : ''} — vérifie que ton compte Google/Microsoft 365 est bien connecté.`, 'error')
+      else toast(`${result.analyzed} personne${result.analyzed > 1 ? 's' : ''} analysée${result.analyzed > 1 ? 's' : ''}${result.failed ? ` (${result.failed} échec${result.failed > 1 ? 's' : ''})` : ''}${result.skipped ? ` · ${result.skipped} restante${result.skipped > 1 ? 's' : ''} pour un prochain lancement` : ''}.`)
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Analyse IA impossible.', 'error')
     } finally {
       setBusy(null)
     }
@@ -382,12 +420,16 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
         <div><strong>{PROVIDER_NAMES[connector.provider] ?? connector.provider}</strong><small>{connector.account_email ?? (connector.last_synced_at ? `Synchronisé le ${date(connector.last_synced_at)}` : 'Aucun compte identifié')}</small></div>
         <span className={`account-dot ${connector.status === 'connected' ? 'on' : ''}`}><i />{connector.status === 'connected' ? 'Connecté' : 'À connecter'}</span>
       </article>)}</div> : <div className="account-empty"><b>Aucun canal connecté</b><span>Connecte Google, Microsoft ou ton CRM pour commencer la synchronisation.</span><Link className="btn-view" to="/app/connectors">Connecter un canal</Link></div>}
+      {account.can_manage && connected.length > 0 ? <div className="account-ai-trigger">
+        <div><strong>Analyse IA relationnelle</strong><small>Relance l’analyse (Confiance, Satisfaction…) sur tes personnes suivies, en priorité celles jamais encore analysées — jusqu’à 30 par lancement, peut prendre 1 à 2 minutes.</small></div>
+        <button type="button" className="btn-secondary" disabled={busy !== null} onClick={() => void runAiAnalysisNow()}>{busy === 'ai-analysis' ? 'Analyse en cours…' : 'Lancer l’analyse maintenant'}</button>
+      </div> : null}
     </section>
 
     <section className="account-section" id="equipe">
       <header className="account-section__head">
         <div><span className="account-kicker">Équipe & sièges</span><h2>{memberCount} membre{memberCount > 1 ? 's' : ''} actif{memberCount > 1 ? 's' : ''}</h2><p>Un siège est facturé uniquement lorsqu’un membre rejoint réellement le workspace.</p></div>
-        <div className="account-seat-ring" style={{ '--seat-progress': `${Math.min(100, memberCount / paidSeats * 100)}%` } as React.CSSProperties}><b>{Math.max(0, paidSeats - memberCount)}</b><span>libre{paidSeats - memberCount > 1 ? 's' : ''}</span></div>
+        <div className="account-seat-ring" style={{ '--seat-progress': `${Math.min(100, usedSeats / paidSeats * 100)}%` } as React.CSSProperties}><b>{Math.max(0, paidSeats - usedSeats)}</b><span>libre{paidSeats - usedSeats > 1 ? 's' : ''}</span></div>
       </header>
       <div className="account-team-layout">
         <div className="account-members">
@@ -396,15 +438,19 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
             <div><strong>{member.full_name}</strong><small>{member.email}</small></div>
             <span className="account-role">{member.role === 'owner' ? 'Propriétaire' : member.role === 'admin' ? 'Admin' : 'Membre'}</span>
           </article>)}
-          {account.invitations.map((pending) => <article className="is-pending" key={pending.id}>
+          {pendingInvitations.map((pending) => <article className="is-pending" key={pending.id}>
             <span className="account-member-avatar">…</span><div><strong>{pending.email}</strong><small>Expire le {date(pending.expires_at)}</small></div><span className="account-role">Invitation en attente</span>
+            {account.can_manage && <button type="button" className="account-invite-cancel" disabled={busy !== null} onClick={() => void runRevoke(pending.id, pending.email)} title="Annuler l’invitation">{busy === `revoke:${pending.id}` ? '…' : 'Annuler'}</button>}
+          </article>)}
+          {revokedInvitations.map((revoked) => <article className="is-revoked" key={revoked.id}>
+            <span className="account-member-avatar">…</span><div><strong>{revoked.email}</strong><small>Invitation annulée</small></div><span className="account-role">Annulée</span>
           </article>)}
         </div>
         <aside className="account-seats">
           <span className="account-kicker">Sièges professionnels</span>
-          <h3>{paidSeats} siège{paidSeats > 1 ? 's' : ''} souscrit{paidSeats > 1 ? 's' : ''}</h3>
-          <div className="account-progress"><i style={{ width: `${Math.min(100, memberCount / paidSeats * 100)}%` }} /></div>
-          <p>{memberCount} utilisé{memberCount > 1 ? 's' : ''} · {availableSeats} disponible{availableSeats > 1 ? 's' : ''}</p>
+          <h3>{unlimitedSeats ? 'Sièges illimités' : `${paidSeats} siège${paidSeats > 1 ? 's' : ''} souscrit${paidSeats > 1 ? 's' : ''}`}</h3>
+          <div className="account-progress"><i style={{ width: unlimitedSeats ? '8%' : `${Math.min(100, usedSeats / paidSeats * 100)}%` }} /></div>
+          <p>{usedSeats} utilisé{usedSeats > 1 ? 's' : ''}{pendingInvitations.length ? ` (dont ${pendingInvitations.length} invitation${pendingInvitations.length > 1 ? 's' : ''} en attente)` : ''} · {unlimitedSeats ? 'illimité' : `${availableSeats} disponible${availableSeats > 1 ? 's' : ''}`}</p>
           {account.can_manage && ['pro', 'business'].includes(plan.id) && !isComped ? <div className="account-seat-adjust">
             <label htmlFor="seat-count">Nombre de sièges</label>
             <input id="seat-count" className="input" type="number" min={memberCount} max={seatLimit} value={seats} onChange={(event) => setSeats(Math.max(memberCount, Number(event.target.value)))} />

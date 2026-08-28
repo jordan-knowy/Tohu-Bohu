@@ -188,6 +188,8 @@ if (container) {
     toast,
     goView: (view) => toast(`(preview) navigation vers « ${view} »`),
     askSimulation: (prompt) => toast(`(preview) Ask Bohu prérempli : ${prompt}`),
+    openAccount: (accountId) => toast(`(preview) ouverture du compte ${accountId}`),
+    openPerson: (personId) => toast(`(preview) ouverture de la personne ${personId}`),
     loadDashboard: () => state === 'error'
       ? Promise.reject(new Error('Erreur simulée du service (preview) — vérifie la connexion Supabase.'))
       : Promise.resolve(fixtureFor(state)),

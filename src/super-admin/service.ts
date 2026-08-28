@@ -34,6 +34,7 @@ export type SuperAdminUser = {
   subscription_status: string
   billing_cycle: string | null
   amount_per_period: number
+  seat_quantity: number
   subscription_started_at: string | null
   current_period_start: string | null
   current_period_end: string | null
@@ -171,6 +172,15 @@ export async function setUserAccess(userId: string, accessType: SuperAdminUser['
     target_user: userId,
     access_type: accessType,
     paid_plan: paidPlan ?? null,
+  })
+  if (error) throw error
+}
+
+/** Sièges souscrits pour le workspace de l'utilisateur — réservé aux super admins. */
+export async function setUserSeats(userId: string, seats: number): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_set_seat_quantity', {
+    target_user: userId,
+    seats,
   })
   if (error) throw error
 }

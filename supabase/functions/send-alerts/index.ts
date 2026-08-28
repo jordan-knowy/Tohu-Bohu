@@ -12,7 +12,13 @@ async function appSecret(supabase: any, name: string): Promise<string | null> {
   const { data } = await supabase.from('app_secrets').select('value').eq('name', name).maybeSingle()
   return (data as { value?: string } | null)?.value ?? null
 }
-const CONFIDENCE_MIN = Number(Deno.env.get('ALERT_CONFIDENCE_MIN') ?? 70)
+// company_signals.confidence est stocké 0-1 (colonne numeric(3,2), voir
+// monitor-company-news) — un seuil par défaut de 70 comparait une fraction (0.6)
+// à une échelle 0-100 et bloquait donc TOUTE alerte, silencieusement, pour
+// toujours. monitor-company-news écrit aujourd'hui une confiance fixe de 0.6
+// (pas de scoring différencié par signal) : le seuil doit rester à ce niveau ou
+// en dessous pour laisser passer un signal réel.
+const CONFIDENCE_MIN = Number(Deno.env.get('ALERT_CONFIDENCE_MIN') ?? 0.6)
 
 const FAMILY: Record<string, { tag: string; color: 'red' | 'green' | 'blue'; impact: string }> = {
   mobility: { tag: 'Mobilité', color: 'red', impact: 'Ton point d’entrée bouge. Sécurise le lien avant son départ, ou identifie dès maintenant son remplaçant.' },

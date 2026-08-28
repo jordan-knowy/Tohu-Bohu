@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { EMAIL_FROM, EMAIL_REPLY_TO } from '../_shared/email.ts'
+import { renderTeamInvite } from '../_shared/email-templates/invitation.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,35 +40,78 @@ Deno.serve(async (request) => {
       return json({ error: 'Seul un owner ou un admin peut inviter un membre.' }, 403)
     }
 
-    const [{ data: subscription }, { count: memberCount }, { data: existingInvitation }] = await Promise.all([
+    const [{ data: subscription }, { count: memberCount }, { count: pendingInvitationCount }, { data: existingInvitation }] = await Promise.all([
       supabase.from('subscriptions')
         .select('plan_id,seat_quantity,subscription_plans(max_licenses)')
         .eq('organization_id', organizationId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('memberships').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
+      // Une invitation 'pending' réserve un siège (sinon on pourrait inviter plus
+      // de monde que de sièges payés et ne s'en apercevoir qu'à l'acceptation).
+      // Annuler l'invitation (status='revoked') libère donc automatiquement ce siège.
+      supabase.from('organization_invitations').select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId).eq('status', 'pending'),
       supabase.from('organization_invitations').select('id,status')
         .eq('organization_id', organizationId).eq('email', email).maybeSingle(),
     ])
 
     const planLimit = Number((subscription?.subscription_plans as { max_licenses?: number } | null)?.max_licenses ?? 1)
-    const paidSeats = Math.max(1, Number(subscription?.seat_quantity ?? 1))
-    const effectiveSeats = planLimit > 0 ? Math.min(planLimit, paidSeats) : paidSeats
-    if ((memberCount ?? 0) >= effectiveSeats) {
-      return json({
-        error: 'Tous les sièges actifs sont occupés. Ajoute d’abord un siège à ton abonnement.',
-        code: 'seat_required',
-      }, 409)
+    // max_licenses = -1 est le sentinel « illimité » (enterprise/super_admin/tester) —
+    // aucune vérification de siège ne s'applique dans ce cas.
+    if (planLimit >= 0) {
+      const paidSeats = Math.max(1, Number(subscription?.seat_quantity ?? 1))
+      const effectiveSeats = Math.min(planLimit, paidSeats)
+      const usedSeats = (memberCount ?? 0) + (pendingInvitationCount ?? 0)
+      if (usedSeats >= effectiveSeats) {
+        return json({
+          error: 'Tous les sièges actifs sont occupés. Ajoute d’abord un siège à ton abonnement.',
+          code: 'seat_required',
+        }, 409)
+      }
     }
     if (existingInvitation?.status === 'pending') {
       return json({ error: 'Une invitation est déjà en attente pour cette adresse.' }, 409)
     }
 
     const redirectTo = `${Deno.env.get('APP_URL') ?? 'http://127.0.0.1:5173'}/app/account?invitation=accepted`
-    const { error: invitationError } = await supabase.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-      data: { invited_organization_id: organizationId },
+    // generateLink (au lieu de inviteUserByEmail) ne déclenche AUCUN email — il ne
+    // fait que créer/retrouver l'utilisateur et fournir le lien d'action. L'email
+    // envoyé à la personne invitée est le nôtre, via Resend + la DA Tohu, plus bas.
+    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: { redirectTo, data: { invited_organization_id: organizationId } },
     })
-    if (invitationError && !/already.*registered|already.*exists/i.test(invitationError.message)) {
-      throw invitationError
+    let inviteUrl = redirectTo
+    if (linkError) {
+      // Déjà un compte Tohu (autre organisation) : rien à créer, un lien de
+      // connexion classique suffit — la personne rejoint l'organisation une fois
+      // connectée (organization_invitations, upserté plus bas, fait foi).
+      if (!/already.*registered|already.*exists/i.test(linkError.message)) throw linkError
+    } else if (linkData?.properties?.action_link) {
+      inviteUrl = linkData.properties.action_link
+    }
+
+    const { data: inviterProfile } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle()
+    const { data: organization } = await supabase.from('organizations').select('name').eq('id', organizationId).maybeSingle()
+    const rendered = renderTeamInvite({
+      inviterName: String(inviterProfile?.full_name ?? user.email ?? 'Un membre de l’équipe'),
+      organizationName: String(organization?.name ?? 'ton équipe'),
+      role,
+      inviteUrl,
+    })
+    const resendApiKey = Deno.env.get('RESEND_API_KEY')
+    if (!resendApiKey) throw new Error('RESEND_API_KEY manquant')
+    const emailResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: EMAIL_FROM, to: [email], subject: rendered.subject, html: rendered.html, reply_to: EMAIL_REPLY_TO,
+        tags: [{ name: 'type', value: 'team_invite' }],
+      }),
+    })
+    if (!emailResponse.ok) {
+      const payload = await emailResponse.json().catch(() => ({}))
+      throw new Error(`Resend ${emailResponse.status}: ${JSON.stringify(payload).slice(0, 200)}`)
     }
 
     const { error: upsertError } = await supabase.from('organization_invitations').upsert({

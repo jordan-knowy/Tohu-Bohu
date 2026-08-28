@@ -160,7 +160,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
         sourceId: String(row.id),
         sourceLabel: text(row.source) ?? 'Veille Tohu',
         observedAt: text(row.observed_at),
-        confidence: number(row.confidence),
+        // company_signals.confidence est stocké 0-1 (colonne numeric(3,2)) —
+        // converti ici en 0-100 pour confidenceLevel() (échelle utilisée partout
+        // ailleurs dans l'app), sinon affiché à tort comme « confiance faible ».
+        confidence: number(row.confidence) !== null ? Math.round(number(row.confidence)! * 100) : null,
         inferenceLevel: text(row.inference_level),
       }),
     }
@@ -236,6 +239,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       sector: text(account.industry),
       accountType: text(account.account_type),
       relationshipStatus: text(settings.relationship_status) ?? text(context.status),
+      relationshipStatusSource: text(settings.relationship_status_source),
       relationshipStartedAt: text(settings.relationship_started_at),
       offerScope: text(settings.offer_scope),
       favorite: bool(preference.favorite),
@@ -261,6 +265,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       contactCoverage: number(latestScore.contact_coverage),
       decisionMakerCoverage: number(latestScore.decision_maker_coverage),
       concentrationRisk: number(latestScore.concentration_risk),
+      // Composantes réelles du score (0,55 engagement + 0,25 couverture + 0,20 récence,
+      // voir score-batch) — null pour les snapshots antérieurs à leur ajout, jamais inventées.
+      engagementComponent: number(latestScore.engagement_component),
+      recencyComponent: number(latestScore.recency_component),
       history: scoreRows.flatMap((row) => number(row.score) !== null && text(row.computed_at) ? [{ score: number(row.score)!, computedAt: text(row.computed_at)! }] : []).reverse(),
       monthlyHealth,
     },
@@ -328,10 +336,32 @@ export async function setAccountWatch(data: AccountDetailData, userId: string, e
 /** Supprime un compte de Tohu : archivage (réversible), pas de suppression
  *  physique — préserve l'historique réel (contacts, signaux, échanges). */
 export async function setAccountArchived(data: AccountDetailData, userId: string, archived: boolean): Promise<void> {
-  const { error } = await getSupabase().from('account_settings').upsert({
+  const client = getSupabase()
+  const { error } = await client.from('account_settings').upsert({
     organization_id: data.account.workspaceId,
     company_id: data.account.id,
     archived_at: archived ? new Date().toISOString() : null,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,company_id' })
+  if (error) throw error
+  // Recalcul immédiat : un compte archivé/désarchivé doit sortir/rentrer du
+  // score global sans attendre le prochain cron (le moteur exclut désormais
+  // les comptes archivés — voir score-batch).
+  void client.functions.invoke('score-batch', { body: { organizationId: data.account.workspaceId } })
+}
+
+/** Confirme/change la catégorie du compte (Prospect/Client/Partenaire/...) —
+ *  toujours marquée 'manual' : le moteur relationnel (score-batch) ne retouche
+ *  plus jamais ce champ une fois qu'un humain l'a choisi, même si l'IA suggère
+ *  autre chose lors d'une prochaine analyse. */
+export async function setAccountRelationType(data: AccountDetailData, userId: string, relationType: string): Promise<void> {
+  const { error } = await getSupabase().from('account_settings').upsert({
+    organization_id: data.account.workspaceId,
+    company_id: data.account.id,
+    relationship_status: relationType,
+    relationship_status_source: 'manual',
+    relationship_status_confidence: null,
     updated_by: userId,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'organization_id,company_id' })

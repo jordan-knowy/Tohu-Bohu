@@ -3,7 +3,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
 import { initials } from '../lib/auth'
 import {
-  deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
+  deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, setUserSeats, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
   type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
@@ -237,12 +237,13 @@ function PlanDistribution({ users }: { users: SuperAdminUser[] }) {
   </article>
 }
 
-function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose, onDeleted }: {
+function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onSaveSeats, onClose, onDeleted }: {
   user: SuperAdminUser
   plans: SuperAdminConsole['plans']
   saving: boolean
   onSaveCommercial: (access: SuperAdminUser['account_type'], plan?: string) => Promise<void>
   onSaveRole: (makeAdmin: boolean) => Promise<void>
+  onSaveSeats: (seats: number) => Promise<void>
   onClose: () => void
   onDeleted: (organizationsDeleted: number) => Promise<void>
 }) {
@@ -266,10 +267,13 @@ function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose
   const paidPlans = plans.filter((plan) => ['solo', 'pro', 'business'].includes(plan.id) && plan.is_active)
   const initialPaid = paidPlans.some((plan) => plan.id === user.plan_id) ? user.plan_id : (paidPlans[0]?.id ?? 'pro')
   const [paidPlan, setPaidPlan] = useState(initialPaid)
+  const [seats, setSeats] = useState(String(user.seat_quantity))
   useEffect(() => {
     setAccess(user.account_type)
     setPaidPlan(paidPlans.some((plan) => plan.id === user.plan_id) ? user.plan_id : (paidPlans[0]?.id ?? 'pro'))
-  }, [user.user_id, user.account_type, user.plan_id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setSeats(String(user.seat_quantity))
+  }, [user.user_id, user.account_type, user.plan_id, user.seat_quantity]) // eslint-disable-line react-hooks/exhaustive-deps
+  const seatsValue = Math.max(1, Math.floor(Number(seats)) || 1)
 
   const stats = [
     ['Comptes', user.companies_count],
@@ -303,6 +307,13 @@ function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onClose
       {access === 'paid' && <label>Offre payante<select value={paidPlan} onChange={(event) => setPaidPlan(event.target.value)}>{paidPlans.map((plan) => <option value={plan.id} key={plan.id}>{plan.name} · {currencyFormatter.format(plan.price_monthly / 100)}/mois</option>)}</select></label>}
       {user.stripe_managed && <p className="sa-stripe-note">Ce workspace possède un abonnement Stripe. Cette action programme l’accès produit ; la facturation Stripe reste gérée séparément.</p>}
       <button className="sa-primary-action" type="button" disabled={saving || (access === user.account_type && (access !== 'paid' || paidPlan === user.plan_id))} onClick={() => void onSaveCommercial(access, access === 'paid' ? paidPlan : undefined)}>{saving ? 'Application…' : `Enregistrer ${access === 'paid' ? paidPlans.find((plan) => plan.id === paidPlan)?.name ?? 'le plan' : ACCOUNT_LABELS[access]}`}</button>
+    </section>
+    <section className="sa-seats-editor">
+      <div><h3>Sièges souscrits</h3><p>Nombre de sièges du workspace de {user.full_name} — indépendant de Stripe, modifiable directement ici.</p></div>
+      <div className="sa-seats-row">
+        <input type="number" min={1} className="sa-seats-input" value={seats} onChange={(event) => setSeats(event.target.value)} />
+        <button className="sa-primary-action" type="button" disabled={saving || seatsValue === user.seat_quantity} onClick={() => void onSaveSeats(seatsValue)}>{saving ? 'Application…' : 'Enregistrer les sièges'}</button>
+      </div>
     </section>
     <section className="sa-platform-editor">
       <div><h3>Rôle plateforme</h3><p>Donne accès à la console et aux KPI. Cela ne change jamais l’abonnement du client.</p></div>
@@ -404,6 +415,21 @@ function UsersView({ consoleData, refresh }: { consoleData: SuperAdminConsole; r
     }
   }
 
+  const saveSeats = async (seats: number) => {
+    if (!selected) return
+    setSaving(true)
+    setFeedback(null)
+    try {
+      await setUserSeats(selected.user_id, seats)
+      await refresh()
+      setFeedback(`${selected.full_name} : ${seats} siège${seats > 1 ? 's' : ''} souscrit${seats > 1 ? 's' : ''}.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Modification des sièges impossible.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return <div className={`sa-users-layout ${selected ? 'has-detail' : ''}`}>
     <section className="sa-users-main">
       <div className="sa-view-heading"><div><p>Annuaire plateforme</p><h1>Utilisateurs</h1><span>{consoleData.users.length} comptes enregistrés</span></div></div>
@@ -427,7 +453,7 @@ function UsersView({ consoleData, refresh }: { consoleData: SuperAdminConsole; r
         {!users.length && <div className="sa-empty">Aucun utilisateur ne correspond à ces filtres.</div>}
       </div>
     </section>
-    {selected && <UserDetail user={selected} plans={consoleData.plans} saving={saving} onSaveCommercial={save} onSaveRole={saveRole} onClose={() => setSelectedId(null)} onDeleted={async () => { setSelectedId(null); await refresh() }} />}
+    {selected && <UserDetail user={selected} plans={consoleData.plans} saving={saving} onSaveCommercial={save} onSaveRole={saveRole} onSaveSeats={saveSeats} onClose={() => setSelectedId(null)} onDeleted={async () => { setSelectedId(null); await refresh() }} />}
   </div>
 }
 

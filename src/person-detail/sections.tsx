@@ -24,10 +24,12 @@ export function RelationSection({ data }: { data: PersonDetailData }) {
   const scored = points.filter((point) => point.score !== null)
   const delta = scored.length >= 2 ? (scored.at(-1)!.score ?? 0) - (scored[0]!.score ?? 0) : null
   const currentKey = data.scoreHistory.at(-1)?.monthKey
-  const dims: Array<{ label: string; value: number | null; note: string }> = [
-    { label: 'Intensité', value: relation.dimensions.intensity, note: 'Volume et régularité des échanges observés.' },
-    { label: 'Réciprocité', value: relation.dimensions.reciprocity, note: 'Équilibre entre messages initiés et reçus.' },
-    { label: 'Longévité', value: relation.dimensions.longevity, note: 'Durée et constance de la relation dans le temps.' },
+  const dims: Array<{ label: string; value: number | null; note: string; tip: string }> = [
+    { label: 'Confiance', value: relation.dimensions.confiance, note: 'Peut-on réellement compter l’un sur l’autre ?', tip: 'Engagements tenus, réponses aux demandes importantes, continuité — jamais déduit du seul volume d’échanges.' },
+    { label: 'Satisfaction', value: relation.dimensions.satisfaction, note: 'Les interactions se déroulent-elles positivement ?', tip: 'Retours positifs, remerciements, frustrations ou objections détectés dans le contenu réel des échanges.' },
+    { label: 'Engagement', value: relation.dimensions.engagement, note: 'La relation est-elle réellement active ?', tip: 'Rythme récent comparé à la baseline habituelle de cette relation, pas à un seuil absolu.' },
+    { label: 'Réciprocité', value: relation.dimensions.reciprocite, note: 'Les deux entretiennent-ils la relation ?', tip: 'Équilibre des initiatives, nuancé selon le type de relation (asymétrie normale entre un commercial et un prospect, par exemple).' },
+    { label: 'Ancrage', value: relation.dimensions.ancrage, note: 'La relation dépasse-t-elle une seule personne ?', tip: relation.dimensions.ancrageCarriers !== null ? `${relation.dimensions.ancrageCarriers} porteur${relation.dimensions.ancrageCarriers > 1 ? 's' : ''} interne${relation.dimensions.ancrageCarriers > 1 ? 's' : ''} détecté${relation.dimensions.ancrageCarriers > 1 ? 's' : ''} sur cette relation.` : 'Nombre de membres de l’équipe ayant une relation réelle avec ce contact.' },
   ]
   const hasDims = dims.some((dim) => dim.value !== null)
   const sourceLabels = data.sources.filter((source) => source.status === 'connected').map((source) => `${source.label} · Observable`)
@@ -41,7 +43,7 @@ export function RelationSection({ data }: { data: PersonDetailData }) {
           {relation.score ?? '—'}
           <span className="ic" tabIndex={0}>i<span className="tip">
             <span className="tip-h">Comment c’est calculé</span>
-            Score composite produit par le moteur relationnel backend (intensité · réciprocité · longévité), ajusté selon la récence du dernier échange. Échelle 0–100. Le front n’effectue aucun calcul.
+            Score composite à 5 axes produit par le moteur relationnel backend : Confiance (25%) · Satisfaction (25%) · Engagement (20%) · Réciprocité (20%) · Ancrage (10%). Échelle 0–100. Le front n’effectue aucun calcul.
             <span className="tip-f">{relation.computedAt ? `Calculé le ${formatDate(relation.computedAt)}` : 'En attente du moteur backend.'}</span>
           </span></span>
           {freshness === 'stale' && <span className="reco-prio" style={{ marginLeft: 8, fontSize: 9.5, verticalAlign: 'middle' }} title="Le dernier calcul date de plus de 48 h — peut ne plus refléter les tout derniers échanges.">⏱ Mise à jour retardée</span>}
@@ -106,18 +108,28 @@ export function RelationSection({ data }: { data: PersonDetailData }) {
               <span className="cl-item"><span className="cl-dot" style={{ background: '#E6E1F2' }} />Sans donnée</span>
             </div>
           </>}
+        {relation.axisInterpretation && <div className="pp-note" style={{ fontWeight: 500 }}>{relation.axisInterpretation}</div>}
         {hasDims
           ? <div className="mem-dims">
             {dims.map((dim) => dim.value !== null && <div className="dim-card" key={dim.label}>
-              <div className="dim-ring-l">{dim.label} <span className="dim-i" data-tip={dim.label === 'Intensité' ? 'Fréquence et volume des échanges.' : dim.label === 'Réciprocité' ? 'Équilibre de l’échange — qui initie, qui répond.' : 'Durée et constance de la relation.'}>i</span></div>
+              <div className="dim-ring-l">{dim.label} <span className="dim-i" data-tip={dim.tip}>i</span></div>
               <div className="dim-bar-block">
                 <div className="dim-bar-v">{Math.round(dim.value)}<span className="dim-bar-u">/100</span></div>
                 <div className="bar-track"><div className="bar-fill" style={{ width: `${dim.value}%`, background: scoreTone(dim.value) }} /></div>
               </div>
               <div className="dim-def">{dim.note}</div>
             </div>)}
+            {(!relation.dimensions.confianceMeasured || !relation.dimensions.satisfactionMeasured) && (
+              <div className="pp-note">
+                {!relation.dimensions.confianceMeasured && !relation.dimensions.satisfactionMeasured
+                  ? 'Confiance et Satisfaction sont temporairement neutres (50/100) : l’analyse IA du contenu des échanges n’a pas encore eu lieu pour ce contact.'
+                  : !relation.dimensions.confianceMeasured
+                    ? 'Confiance est temporairement neutre (50/100) : l’analyse IA du contenu des échanges n’a pas encore eu lieu pour ce contact.'
+                    : 'Satisfaction est temporairement neutre (50/100) : l’analyse IA du contenu des échanges n’a pas encore eu lieu pour ce contact.'}
+              </div>
+            )}
           </div>
-          : <div className="pp-note">Dimensions (intensité · réciprocité · récence) indisponibles — elles apparaîtront quand le moteur relationnel backend aura produit un snapshot dimensionné.</div>}
+          : <div className="pp-note">Dimensions (confiance · satisfaction · engagement · réciprocité · ancrage) indisponibles — elles apparaîtront quand le moteur relationnel backend aura produit un snapshot dimensionné.</div>}
       </>}
   </Csec>
 }

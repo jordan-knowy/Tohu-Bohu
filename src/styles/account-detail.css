@@ -211,12 +211,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 .pp.account-pp .account-title-row .hero-fav svg{width:25px;height:25px}
 .pp.account-pp .hero-sub{margin:4px 0 10px;font-size:10.5px;color:rgba(212,197,245,.78)}
 .pp.account-pp .hero-tags{align-items:center}
-.pp.account-pp .crel2-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid rgba(212,197,245,.3);border-radius:999px;background:rgba(255,255,255,.1);color:#fff;white-space:nowrap}
-.pp.account-pp .crel2-chip .rel-k{font-family:var(--mono);font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(212,197,245,.6)}
-.pp.account-pp .crel2-chip .rel-dot{width:8px;height:8px;background:var(--sage);box-shadow:none}
-.pp.account-pp .crel2-chip .rel-v{font-size:11px}
-.pp.account-pp .crel2-chip .rel-c{font-family:var(--mono);font-size:7.5px;text-transform:uppercase}
-.pp.account-pp .crel2-chev{font-size:7px;color:rgba(212,197,245,.6)}
+.pp.account-pp .crel2-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid rgba(212,197,245,.3);border-radius:999px;background:rgba(255,255,255,.1);color:#fff;white-space:nowrap;cursor:pointer;font:inherit;text-align:left}
+.pp.account-pp .crel2-chip:hover,.pp.account-pp .crel2-chip:focus-visible{background:rgba(255,255,255,.18);outline:none}
+.pp.account-pp .crel2-chip.suggested{border-style:dashed}
+.pp.account-pp .crel2-chip .crel2-k{font-family:var(--mono);font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(212,197,245,.6)}
+.pp.account-pp .crel2-chip .crel2-dot{width:8px;height:8px;border-radius:50%;background:var(--sage);box-shadow:none;flex:none}
+.pp.account-pp .crel2-chip .crel2-v{font-size:11px}
+.pp.account-pp .crel2-chip .crel2-c{font-family:var(--mono);font-size:7.5px;text-transform:uppercase}
+.pp.account-pp .crel2-chip .crel2-ai{font-family:var(--mono);font-size:7px;font-weight:800;letter-spacing:.04em;padding:1px 5px;border-radius:5px;background:rgba(110,80,200,.35);border:1px solid rgba(212,197,245,.4);color:#fff}
+.pp.account-pp .crel2-err{font-size:9.5px;color:var(--coral);padding-left:2px}
 .pp.account-pp .hero-tag{font-size:8.5px}
 
 .pp.account-pp .account-hero-right{gap:0;flex:none}

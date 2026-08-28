@@ -168,3 +168,10 @@ export async function inviteTeamMember(
   if (error) throw error
   if (data?.error) throw new Error(String(data.error))
 }
+
+/** Annule une invitation en attente — conservée (status='revoked'), jamais
+ *  supprimée, pour garder une trace. Libère le siège qu'elle réservait. */
+export async function revokeInvitation(invitationId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('revoke_organization_invitation', { p_invitation_id: invitationId })
+  if (error) throw error
+}

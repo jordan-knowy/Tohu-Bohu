@@ -114,6 +114,23 @@ export type HomePriorityAction = {
   recommended: string
 }
 
+/** Action archivée (Fait/Écarté) — snapshot lisible au moment de la décision,
+ *  survit même si la source (signal, engagement) a depuis disparu ou changé. */
+export type HomeArchivedAction = {
+  id: string
+  actionId: string
+  actionType: HomeActionType | string
+  status: 'completed' | 'dismissed'
+  title: string | null
+  summary: string | null
+  accountId: string | null
+  accountName: string | null
+  personId: string | null
+  personName: string | null
+  sourceLabel: string | null
+  actedAt: string
+}
+
 export type HomeTeamMember = {
   userId: string
   fullName: string

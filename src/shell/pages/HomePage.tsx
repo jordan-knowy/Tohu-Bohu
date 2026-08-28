@@ -48,6 +48,8 @@ export default function HomePage({ context }: { context: PageContext }) {
         toast: (message, type) => toastRef.current(message, type === 'error' ? 'error' : 'ok'),
         goView,
         askSimulation: (prompt) => navigateRef.current('/app/ask', { state: { prefill: prompt } }),
+        openAccount: (accountId) => navigateRef.current(`/app/accounts/${accountId}`),
+        openPerson: (personId) => navigateRef.current(`/app/people/${personId}`),
       })
     }).catch((reason) => {
       if (!cancelled) toastRef.current(reason instanceof Error ? reason.message : 'Impossible de charger la vue Home.', 'error')
