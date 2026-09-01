@@ -239,6 +239,45 @@ export async function getAiUsage(): Promise<AiUsageStats> {
   return data as AiUsageStats
 }
 
+// ── Adhésions (qui est membre de qui) ────────────────────────────────────────
+export type SuperAdminMembership = {
+  membership_id: string
+  organization_id: string
+  organization_name: string
+  role: 'owner' | 'admin' | 'member'
+  created_at: string
+}
+export type SuperAdminOrganization = { id: string; name: string }
+
+export async function getUserMemberships(userId: string): Promise<SuperAdminMembership[]> {
+  const { data, error } = await getSupabase().rpc('admin_list_user_memberships', { target_user: userId })
+  if (error) throw error
+  return (data ?? []) as SuperAdminMembership[]
+}
+
+export async function getOrganizationsList(): Promise<SuperAdminOrganization[]> {
+  const { data, error } = await getSupabase().rpc('admin_list_organizations')
+  if (error) throw error
+  return (data ?? []) as SuperAdminOrganization[]
+}
+
+export async function addUserToOrganization(userId: string, organizationId: string, role: 'owner' | 'admin' | 'member'): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_add_user_to_organization', {
+    target_user: userId, target_organization_id: organizationId, target_role: role,
+  })
+  if (error) throw error
+}
+
+export async function removeUserFromOrganization(membershipId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_remove_user_from_organization', { p_membership_id: membershipId })
+  if (error) throw error
+}
+
+export async function setMembershipRole(membershipId: string, role: 'owner' | 'admin' | 'member'): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_set_membership_role', { p_membership_id: membershipId, p_role: role })
+  if (error) throw error
+}
+
 /** Suppression complète d'un utilisateur + cascade de ses données (super admin). */
 export async function deleteSuperAdminUser(userId: string): Promise<{ deleted_email: string; organizations_deleted: number }> {
   const { data, error } = await getSupabase().rpc('admin_delete_user', { p_user_id: userId })

@@ -111,6 +111,18 @@ body.super-admin-page{margin:0;background:#0d0919;color:#fff;overflow-x:hidden}
 .sa-email-grid-label{font-weight:700;font-size:13.5px;color:#fff}
 .sa-email-user-toggles{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;margin-top:14px}
 .sa-email-user-toggles label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:#fff}
+.sa-memberships-feedback{margin:0;color:#bca9fa;font-size:8px}
+.sa-memberships-list{display:grid;gap:7px}
+.sa-memberships-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:9px 10px;border:1px solid var(--sa-line);border-radius:9px;background:rgba(255,255,255,.025)}
+.sa-memberships-row strong{font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sa-memberships-row select{padding:7px 8px;border:1px solid var(--sa-line);border-radius:8px;background:#171128;color:#fff;font-size:8px}
+.sa-memberships-row button{padding:7px 10px;border:1px solid rgba(155,124,244,.3);border-radius:8px;background:rgba(155,124,244,.1);color:#d8cdf8;font:700 7px var(--mono);cursor:pointer;white-space:nowrap}
+.sa-memberships-row button.danger{border-color:rgba(242,120,145,.25);background:rgba(242,120,145,.08);color:#f5a1b1}
+.sa-memberships-row button:disabled{opacity:.4;cursor:not-allowed}
+.sa-memberships-add{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin-top:4px}
+.sa-memberships-add select{padding:9px;border:1px solid var(--sa-line);border-radius:9px;background:#171128;color:#fff;font-size:8px}
+.sa-memberships-add button{padding:9px 12px;border:0;border-radius:9px;background:linear-gradient(135deg,#9b7cf4,#7958d7);color:#fff;font:700 7px var(--mono);cursor:pointer;white-space:nowrap}
+.sa-memberships-add button:disabled{opacity:.4;cursor:not-allowed}
 .sa-email-note{font-size:12px;color:var(--sa-muted);margin-top:16px;line-height:1.6}
 
 /* ── Onglet Suivi IA & coûts ─────────────────────────────────────────────── */

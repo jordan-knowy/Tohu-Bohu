@@ -8,6 +8,7 @@ import {
   getMyAccountDeletionRequest,
   inviteTeamMember,
   openBillingPortal,
+  removeMember,
   revokeInvitation,
   startPlanChange,
   submitAccountDeletionRequest,
@@ -321,6 +322,20 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
     }
   }
 
+  const runRemoveMember = async (userId: string, name: string) => {
+    if (!window.confirm(`Retirer ${name} de l’organisation ?`)) return
+    setBusy(`remove:${userId}`)
+    try {
+      await removeMember(context.workspaceId, userId)
+      toast(`${name} a été retiré de l’organisation.`)
+      await load()
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Retrait impossible.', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const runRevoke = async (invitationId: string, email: string) => {
     setBusy(`revoke:${invitationId}`)
     try {
@@ -437,6 +452,7 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
             <span className="account-member-avatar">{member.avatar_url ? <img src={member.avatar_url} alt="" /> : initials(member.full_name)}</span>
             <div><strong>{member.full_name}</strong><small>{member.email}</small></div>
             <span className="account-role">{member.role === 'owner' ? 'Propriétaire' : member.role === 'admin' ? 'Admin' : 'Membre'}</span>
+            {account.can_manage && member.user_id !== context.session.user.id && <button type="button" className="account-invite-cancel" disabled={busy !== null} onClick={() => void runRemoveMember(member.user_id, member.full_name)} title="Retirer de l’organisation">{busy === `remove:${member.user_id}` ? '…' : 'Retirer'}</button>}
           </article>)}
           {pendingInvitations.map((pending) => <article className="is-pending" key={pending.id}>
             <span className="account-member-avatar">…</span><div><strong>{pending.email}</strong><small>Expire le {date(pending.expires_at)}</small></div><span className="account-role">Invitation en attente</span>

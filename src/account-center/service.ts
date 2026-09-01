@@ -175,3 +175,13 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
   const { error } = await getSupabase().rpc('revoke_organization_invitation', { p_invitation_id: invitationId })
   if (error) throw error
 }
+
+/** Retire un membre de l'organisation (libre-service owner/admin). Refuse de
+ *  retirer le dernier owner (vérifié côté RPC). */
+export async function removeMember(organizationId: string, userId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('remove_organization_member', {
+    p_organization_id: organizationId,
+    p_user_id: userId,
+  })
+  if (error) throw error
+}

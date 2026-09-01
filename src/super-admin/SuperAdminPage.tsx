@@ -3,8 +3,8 @@ import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
 import { initials } from '../lib/auth'
 import {
-  deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getSuperAdminData, setEmailDispatchRule, setSuperAdminRole, setUserAccess, setUserSeats, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
-  type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminTimeseriesPoint, type SuperAdminUser,
+  addUserToOrganization, deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getOrganizationsList, getSuperAdminData, getUserMemberships, removeUserFromOrganization, setEmailDispatchRule, setMembershipRole, setSuperAdminRole, setUserAccess, setUserSeats, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
+  type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminMembership, type SuperAdminOrganization, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
 type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails' | 'ai'
@@ -83,6 +83,76 @@ function EmailUserRules({ userId }: { userId: string }) {
   return <section className="sa-platform-editor">
     <div><h3>E-mails de cet utilisateur</h3><p>Réglage individuel, prioritaire sur le type de compte et le global.</p></div>
     <div className="sa-email-user-toggles">{EMAIL_TYPES.map((t) => <label key={t.id}><span>{t.label}</span><SaSwitch on={enabledFor(t.id)} disabled={saving === t.id} onChange={(v) => toggle(t.id, v)} /></label>)}</div>
+  </section>
+}
+
+const MEMBERSHIP_ROLES: Array<SuperAdminMembership['role']> = ['owner', 'admin', 'member']
+const MEMBERSHIP_ROLE_LABELS: Record<SuperAdminMembership['role'], string> = { owner: 'Propriétaire', admin: 'Admin', member: 'Membre' }
+
+/** Qui est membre de qui — visible et modifiable depuis la fiche utilisateur
+ *  détaillée (retrait, changement de rôle, ajout à une autre organisation). */
+function MembershipsEditor({ userId }: { userId: string }) {
+  const [memberships, setMemberships] = useState<SuperAdminMembership[]>([])
+  const [organizations, setOrganizations] = useState<SuperAdminOrganization[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [addOrgId, setAddOrgId] = useState('')
+  const [addRole, setAddRole] = useState<SuperAdminMembership['role']>('member')
+
+  const load = useCallback(async () => {
+    try {
+      const [nextMemberships, nextOrganizations] = await Promise.all([getUserMemberships(userId), getOrganizationsList()])
+      setMemberships(nextMemberships)
+      setOrganizations(nextOrganizations)
+    } catch { /* silencieux */ }
+  }, [userId])
+  useEffect(() => { void load() }, [load])
+
+  const availableOrgs = organizations.filter((org) => !memberships.some((m) => m.organization_id === org.id))
+  useEffect(() => { if (!addOrgId && availableOrgs.length) setAddOrgId(availableOrgs[0]!.id) }, [availableOrgs, addOrgId])
+
+  const remove = async (membershipId: string, orgName: string) => {
+    if (!window.confirm(`Retirer cet utilisateur de ${orgName} ?`)) return
+    setBusy(membershipId); setFeedback(null)
+    try { await removeUserFromOrganization(membershipId); await load(); setFeedback(`Retiré de ${orgName}.`) }
+    catch (reason) { setFeedback(reason instanceof Error ? reason.message : 'Retrait impossible.') }
+    finally { setBusy(null) }
+  }
+  const changeRole = async (membershipId: string, role: SuperAdminMembership['role']) => {
+    setBusy(membershipId); setFeedback(null)
+    try { await setMembershipRole(membershipId, role); await load() }
+    catch (reason) { setFeedback(reason instanceof Error ? reason.message : 'Modification du rôle impossible.') }
+    finally { setBusy(null) }
+  }
+  const add = async () => {
+    if (!addOrgId) return
+    setBusy('add'); setFeedback(null)
+    try {
+      await addUserToOrganization(userId, addOrgId, addRole)
+      await load()
+      setFeedback('Ajouté à l’organisation.')
+    } catch (reason) { setFeedback(reason instanceof Error ? reason.message : 'Ajout impossible.') }
+    finally { setBusy(null) }
+  }
+
+  return <section className="sa-platform-editor sa-memberships-editor">
+    <div><h3>Organisations</h3><p>Adhésions de cet utilisateur — plusieurs organisations possibles, chacune avec son propre rôle.</p></div>
+    {feedback && <p className="sa-memberships-feedback">{feedback}</p>}
+    <div className="sa-memberships-list">
+      {memberships.map((membership) => <div className="sa-memberships-row" key={membership.membership_id}>
+        <strong>{membership.organization_name}</strong>
+        <select value={membership.role} disabled={busy === membership.membership_id} onChange={(event) => void changeRole(membership.membership_id, event.target.value as SuperAdminMembership['role'])}>
+          {MEMBERSHIP_ROLES.map((role) => <option key={role} value={role}>{MEMBERSHIP_ROLE_LABELS[role]}</option>)}
+        </select>
+        <button type="button" className="danger" disabled={busy !== null} onClick={() => void remove(membership.membership_id, membership.organization_name)}>{busy === membership.membership_id ? '…' : 'Retirer'}</button>
+      </div>)}
+      {!memberships.length && <p className="sa-empty-history">Aucune organisation.</p>}
+    </div>
+    {availableOrgs.length > 0 && <div className="sa-memberships-add">
+      <select value={addOrgId} onChange={(event) => setAddOrgId(event.target.value)}>{availableOrgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
+      <select value={addRole} onChange={(event) => setAddRole(event.target.value as SuperAdminMembership['role'])}>{MEMBERSHIP_ROLES.map((role) => <option key={role} value={role}>{MEMBERSHIP_ROLE_LABELS[role]}</option>)}</select>
+      <button type="button" disabled={busy !== null} onClick={() => void add()}>{busy === 'add' ? '…' : 'Ajouter à cette organisation'}</button>
+    </div>}
   </section>
 }
 type MetricFormat = 'number' | 'percent' | 'currency' | 'duration'
@@ -319,6 +389,7 @@ function UserDetail({ user, plans, saving, onSaveCommercial, onSaveRole, onSaveS
       <div><h3>Rôle plateforme</h3><p>Donne accès à la console et aux KPI. Cela ne change jamais l’abonnement du client.</p></div>
       <div className="sa-platform-state"><span className={user.is_super_admin ? 'active' : ''}>{user.is_super_admin ? 'Super Admin actif' : 'Utilisateur standard'}</span><button type="button" disabled={saving} className={user.is_super_admin ? 'danger' : ''} onClick={() => void onSaveRole(!user.is_super_admin)}>{user.is_super_admin ? 'Retirer le rôle' : 'Activer Super Admin'}</button></div>
     </section>
+    <MembershipsEditor userId={user.user_id} />
     <EmailUserRules userId={user.user_id} />
     <section className="sa-history-block">
       <div><h3>Évolution de l’abonnement</h3><p>{user.plan_history.length} événement{user.plan_history.length > 1 ? 's' : ''} enregistré{user.plan_history.length > 1 ? 's' : ''}</p></div>

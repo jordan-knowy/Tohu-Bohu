@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { AccountConnectorsPill } from '../account-detail/AccountRelationView'
-import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, handoverPerson, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type WorkspaceMember } from './service'
+import { addPersonContactDetail, fetchWorkspaceMembers, getFicheSharesReceived, getPersonDetail, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, sharePerson, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheShare, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
@@ -144,12 +144,32 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
         </span>
         <button type="button" className="v48-affect-link v48-affect-handover" disabled={busy !== null} onClick={() => setPassationOpen(true)}>Passer la relation</button>
       </div>
+      <SharedByTitles workspaceId={person.workspaceId} entityId={person.id} />
     </div>
     {passationOpen && <PassationModal data={data} userId={userId} refresh={refresh} onClose={() => setPassationOpen(false)} />}
   </div>
 }
 
-/** Passation par fiche : nouveau responsable + note de contexte, puis refresh. */
+const ROLE_TITLE: Record<FicheShare['fromRole'], string> = { owner: 'Directeur', admin: 'Manager', member: 'Collaborateur' }
+
+/** Petit titre par partage reçu — qui m'a partagé cette fiche et son rôle dans
+ *  l'organisation (Directeur/Manager/Collaborateur). Base de la future vue
+ *  « entreprise » : ici on affiche juste la provenance, sans encore agréger. */
+function SharedByTitles({ workspaceId, entityId }: { workspaceId: string; entityId: string }) {
+  const [shares, setShares] = useState<FicheShare[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void getFicheSharesReceived(workspaceId, 'contact', entityId).then((result) => { if (!cancelled) setShares(result) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [workspaceId, entityId])
+  if (!shares.length) return null
+  return <div className="v48-shared-titles">
+    {shares.map((share) => <span key={share.id} className="v48-shared-title" title={share.note ?? undefined}>Partagée par {share.fromName} · {ROLE_TITLE[share.fromRole]}</span>)}
+  </div>
+}
+
+/** Partage de fiche : choix d'un membre de l'équipe + note de contexte, puis
+ *  refresh. Additif — n'affecte jamais l'owner (voir sharePerson). */
 function PassationModal({ data, userId, refresh, onClose }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; onClose: () => void }) {
   const toast = useToast()
   const person = data.person
@@ -158,37 +178,37 @@ function PassationModal({ data, userId, refresh, onClose }: { data: PersonDetail
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   useEffect(() => { void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([])) }, [person.workspaceId])
-  const candidates = (members ?? []).filter((member) => member.id !== person.primaryOwnerUserId)
+  const candidates = (members ?? []).filter((member) => member.id !== userId)
   const submit = async () => {
     const target = candidates.find((member) => member.id === toUserId)
     if (!target) return
     setSaving(true)
     try {
-      await handoverPerson(data, userId, target.id, target.fullName, note)
-      toast(`Relation passée à ${target.fullName}.`)
+      await sharePerson(data, target.id, note)
+      toast(`Fiche partagée avec ${target.fullName} — tu gardes ta propre relation.`)
       onClose()
       await refresh()
     } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Passation impossible.', 'error')
+      toast(reason instanceof Error ? reason.message : 'Partage impossible.', 'error')
     } finally { setSaving(false) }
   }
   return createPortal(
     <div className="v48-shm" onClick={onClose}>
       <div className="v48-shp" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <div className="v48-shp-h"><p className="v48-shp-t">Passer la relation</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
-        <p className="v48-shp-i">Transfère la responsabilité de <b>{person.fullName}</b> à un membre de l’équipe. La passation est datée et consignée dans la mémoire relationnelle.</p>
-        <p className="v48-shp-l">Nouveau responsable</p>
+        <p className="v48-shp-i">Partage <b>{person.fullName}</b> avec un membre de l’équipe. Tu gardes ta propre relation — il/elle reçoit sa propre vue de cette fiche en plus.</p>
+        <p className="v48-shp-l">Partager avec</p>
         {members === null
           ? <div className="v48-affect-loading">Chargement…</div>
           : <select className="pp-select" value={toUserId} onChange={(event) => setToUserId(event.target.value)} style={{ width: '100%' }}>
               <option value="" disabled>Choisir un membre…</option>
               {candidates.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
             </select>}
-        <p className="v48-shp-l" style={{ marginTop: 12 }}>Note de passation <em style={{ textTransform: 'none', letterSpacing: 0 }}>(optionnel)</em></p>
+        <p className="v48-shp-l" style={{ marginTop: 12 }}>Note de contexte <em style={{ textTransform: 'none', letterSpacing: 0 }}>(optionnel)</em></p>
         <textarea className="feed-txt" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex : dossier en cours sur le devis, Christèle est le bon relai." style={{ width: '100%', minHeight: 70 }} />
         <div className="v48-shp-actions">
           <button type="button" className="feed-btn" onClick={onClose}>Annuler</button>
-          <button type="button" className="feed-save" disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Passation…' : 'Confirmer la passation'}</button>
+          <button type="button" className="feed-save" disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Partage…' : 'Partager la fiche'}</button>
         </div>
       </div>
     </div>, document.body)

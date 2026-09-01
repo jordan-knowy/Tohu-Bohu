@@ -8,16 +8,20 @@ import { confidenceLevel } from '../person-detail/ui'
 import { saveSignalFeedback } from '../services/data'
 import { verifySuperAdmin } from '../super-admin/service'
 import { RELATION_COLORS } from '../account-list/mapping'
+import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/service'
 import {
   addAccountNote,
   getAccountDetail,
+  getAccountFicheSharesReceived,
   setAccountArchived,
   setAccountFavorite,
   setAccountLock,
   setAccountRelationType,
   setAccountWatch,
+  shareAccount,
   triggerAccountEnrichment,
   updateRecommendationStatus,
+  type AccountFicheShare,
 } from './service'
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
 import { V48AccountLiveView, V48AccountSourceNote } from './V48AccountViews'
@@ -501,6 +505,7 @@ function AccountHero({ data, userId, toggleFavorite, openPeople, refresh }: { da
           <span className="v48-owner-avatar">{initials(account.primaryOwnerName ?? 'À confirmer')}</span>
           <div><span>Owner du compte</span><strong>{account.primaryOwnerName ?? 'À confirmer'}</strong><small>Organisation</small></div>
         </div>
+        <SharedByTitles workspaceId={account.workspaceId} entityId={account.id} />
       </div>
     </div>
   </section>
@@ -515,6 +520,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const [activeTab, setActiveTab] = useState<AccountDetailTab>('relation')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [coordsOpen, setCoordsOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const refresh = useCallback(async () => {
     try { setError(null); setData(await getAccountDetail(context.workspaceId, accountId)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
@@ -544,6 +550,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       <div className="account-toolbar-actions" aria-label="Actions de la fiche">
         {isSuperAdmin && <EnrichAccountButton companyId={account.id} accountName={account.name} />}
         <Link className="kfav-star" to={`/app/ask?accountId=${account.id}`} title="Demander à Tohu" aria-label="Demander à Tohu"><Icon name="ask" /></Link>
+        <button className="kfav-star" onClick={() => setShareOpen(true)} title="Partager ce compte avec un membre de l’équipe" aria-label="Partager ce compte"><Icon name="share" /></button>
         {account.locked && !account.lockedByMe
           ? <button className="kfav-star" disabled title="Verrouillé par un autre collaborateur" aria-label="Verrouillé par un autre collaborateur"><Icon name="lock" /></button>
           : <button className="kfav-star" onClick={() => void toggleLock()} aria-pressed={account.lockedByMe} title={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'} aria-label={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'}><Icon name="lock" /></button>}
@@ -566,6 +573,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
     {coordsOpen && <AccountContactDialog data={data} navigate={navigate} onClose={() => setCoordsOpen(false)} />}
+    {shareOpen && <ShareAccountModal data={data} userId={context.session.user.id} onClose={() => setShareOpen(false)} />}
   </div>
 }
 
@@ -627,6 +635,62 @@ function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetail
     </div>,
     document.body,
   )
+}
+
+/** Partage additif du compte : choix d'un membre de l'équipe + note de
+ *  contexte. N'affecte jamais l'owner — voir shareAccount. */
+function ShareAccountModal({ data, userId, onClose }: { data: AccountDetailData; userId: string; onClose: () => void }) {
+  const account = data.account
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
+  const [toUserId, setToUserId] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  useEffect(() => { void fetchWorkspaceMembers(account.workspaceId).then(setMembers).catch(() => setMembers([])) }, [account.workspaceId])
+  const candidates = (members ?? []).filter((member) => member.id !== userId)
+  const submit = async () => {
+    const target = candidates.find((member) => member.id === toUserId)
+    if (!target) return
+    setSaving(true); setFeedback(null)
+    try {
+      await shareAccount(data, target.id, note)
+      onClose()
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Partage impossible.')
+    } finally { setSaving(false) }
+  }
+  return <div className="ra-dialog-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="ra-dialog" role="dialog" aria-modal="true" aria-labelledby="share-account-title">
+      <header><h2 id="share-account-title">Partager {account.name}</h2><button onClick={onClose} aria-label="Fermer">×</button></header>
+      <p>Partage ce compte avec un membre de l’équipe. Tu gardes ta propre relation — il/elle reçoit sa propre vue de cette fiche en plus.</p>
+      {members === null
+        ? <p>Chargement…</p>
+        : <select className="input" value={toUserId} onChange={(event) => setToUserId(event.target.value)} style={{ width: '100%' }}>
+            <option value="" disabled>Choisir un membre…</option>
+            {candidates.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
+          </select>}
+      <textarea className="input" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note de contexte (optionnel)" style={{ width: '100%', minHeight: 70, marginTop: 10 }} />
+      {feedback && <p style={{ color: 'var(--coral)', fontSize: 11 }}>{feedback}</p>}
+      <footer><button onClick={onClose}>Annuler</button><button disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Partage…' : 'Partager la fiche'}</button></footer>
+    </section>
+  </div>
+}
+
+const ACCOUNT_ROLE_TITLE: Record<AccountFicheShare['fromRole'], string> = { owner: 'Directeur', admin: 'Manager', member: 'Collaborateur' }
+
+/** Petit titre par partage reçu sur ce compte — base de la future vue
+ *  « entreprise » (voir SharedByTitles côté fiche personne, même principe). */
+function SharedByTitles({ workspaceId, entityId }: { workspaceId: string; entityId: string }) {
+  const [shares, setShares] = useState<AccountFicheShare[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void getAccountFicheSharesReceived(workspaceId, entityId).then((result) => { if (!cancelled) setShares(result) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [workspaceId, entityId])
+  if (!shares.length) return null
+  return <div className="v48-shared-titles">
+    {shares.map((share) => <span key={share.id} className="v48-shared-title" title={share.note ?? undefined}>Partagé par {share.fromName} · {ACCOUNT_ROLE_TITLE[share.fromRole]}</span>)}
+  </div>
 }
 
 function WatchDialog({ selected, onClose, onSave }: { selected: string[]; onClose: () => void; onSave: (families: string[]) => void }) {
