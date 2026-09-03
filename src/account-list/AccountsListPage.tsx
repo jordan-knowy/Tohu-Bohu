@@ -295,7 +295,7 @@ function SharedWithMe({ entries }: { entries: SharedAccountEntry[] }) {
     <div className="pa-shared-with-me-list">
       {entries.map((entry) => (
         <Link key={entry.entityId} className="pa-shared-with-me-row" to={`/app/accounts/${entry.entityId}?org=${entry.organizationId}`}>
-          <ContactAvatar src={null} name={entry.name} domain={entry.domain ?? undefined} />
+          <span className="dxa-logo" style={{ background: logoColor(entry.name) }} aria-hidden="true"><ContactAvatar src={null} name={entry.name} domain={entry.domain ?? undefined} /></span>
           <div className="pa-shared-with-me-copy">
             <strong>{entry.name}</strong>
             <span>{[entry.industry, `partagé par ${entry.fromName}`].filter(Boolean).join(' · ')}</span>

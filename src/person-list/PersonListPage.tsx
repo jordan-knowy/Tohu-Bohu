@@ -98,7 +98,7 @@ function SharedWithMe({ entries }: { entries: SharedWithMeEntry[] }) {
     <div className="pa-shared-with-me-list">
       {entries.map((entry) => (
         <Link key={entry.entityId} className="pa-shared-with-me-row" to={`/app/people/${entry.entityId}?org=${entry.organizationId}`}>
-          <ContactAvatar src={entry.avatarUrl} name={entry.fullName} />
+          <span className="dxa-logo" style={{ background: logoColor(entry.fullName) }} aria-hidden="true"><ContactAvatar src={entry.avatarUrl} name={entry.fullName} /></span>
           <div className="pa-shared-with-me-copy">
             <strong>{entry.fullName}</strong>
             <span>{[entry.jobTitle, `partagée par ${entry.fromName}`].filter(Boolean).join(' · ')}</span>

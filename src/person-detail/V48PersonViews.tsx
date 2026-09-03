@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
@@ -445,6 +445,22 @@ type ScorePeriod = (typeof SCORE_PERIODS)[number]
 function ScoreChart({ data }: { data: PersonDetailData }) {
   const [months, setMonths] = useState<ScorePeriod>(12)
   const [hover, setHover] = useState<{ index: number; left: number } | null>(null)
+  // Correction ajoutée au centrage (translateX(-50%)) de .ch-tip pour qu'elle ne
+  // déborde jamais du cadre du graphique sur le dernier point (bord droit) —
+  // mesurée sur le rendu réel (offsetWidth, indépendant du transform) donc
+  // fiable quelle que soit la longueur du contenu.
+  const [tipOffset, setTipOffset] = useState(0)
+  const chartRef = useRef<HTMLDivElement>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!hover || !chartRef.current || !tipRef.current) return
+    const chartWidth = chartRef.current.clientWidth
+    const tipWidth = tipRef.current.offsetWidth
+    const margin = 6
+    const desiredLeftEdge = hover.left - tipWidth / 2
+    const clampedLeftEdge = Math.min(Math.max(desiredLeftEdge, margin), chartWidth - tipWidth - margin)
+    setTipOffset(clampedLeftEdge - desiredLeftEdge)
+  }, [hover])
   const points = useMemo(() => scoreWindow(data.scoreHistory, months, new Date()), [data.scoreHistory, months])
   const exchangesByMonth = useMemo(() => {
     const map = new Map<string, number>()
@@ -473,7 +489,7 @@ function ScoreChart({ data }: { data: PersonDetailData }) {
     <div className="seg" role="tablist" aria-label="Période affichée">
       {SCORE_PERIODS.map((period) => <span key={period} role="tab" aria-selected={months === period} className={months === period ? 'on' : ''} onClick={() => setMonths(period)}>{period} M</span>)}
     </div>
-    <div className="chart" role="img" aria-label={points.map((point) => `${formatMonth(point.monthKey)} : ${point.score ?? 'sans donnée'}`).join(', ')}>
+    <div className="chart" role="img" ref={chartRef} aria-label={points.map((point) => `${formatMonth(point.monthKey)} : ${point.score ?? 'sans donnée'}`).join(', ')}>
       {points.map((point, index) => <i
         key={point.monthKey}
         tabIndex={0}
@@ -483,7 +499,7 @@ function ScoreChart({ data }: { data: PersonDetailData }) {
         onFocus={(event) => setHover({ index, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 })}
         onBlur={() => setHover(null)}
       />)}
-      {hover && hovered && <div className="ch-tip" style={{ left: hover.left }}>
+      {hover && hovered && <div ref={tipRef} className="ch-tip" style={{ left: hover.left, transform: `translateX(calc(-50% + ${tipOffset}px))` }}>
         <div className="ch-tip-m">{formatMonth(hovered.monthKey)}{hoveredIsStart ? ' · début' : ''}</div>
         {hovered.score !== null && <div className="ch-tip-v">{hovered.score}<small>/100</small>{delta !== null && <span className={delta >= 0 ? 'up' : 'down'}>{delta >= 0 ? `↗ +${delta}` : `↘ ${delta}`} pts</span>}</div>}
         <div className="ch-tip-s">{hoveredIsStart ? 'Début de la relation' : hoveredExchanges > 0 ? `${hoveredExchanges} échange${hoveredExchanges > 1 ? 's' : ''} ce mois` : 'Aucun échange ce mois'}</div>

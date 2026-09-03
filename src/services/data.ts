@@ -173,14 +173,23 @@ function sortEntities<T extends Account | Person>(rows: T[], sort: string): T[] 
 
 const contactSelect = '*,companies(name),relationship_snapshots(engagement_score,last_contact_at,phase,snapshot_date),cognitive_profiles(global_confidence,summary,executive_summary,engagement_score,updated_at)'
 
+/** Le workspace actif reste toujours l'organisation PROPRE de l'utilisateur
+ *  (celle dont il est owner) — rejoindre l'équipe d'un autre membre (role
+ *  'member'/'admin' ailleurs) ne doit jamais changer son expérience normale
+ *  (Home, Personnes, Comptes…), seulement ajouter la possibilité de partager/
+ *  recevoir des fiches avec ce membre (fiche_shares). Avant ce correctif, on
+ *  prenait la dernière adhésion créée : rejoindre une équipe plus tard faisait
+ *  basculer par erreur le workspace actif vers l'organisation de cette équipe. */
 export async function getOrganizationId(): Promise<string> {
   const { data: userData, error: userError } = await getSupabase().auth.getUser()
   if (userError) throw userError
   if (!userData.user) throw new Error('Aucune session active.')
-  const { data, error } = await getSupabase().from('memberships').select('organization_id').eq('user_id', userData.user.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const { data, error } = await getSupabase().from('memberships').select('organization_id,role').eq('user_id', userData.user.id).order('created_at', { ascending: true })
   if (error) throw error
-  if (!data?.organization_id) throw new Error('Aucune organisation n’est associée à ce compte.')
-  return data.organization_id
+  const owned = data?.find((row) => row.role === 'owner')
+  const organizationId = owned?.organization_id ?? data?.[0]?.organization_id
+  if (!organizationId) throw new Error('Aucune organisation n’est associée à ce compte.')
+  return organizationId
 }
 
 export async function listAccounts(search = '', status = '', sort = 'updated_at.desc'): Promise<Account[]> {

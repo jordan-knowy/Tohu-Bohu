@@ -81,19 +81,43 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   const person = data.person
   const [ownerOpen, setOwnerOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
+  const [ownerPos, setOwnerPos] = useState<{ top: number; left: number } | null>(null)
+  const [visPos, setVisPos] = useState<{ top: number; left: number } | null>(null)
   const [passationOpen, setPassationOpen] = useState(false)
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
+  // Les deux menus sont portalés sur document.body (voir CSS .v48-affect-pop) pour ne
+  // jamais se retrouver visuellement cachés derrière une section suivante de la fiche —
+  // donc la fermeture au clic extérieur doit aussi tenir compte des refs de menu, pas
+  // seulement du bouton déclencheur, sinon un clic dans le menu porté le referme aussitôt.
+  const ownerBtnRef = useRef<HTMLButtonElement>(null)
+  const visBtnRef = useRef<HTMLButtonElement>(null)
+  const ownerMenuRef = useRef<HTMLDivElement>(null)
+  const visMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) { setOwnerOpen(false); setVisOpen(false) } }
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!ownerBtnRef.current?.contains(target) && !ownerMenuRef.current?.contains(target)) setOwnerOpen(false)
+      if (!visBtnRef.current?.contains(target) && !visMenuRef.current?.contains(target)) setVisOpen(false)
+    }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [])
 
   const openOwner = () => {
+    if (!ownerOpen && ownerBtnRef.current) {
+      const rect = ownerBtnRef.current.getBoundingClientRect()
+      setOwnerPos({ top: rect.bottom + 6, left: rect.left })
+    }
     setOwnerOpen((value) => !value); setVisOpen(false)
     if (members === null) void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([]))
+  }
+  const openVis = () => {
+    if (!visOpen && visBtnRef.current) {
+      const rect = visBtnRef.current.getBoundingClientRect()
+      setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 250) })
+    }
+    setVisOpen((value) => !value); setOwnerOpen(false)
   }
   const chooseOwner = (ownerUserId: string | null, name: string) => void run('owner', async () => {
     await setPersonOwner(data, userId, ownerUserId)
@@ -108,39 +132,41 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
     await refresh()
   })
 
-  return <div className="v48-owner-card v48-affect" ref={rootRef}>
+  return <div className="v48-owner-card v48-affect">
     <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
     <div className="v48-affect-body">
       <span className="v48-owner-l">Owner de la fiche</span>
       <strong>{person.primaryOwnerName ?? 'Non affecté'}</strong>
       <div className="v48-affect-actions">
         <span className="v48-affect-menu">
-          <button type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
-          {ownerOpen && <div className="v48-affect-pop" role="menu">
-            {members === null
-              ? <div className="v48-affect-loading">Chargement…</div>
-              : members.length === 0
-                ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
-                : <>
-                  {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === person.primaryOwnerUserId} className={member.id === person.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
-                    <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
-                  </button>)}
-                  {person.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
-                </>}
-          </div>}
+          <button ref={ownerBtnRef} type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
+          {ownerOpen && ownerPos && createPortal(
+            <div ref={ownerMenuRef} className="v48-affect-pop" role="menu" style={{ top: ownerPos.top, left: ownerPos.left }}>
+              {members === null
+                ? <div className="v48-affect-loading">Chargement…</div>
+                : members.length === 0
+                  ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
+                  : <>
+                    {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === person.primaryOwnerUserId} className={member.id === person.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
+                      <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
+                    </button>)}
+                    {person.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
+                  </>}
+            </div>, document.body)}
         </span>
         <span className="v48-affect-menu">
-          <button type="button" className={`v48-affect-vis vis-${person.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={() => { setVisOpen((value) => !value); setOwnerOpen(false) }}>
+          <button ref={visBtnRef} type="button" className={`v48-affect-vis vis-${person.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={openVis}>
             {person.visibility === 'restricted' ? 'Restreint' : 'Organisation'} <span aria-hidden="true">▾</span>
           </button>
-          {visOpen && <div className="v48-affect-pop wide" role="menu">
-            <button type="button" role="menuitemradio" aria-checked={person.visibility === 'workspace'} className={`vo ${person.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
-              <div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div>
-            </button>
-            <button type="button" role="menuitemradio" aria-checked={person.visibility === 'restricted'} className={`vo ${person.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
-              <div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe restreinte.</div>
-            </button>
-          </div>}
+          {visOpen && visPos && createPortal(
+            <div ref={visMenuRef} className="v48-affect-pop wide" role="menu" style={{ top: visPos.top, left: visPos.left }}>
+              <button type="button" role="menuitemradio" aria-checked={person.visibility === 'workspace'} className={`vo ${person.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
+                <div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div>
+              </button>
+              <button type="button" role="menuitemradio" aria-checked={person.visibility === 'restricted'} className={`vo ${person.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
+                <div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe restreinte.</div>
+              </button>
+            </div>, document.body)}
         </span>
         <button type="button" className="v48-affect-link v48-affect-handover" disabled={busy !== null} onClick={() => setPassationOpen(true)}>Passer la relation</button>
       </div>

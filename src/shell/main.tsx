@@ -26,7 +26,7 @@ import { tohuLogo } from '../components/logo'
 import { displayName, initials, requireSession } from '../lib/auth'
 import { getOrganizationId, getProfile, listAccounts, listPeople } from '../services/data'
 import { getSupabase } from '../lib/supabase'
-import { ToastProvider } from '../person-detail/ui'
+import { ToastProvider, useToast } from '../person-detail/ui'
 import AccountsListPage from '../account-list/AccountsListPage'
 import AccountDetailPage from '../account-detail/AccountDetailPage'
 import PersonListPage from '../person-list/PersonListPage'
@@ -42,7 +42,8 @@ import AccountSettingsPage from './pages/AccountSettingsPage'
 import SuperAdminPage from '../super-admin/SuperAdminPage'
 import PreferencesPage from '../preferences/PreferencesPage'
 
-type AppContext = { session: Session; workspaceId: string }
+type JoinedTeam = { organizationName: string; inviterName: string | null }
+type AppContext = { session: Session; workspaceId: string; joinedTeams: JoinedTeam[] }
 
 const HomeNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9.5h5V14h2v5.5h5V10" /></svg>
 const AccountsNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="1" /><path d="M3 21h18" /><path d="M9.5 7.5h1M13.5 7.5h1M9.5 11.5h1M13.5 11.5h1" /><path d="M10.5 21v-4.5a1.5 1.5 0 0 1 1.5-1.5 1.5 1.5 0 0 1 1.5 1.5V21" /></svg>
@@ -74,6 +75,21 @@ function activeNav(path: string): string {
   if (path === '/app/profile') return 'profil'
   if (path === '/app/account') return 'me'
   return ''
+}
+
+/** Affiche une fois « Tu es maintenant membre de l'équipe de X » après un clic
+ *  sur le lien d'invitation — voir boot() pour la provenance de joinedTeams. */
+function JoinedTeamToasts({ joinedTeams }: { joinedTeams: JoinedTeam[] }) {
+  const toast = useToast()
+  useEffect(() => {
+    for (const team of joinedTeams) {
+      toast(team.inviterName
+        ? `Tu es maintenant membre de l’équipe de ${team.inviterName}.`
+        : `Tu es maintenant membre de l’équipe ${team.organizationName}.`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return null
 }
 
 function AppShell({ context }: { context: AppContext }) {
@@ -169,13 +185,21 @@ function PlaceholderPage() {
 async function boot() {
   const session = await requireSession()
   // Une invitation devient un siège actif uniquement au premier accès authentifié.
+  // Le résultat (org + invitant) sert au message « tu es maintenant membre de
+  // l'équipe de X » affiché une fois par AppShell juste après le clic sur le
+  // lien « Rejoindre l'équipe » de l'email d'invitation.
+  let joinedTeams: JoinedTeam[] = []
   try {
-    await getSupabase().rpc('accept_my_organization_invitations')
+    const { data } = await getSupabase().rpc('accept_my_organization_invitations')
+    joinedTeams = (data ?? []).map((row: Record<string, unknown>) => ({
+      organizationName: String(row.organization_name ?? 'l’équipe'),
+      inviterName: row.inviter_name ? String(row.inviter_name) : null,
+    }))
   } catch {
     // Compatibilité pendant le déploiement progressif de la migration.
   }
   const workspaceId = await getOrganizationId()
-  const context = { session, workspaceId }
+  const context = { session, workspaceId, joinedTeams }
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
     <Route path="/super-admin" element={<SuperAdminPage />} />
     <Route path="/preferences" element={<PreferencesPage />} />

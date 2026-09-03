@@ -2538,14 +2538,17 @@
 .pp .v48-vision-switcher button.on{background:var(--violet);color:#fff}
 .pp .v48-affect-vis{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;border:1px solid var(--grid);border-radius:999px;padding:3px 9px;background:#fff;cursor:pointer;color:var(--t2)}
 .pp .v48-affect-vis.vis-restricted{color:var(--amber);border-color:var(--amber-l)}
-.pp .v48-affect-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;min-width:210px;max-height:280px;overflow:auto;padding:6px;background:#fff;border:1px solid var(--grid);border-radius:12px;box-shadow:var(--sh-md)}
-.pp .v48-affect-pop.wide{min-width:250px;left:auto;right:0}
-.pp .v48-affect-pop button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 9px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--t1)}
-.pp .v48-affect-pop button:hover{background:var(--lav)}
-.pp .v48-affect-pop button.on{background:var(--violet-s)}
-.pp .v48-affect-ini{width:24px;height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet);color:#fff;font-size:9px;font-weight:800}
-.pp .v48-affect-pop .vo{display:block}
-.pp .v48-affect-pop .vo .vo-t{font-family:var(--font);font-weight:800;font-size:12.5px}
-.pp .v48-affect-pop .vo .vo-d{font-size:11px;color:var(--t2);margin-top:2px;line-height:1.4}
+/* Portalé sur document.body (voir OwnerAffectation) : position:fixed + z-index élevé
+ * pour ne jamais se retrouver caché derrière une section suivante de la fiche — même
+ * principe que .rel-menu, non scopé sous .pp puisque le nœud DOM en sort une fois porté. */
+.v48-affect-pop{position:fixed;z-index:9999;min-width:210px;max-height:280px;overflow:auto;padding:6px;background:#fff;border:1px solid var(--grid);border-radius:12px;box-shadow:0 18px 48px rgba(20,15,40,.25)}
+.v48-affect-pop.wide{min-width:250px}
+.v48-affect-pop button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 9px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--t1)}
+.v48-affect-pop button:hover{background:var(--lav)}
+.v48-affect-pop button.on{background:var(--violet-s)}
+.v48-affect-ini{width:24px;height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet);color:#fff;font-size:9px;font-weight:800}
+.v48-affect-pop .vo{display:block}
+.v48-affect-pop .vo .vo-t{font-family:var(--font);font-weight:800;font-size:12.5px}
+.v48-affect-pop .vo .vo-d{font-size:11px;color:var(--t2);margin-top:2px;line-height:1.4}
 .pp .v48-affect-clear{color:var(--coral)!important}
 .pp .v48-affect-loading{padding:8px 9px;font-size:11px;color:var(--t3)}
