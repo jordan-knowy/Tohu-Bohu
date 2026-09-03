@@ -248,6 +248,10 @@ function DoDontPager({ guidance }: { guidance: PersonApproachScenario[] }) {
   </>
 }
 
+/** Copie de lien uniquement — à ne pas confondre avec le vrai partage de fiche
+ *  (PassationModal, qui accorde un accès réel via fiche_shares). Le lien ne
+ *  fonctionnera que pour quelqu'un qui a déjà accès à cette fiche (owner ou
+ *  destinataire d'un partage), pas pour tout membre de l'organisation. */
 function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const link = typeof window !== 'undefined' ? window.location.href : ''
@@ -260,11 +264,11 @@ function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => 
   }
   return <div className="v48-shm" onClick={onClose}>
     <div className="v48-shp" onClick={(event) => event.stopPropagation()}>
-      <div className="v48-shp-h"><p className="v48-shp-t">Partager la fiche</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
-      <p className="v48-shp-i">Une fiche relationnelle contient des inférences sur {data.person.fullName}. Le partage reste dans l’organisation.</p>
+      <div className="v48-shp-h"><p className="v48-shp-t">Copier le lien</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
+      <p className="v48-shp-i">Une fiche relationnelle contient des inférences sur {data.person.fullName}.</p>
       <p className="v48-shp-l">Lien interne</p>
       <div className="v48-shp-lk"><span>{link}</span><button type="button" className="v48-shp-cp" onClick={copy}>{copied ? 'Copié' : 'Copier'}</button></div>
-      <p className="v48-shp-n">Le lien n’ouvre la fiche qu’aux membres connectés de l’organisation.</p>
+      <p className="v48-shp-n">Ce lien n’ouvre la fiche qu’à ceux qui y ont déjà accès (toi, ou quelqu’un à qui tu l’as explicitement partagée).</p>
     </div>
   </div>
 }
@@ -317,7 +321,7 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
             ? <><p className="rdv-t">{formatDate(nextMeeting.occurredAt)}</p><p className="rdv-s">{nextMeeting.title}{nextMeeting.sourceLabel ? ` · ${nextMeeting.sourceLabel}` : ''}</p></>
             : <><p className="rdv-t">Aucun rendez-vous synchronisé</p><p className="rdv-s">Connecte ou synchronise un agenda pour préparer le prochain échange.</p></>}
         </div>
-        <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Partager</button>
+        <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Copier le lien</button>
       </article>
       <article className="po">
         <p className="po-l">Posture à adopter</p>

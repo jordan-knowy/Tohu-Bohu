@@ -18,7 +18,7 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const APP_URL = 'https://tohu-bohu.netlify.app';
+const APP_URL = 'https://tohu.co';
 // Permissions Application demandées à l'admin — le scope v2.0/adminconsent attend
 // des URLs Graph complètes, pas juste les noms courts.
 const SCOPE = 'https://graph.microsoft.com/OnlineMeetings.Read.All https://graph.microsoft.com/OnlineMeetingTranscript.Read.All';

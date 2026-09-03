@@ -12,7 +12,7 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const APP_URL = 'https://tohu-bohu.netlify.app';
+const APP_URL = 'https://tohu.co';
 const HUBSPOT_AUTH_URL = 'https://app.hubspot.com/oauth/authorize';
 const HUBSPOT_TOKEN_URL = 'https://api.hubapi.com/oauth/v1/token';
 const SCOPES = 'crm.objects.contacts.read crm.objects.companies.read';

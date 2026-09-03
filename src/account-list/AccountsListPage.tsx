@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { createAccount } from '../services/data'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
+import { listSharedAccountsWithMe, type SharedAccountEntry } from '../account-detail/service'
 import { setBohuBarShrunk } from '../shell/bohuBarSignal'
 import { ToastProvider, useBusy, useToast, formatMonth } from '../person-detail/ui'
 import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, tickerDurationSeconds, type AccountListRow, type AccountTier, type PortfolioPoint, type TeamMember } from './mapping'
@@ -285,12 +286,33 @@ export function MemberPicker({ overview, anchor, currentId, onPick, onClose }: {
   </div>
 }
 
+/** Comptes partagés par d'autres membres de l'équipe : vivent dans leur
+ *  organisation, pas la mienne — voir SharedWithMe côté liste Personnes. */
+function SharedWithMe({ entries }: { entries: SharedAccountEntry[] }) {
+  if (!entries.length) return null
+  return <div className="pa-shared-with-me">
+    <div className="pa-shared-with-me-title">Partagé avec moi</div>
+    <div className="pa-shared-with-me-list">
+      {entries.map((entry) => (
+        <Link key={entry.entityId} className="pa-shared-with-me-row" to={`/app/accounts/${entry.entityId}?org=${entry.organizationId}`}>
+          <ContactAvatar src={null} name={entry.name} domain={entry.domain ?? undefined} />
+          <div className="pa-shared-with-me-copy">
+            <strong>{entry.name}</strong>
+            <span>{[entry.industry, `partagé par ${entry.fromName}`].filter(Boolean).join(' · ')}</span>
+          </div>
+        </Link>
+      ))}
+    </div>
+  </div>
+}
+
 function PageBody({ context }: { context: PageContext }) {
   const navigate = useNavigate()
   const toast = useToast()
   const [, run] = useBusy()
   const [overview, setOverview] = useState<AccountsOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sharedWithMe, setSharedWithMe] = useState<SharedAccountEntry[]>([])
   const [range, setRange] = useState(12)
   const [tierFilter, setTierFilter] = useState<string[]>([])
   const [typeFilter, setTypeFilter] = useState<string[]>([])
@@ -321,6 +343,7 @@ function PageBody({ context }: { context: PageContext }) {
     }
   }, [context.workspaceId, context.userId])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void listSharedAccountsWithMe().then(setSharedWithMe).catch(() => setSharedWithMe([])) }, [context.workspaceId])
 
   const toggleIn = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (value: string) =>
     setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
@@ -397,6 +420,7 @@ function PageBody({ context }: { context: PageContext }) {
 
   return <div className="pa">
     <Ticker overview={overview} />
+    <SharedWithMe entries={sharedWithMe} />
     {overview.degradedReasons.length > 0 && <div className="pa-degraded"><strong>Données partielles</strong> {overview.degradedReasons.join(' · ')}</div>}
     <ScoreBoard overview={overview} range={range} setRange={setRange} />
     <div className="dxp-toolbar dxa-toolbar">

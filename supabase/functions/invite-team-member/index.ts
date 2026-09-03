@@ -72,7 +72,7 @@ Deno.serve(async (request) => {
       return json({ error: 'Une invitation est déjà en attente pour cette adresse.' }, 409)
     }
 
-    const redirectTo = `${Deno.env.get('APP_URL') ?? 'http://127.0.0.1:5173'}/app/account?invitation=accepted`
+    const redirectTo = `${Deno.env.get('APP_URL') ?? 'https://tohu.co'}/app/account?invitation=accepted`
     // generateLink (au lieu de inviteUserByEmail) ne déclenche AUCUN email — il ne
     // fait que créer/retrouver l'utilisateur et fournir le lien d'action. L'email
     // envoyé à la personne invitée est le nôtre, via Resend + la DA Tohu, plus bas.

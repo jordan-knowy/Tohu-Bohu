@@ -33,7 +33,7 @@ function safeOrigin(value: unknown): string {
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid')
     return url.origin
   } catch {
-    return Deno.env.get('APP_URL') ?? 'http://127.0.0.1:5173'
+    return Deno.env.get('APP_URL') ?? 'https://tohu.co'
   }
 }
 

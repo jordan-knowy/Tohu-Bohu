@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { displayName, initials } from '../lib/auth'
 import { confidenceLevel } from '../person-detail/ui'
@@ -12,7 +12,7 @@ import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/se
 import {
   addAccountNote,
   getAccountDetail,
-  getAccountFicheSharesReceived,
+  listAccountVisions,
   setAccountArchived,
   setAccountFavorite,
   setAccountLock,
@@ -21,7 +21,7 @@ import {
   shareAccount,
   triggerAccountEnrichment,
   updateRecommendationStatus,
-  type AccountFicheShare,
+  type AccountVision,
 } from './service'
 import type { AccountDetailData, AccountPerson, Provenance } from './types'
 import { V48AccountLiveView, V48AccountSourceNote } from './V48AccountViews'
@@ -505,14 +505,36 @@ function AccountHero({ data, userId, toggleFavorite, openPeople, refresh }: { da
           <span className="v48-owner-avatar">{initials(account.primaryOwnerName ?? 'À confirmer')}</span>
           <div><span>Owner du compte</span><strong>{account.primaryOwnerName ?? 'À confirmer'}</strong><small>Organisation</small></div>
         </div>
-        <SharedByTitles workspaceId={account.workspaceId} entityId={account.id} />
       </div>
     </div>
   </section>
 }
 
+/** Sélecteur « Moi | [Nom] » côté compte — même principe que côté fiche
+ *  personne (voir VisionSwitcher dans PersonDetailPage.tsx) : bascule entre
+ *  ma propre vision de ce compte et celles qui m'ont été partagées, sans
+ *  fusionner ni recalculer quoi que ce soit. Toujours visible, y compris en
+ *  lecture seule. */
+function VisionSwitcher({ visions, activeCompanyId, onSwitch }: { visions: AccountVision[]; activeCompanyId: string; onSwitch: (vision: AccountVision) => void }) {
+  if (visions.length <= 1) return null
+  return <div className="radar-src v48-vision-switcher" role="group" aria-label="Vision affichée">
+    {visions.map((vision) => (
+      <button
+        key={vision.companyId}
+        type="button"
+        className={vision.companyId === activeCompanyId ? 'on' : ''}
+        title={vision.shareNote ?? undefined}
+        onClick={() => onSwitch(vision)}
+      >
+        {vision.isMine ? 'Moi' : vision.ownerName}
+      </button>
+    ))}
+  </div>
+}
+
 export default function AccountDetailPage({ context }: { context: PageContext }) {
   const { accountId = '' } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [data, setData] = useState<AccountDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -521,16 +543,33 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [coordsOpen, setCoordsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [visions, setVisions] = useState<AccountVision[]>([])
+  // Même logique que côté fiche personne : la vision affichée peut vivre dans
+  // une autre organisation que le workspace actif (compte partagé par un membre
+  // d'une autre équipe).
+  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId })
+  useEffect(() => {
+    setView({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId })
+  }, [context.workspaceId, accountId, searchParams])
   const refresh = useCallback(async () => {
-    try { setError(null); setData(await getAccountDetail(context.workspaceId, accountId)) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
-  }, [accountId, context.workspaceId])
+    try {
+      setError(null)
+      const [detail, visionList] = await Promise.all([
+        getAccountDetail(view.organizationId, view.companyId),
+        listAccountVisions(view.organizationId, view.companyId).catch(() => []),
+      ])
+      setData(detail)
+      setVisions(visionList)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
+  }, [view.companyId, view.organizationId])
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
   if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <FicheSkeleton label="Chargement de la fiche compte…" />
   const account = data.account
+  const activeVision = visions.find((vision) => vision.companyId === view.companyId)
+  const readOnly = activeVision ? !activeVision.isMine : false
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }
   const archived = Boolean(account.archivedAt)
@@ -550,13 +589,15 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       <div className="account-toolbar-actions" aria-label="Actions de la fiche">
         {isSuperAdmin && <EnrichAccountButton companyId={account.id} accountName={account.name} />}
         <Link className="kfav-star" to={`/app/ask?accountId=${account.id}`} title="Demander à Tohu" aria-label="Demander à Tohu"><Icon name="ask" /></Link>
-        <button className="kfav-star" onClick={() => setShareOpen(true)} title="Partager ce compte avec un membre de l’équipe" aria-label="Partager ce compte"><Icon name="share" /></button>
-        {account.locked && !account.lockedByMe
+        {!readOnly && <button className="kfav-star" onClick={() => setShareOpen(true)} title="Partager ce compte avec un membre de l’équipe" aria-label="Partager ce compte"><Icon name="share" /></button>}
+        {!readOnly && (account.locked && !account.lockedByMe
           ? <button className="kfav-star" disabled title="Verrouillé par un autre collaborateur" aria-label="Verrouillé par un autre collaborateur"><Icon name="lock" /></button>
-          : <button className="kfav-star" onClick={() => void toggleLock()} aria-pressed={account.lockedByMe} title={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'} aria-label={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'}><Icon name="lock" /></button>}
-        <button className="kfav-star" onClick={() => void toggleArchived()} title={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} aria-label={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}><Icon name={archived ? 'restore' : 'trash'} /></button>
+          : <button className="kfav-star" onClick={() => void toggleLock()} aria-pressed={account.lockedByMe} title={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'} aria-label={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'}><Icon name="lock" /></button>)}
+        {!readOnly && <button className="kfav-star" onClick={() => void toggleArchived()} title={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} aria-label={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}><Icon name={archived ? 'restore' : 'trash'} /></button>}
       </div>
     </div>
+    <VisionSwitcher visions={visions} activeCompanyId={view.companyId} onSwitch={(vision) => setView({ organizationId: vision.organizationId, companyId: vision.companyId })} />
+    {readOnly && <div className="ra-degraded">Vision de {activeVision?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
     {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
     <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
@@ -673,23 +714,6 @@ function ShareAccountModal({ data, userId, onClose }: { data: AccountDetailData;
       {feedback && <p style={{ color: 'var(--coral)', fontSize: 11 }}>{feedback}</p>}
       <footer><button onClick={onClose}>Annuler</button><button disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Partage…' : 'Partager la fiche'}</button></footer>
     </section>
-  </div>
-}
-
-const ACCOUNT_ROLE_TITLE: Record<AccountFicheShare['fromRole'], string> = { owner: 'Directeur', admin: 'Manager', member: 'Collaborateur' }
-
-/** Petit titre par partage reçu sur ce compte — base de la future vue
- *  « entreprise » (voir SharedByTitles côté fiche personne, même principe). */
-function SharedByTitles({ workspaceId, entityId }: { workspaceId: string; entityId: string }) {
-  const [shares, setShares] = useState<AccountFicheShare[]>([])
-  useEffect(() => {
-    let cancelled = false
-    void getAccountFicheSharesReceived(workspaceId, entityId).then((result) => { if (!cancelled) setShares(result) }).catch(() => {})
-    return () => { cancelled = true }
-  }, [workspaceId, entityId])
-  if (!shares.length) return null
-  return <div className="v48-shared-titles">
-    {shares.map((share) => <span key={share.id} className="v48-shared-title" title={share.note ?? undefined}>Partagé par {share.fromName} · {ACCOUNT_ROLE_TITLE[share.fromRole]}</span>)}
   </div>
 }
 

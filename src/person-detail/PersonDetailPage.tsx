@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { AccountConnectorsPill } from '../account-detail/AccountRelationView'
-import { addPersonContactDetail, fetchWorkspaceMembers, getFicheSharesReceived, getPersonDetail, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, sharePerson, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheShare, type WorkspaceMember } from './service'
+import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, listFicheVisions, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, sharePerson, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
@@ -144,27 +144,30 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
         </span>
         <button type="button" className="v48-affect-link v48-affect-handover" disabled={busy !== null} onClick={() => setPassationOpen(true)}>Passer la relation</button>
       </div>
-      <SharedByTitles workspaceId={person.workspaceId} entityId={person.id} />
     </div>
     {passationOpen && <PassationModal data={data} userId={userId} refresh={refresh} onClose={() => setPassationOpen(false)} />}
   </div>
 }
 
-const ROLE_TITLE: Record<FicheShare['fromRole'], string> = { owner: 'Directeur', admin: 'Manager', member: 'Collaborateur' }
-
-/** Petit titre par partage reçu — qui m'a partagé cette fiche et son rôle dans
- *  l'organisation (Directeur/Manager/Collaborateur). Base de la future vue
- *  « entreprise » : ici on affiche juste la provenance, sans encore agréger. */
-function SharedByTitles({ workspaceId, entityId }: { workspaceId: string; entityId: string }) {
-  const [shares, setShares] = useState<FicheShare[]>([])
-  useEffect(() => {
-    let cancelled = false
-    void getFicheSharesReceived(workspaceId, 'contact', entityId).then((result) => { if (!cancelled) setShares(result) }).catch(() => {})
-    return () => { cancelled = true }
-  }, [workspaceId, entityId])
-  if (!shares.length) return null
-  return <div className="v48-shared-titles">
-    {shares.map((share) => <span key={share.id} className="v48-shared-title" title={share.note ?? undefined}>Partagée par {share.fromName} · {ROLE_TITLE[share.fromRole]}</span>)}
+/** Sélecteur « Moi | [Nom] » : bascule entre ma propre vision de cette personne
+ *  et celles qui m'ont été partagées, sans jamais fusionner ni recalculer quoi
+ *  que ce soit — chaque vision reste la fiche indépendante de son propriétaire.
+ *  Toujours visible (contrairement aux actions d'édition), y compris en lecture
+ *  seule, puisque c'est le seul moyen de revenir à « Moi ». */
+function VisionSwitcher({ visions, activeContactId, onSwitch }: { visions: FicheVision[]; activeContactId: string; onSwitch: (vision: FicheVision) => void }) {
+  if (visions.length <= 1) return null
+  return <div className="radar-src v48-vision-switcher" role="group" aria-label="Vision affichée">
+    {visions.map((vision) => (
+      <button
+        key={vision.contactId}
+        type="button"
+        className={vision.contactId === activeContactId ? 'on' : ''}
+        title={vision.shareNote ?? undefined}
+        onClick={() => onSwitch(vision)}
+      >
+        {vision.isMine ? 'Moi' : vision.ownerName}
+      </button>
+    ))}
   </div>
 }
 
@@ -214,7 +217,7 @@ function PassationModal({ data, userId, refresh, onClose }: { data: PersonDetail
     </div>, document.body)
 }
 
-function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; readOnly: boolean }) {
   const toast = useToast()
   const [busy, run] = useBusy()
   const person = data.person
@@ -303,7 +306,7 @@ function Hero({ data, userId, refresh }: { data: PersonDetailData; userId: strin
             <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''} retrouvé{relation.totalInteractions > 1 ? 's' : ''}</span>
           </div>
         </div>
-        <OwnerAffectation data={data} userId={userId} refresh={refresh} />
+        {!readOnly && <OwnerAffectation data={data} userId={userId} refresh={refresh} />}
       </div>
     </div>
   </div>
@@ -621,7 +624,10 @@ function PersonContactDialog({ data, userId, refresh, onClose }: { data: PersonD
   )
 }
 
-function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, onSwitchVision }: {
+  data: PersonDetailData; userId: string; refresh: () => Promise<void>; readOnly: boolean
+  visions: FicheVision[]; activeContactId: string; onSwitchVision: (vision: FicheVision) => void
+}) {
   const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
   const [contactOpen, setContactOpen] = useState(false)
   // La ré-analyse est proposée dès qu'il y a assez de données : profil absent/ancien
@@ -630,24 +636,26 @@ function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: s
   const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
   return <>
     <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
+    <VisionSwitcher visions={visions} activeContactId={activeContactId} onSwitch={onSwitchVision} />
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>CV Live &amp; Signaux</button>
-      <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setContactOpen(true)}>
+      {!readOnly && <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setContactOpen(true)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
         Contact
-      </button>
+      </button>}
       <AccountConnectorsPill sources={data.sources} />
     </nav>
+    {readOnly && <div className="pp-degraded">Vision de {visions.find((vision) => vision.contactId === activeContactId)?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
-    <Hero data={data} userId={userId} refresh={refresh} />
+    <Hero data={data} userId={userId} refresh={refresh} readOnly={readOnly} />
     {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView
       data={data}
       userId={userId}
       refresh={refresh}
-      manualSyncAction={profileNeedsRebuild ? <CognitiveSyncButton data={data} userId={userId} refresh={refresh} /> : undefined}
+      manualSyncAction={profileNeedsRebuild && !readOnly ? <CognitiveSyncButton data={data} userId={userId} refresh={refresh} /> : undefined}
     /></div>}
     {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
@@ -658,16 +666,31 @@ function PageBody({ data, userId, refresh }: { data: PersonDetailData; userId: s
 
 export default function PersonDetailPage({ context }: { context: PageContext }) {
   const { personId = '' } = useParams()
+  const [searchParams] = useSearchParams()
   const [data, setData] = useState<PersonDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [visions, setVisions] = useState<FicheVision[]>([])
+  // La vision affichée peut vivre dans une autre organisation que le workspace actif
+  // (fiche partagée par un membre d'une autre équipe) — d'où ce couple dédié plutôt
+  // que de réutiliser context.workspaceId/personId directement. Un lien "Partagé avec
+  // moi" précise l'org via ?org=, sinon on suppose le workspace actif (cas normal).
+  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId })
+  useEffect(() => {
+    setView({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId })
+  }, [context.workspaceId, personId, searchParams])
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      setData(await getPersonDetail(context.workspaceId, personId))
+      const [detail, visionList] = await Promise.all([
+        getPersonDetail(view.organizationId, view.contactId),
+        listFicheVisions(view.organizationId, view.contactId).catch(() => []),
+      ])
+      setData(detail)
+      setVisions(visionList)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Erreur inattendue')
     }
-  }, [context.workspaceId, personId])
+  }, [view.organizationId, view.contactId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
 
   if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
@@ -675,9 +698,20 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   if (error) return <div className="ra-state error"><h1>Impossible de charger la personne</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <FicheSkeleton label="Chargement de la fiche personne…" />
 
+  const activeVision = visions.find((vision) => vision.contactId === view.contactId)
+  const readOnly = activeVision ? !activeVision.isMine : false
+
   return <ToastProvider>
     <div className="pp">
-      <PageBody data={data} userId={context.userId} refresh={refresh} />
+      <PageBody
+        data={data}
+        userId={context.userId}
+        refresh={refresh}
+        readOnly={readOnly}
+        visions={visions}
+        activeContactId={view.contactId}
+        onSwitchVision={(vision) => setView({ organizationId: vision.organizationId, contactId: vision.contactId })}
+      />
     </div>
   </ToastProvider>
 }

@@ -303,6 +303,67 @@ export async function getFicheSharesReceived(workspaceId: string, entityType: 'c
   }))
 }
 
+export type FicheVision = {
+  organizationId: string
+  contactId: string
+  isMine: boolean
+  ownerUserId: string
+  ownerName: string
+  shareNote: string | null
+}
+
+/** Visions disponibles pour la fiche actuellement ouverte : la mienne si elle
+ *  existe (appariée par email), plus tout ce qui m'a été partagé pour la même
+ *  identité. Alimente le sélecteur « Moi | [Nom] » de la fiche personne. */
+export async function listFicheVisions(workspaceId: string, personId: string): Promise<FicheVision[]> {
+  const { data, error } = await getSupabase().rpc('list_fiche_visions', {
+    p_organization_id: workspaceId, p_contact_id: personId,
+  })
+  if (error) throw error
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    organizationId: String(row.organization_id),
+    contactId: String(row.contact_id),
+    isMine: Boolean(row.is_mine),
+    ownerUserId: String(row.owner_user_id),
+    ownerName: String(row.owner_name ?? 'Membre'),
+    shareNote: row.share_note ? String(row.share_note) : null,
+  }))
+}
+
+export type SharedWithMeEntry = {
+  organizationId: string
+  entityId: string
+  fullName: string
+  jobTitle: string | null
+  avatarUrl: string | null
+  fromUserId: string
+  fromName: string
+  note: string | null
+  sharedAt: string
+  alreadyMine: boolean
+}
+
+/** Fiches partagées à moi, quelle que soit l'organisation où elles vivent —
+ *  la page Personnes filtre normalement par un seul workspace actif, donc
+ *  c'est le seul moyen d'atteindre une fiche partagée qu'on ne possède pas
+ *  encore soi-même. */
+export async function listSharedWithMe(entityType: 'contact' | 'company' = 'contact'): Promise<SharedWithMeEntry[]> {
+  const { data, error } = await getSupabase().rpc('list_shared_with_me', { p_entity_type: entityType })
+  if (error) throw error
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    organizationId: String(row.organization_id),
+    entityId: String(row.entity_id),
+    fullName: String(row.full_name ?? 'Sans nom'),
+    jobTitle: row.job_title ? String(row.job_title) : null,
+    avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
+    fromUserId: String(row.from_user_id),
+    fromName: String(row.from_name ?? 'Membre'),
+    note: row.note ? String(row.note) : null,
+    sharedAt: String(row.shared_at),
+    alreadyMine: Boolean(row.already_mine),
+  }))
+}
+
 /** Visibilité : « workspace » (toute l'organisation) ou « restricted » (équipe restreinte). */
 export async function setPersonVisibility(data: PersonDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
   const { error } = await getSupabase().from('person_settings').upsert({

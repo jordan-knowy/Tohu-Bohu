@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { createPerson } from '../services/data'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
+import { listSharedWithMe, type SharedWithMeEntry } from '../person-detail/service'
 import { ToastProvider, useBusy, useToast } from '../person-detail/ui'
 import { setBohuBarShrunk } from '../shell/bohuBarSignal'
 import {
@@ -87,12 +88,34 @@ function CreatePersonModal({ workspaceId, onClose, refresh }: { workspaceId: str
   />
 }
 
+/** Fiches partagées par d'autres membres de l'équipe : elles vivent dans leur
+ *  organisation, pas la mienne, donc invisibles via le filtre workspace normal
+ *  de la liste — seul point d'entrée pour les atteindre (voir list_shared_with_me). */
+function SharedWithMe({ entries }: { entries: SharedWithMeEntry[] }) {
+  if (!entries.length) return null
+  return <div className="pa-shared-with-me">
+    <div className="pa-shared-with-me-title">Partagé avec moi</div>
+    <div className="pa-shared-with-me-list">
+      {entries.map((entry) => (
+        <Link key={entry.entityId} className="pa-shared-with-me-row" to={`/app/people/${entry.entityId}?org=${entry.organizationId}`}>
+          <ContactAvatar src={entry.avatarUrl} name={entry.fullName} />
+          <div className="pa-shared-with-me-copy">
+            <strong>{entry.fullName}</strong>
+            <span>{[entry.jobTitle, `partagée par ${entry.fromName}`].filter(Boolean).join(' · ')}</span>
+          </div>
+        </Link>
+      ))}
+    </div>
+  </div>
+}
+
 function PageBody({ context }: { context: PageContext }) {
   const navigate = useNavigate()
   const toast = useToast()
   const [, run] = useBusy()
   const [overview, setOverview] = useState<PeopleOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sharedWithMe, setSharedWithMe] = useState<SharedWithMeEntry[]>([])
   const [ownerFilter, setOwnerFilter] = useState<string[]>([])
   const [relationFilter, setRelationFilter] = useState<string[]>([])
   const [accountFilter, setAccountFilter] = useState<string[]>([])
@@ -122,6 +145,7 @@ function PageBody({ context }: { context: PageContext }) {
     }
   }, [context.workspaceId, context.userId])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void listSharedWithMe('contact').then(setSharedWithMe).catch(() => setSharedWithMe([])) }, [context.workspaceId])
 
   const toggleIn = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (value: string) =>
     setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
@@ -206,6 +230,7 @@ function PageBody({ context }: { context: PageContext }) {
 
   return <div className="pa">
     <Ticker ticker={overview.ticker} />
+    <SharedWithMe entries={sharedWithMe} />
     {overview.degradedReasons.length > 0 && <div className="pa-degraded"><strong>Données partielles</strong> {overview.degradedReasons.join(' · ')}</div>}
     <div className="dxp-toolbar dxa-toolbar">
       <div className="dxp-tools-l">

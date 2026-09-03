@@ -410,6 +410,65 @@ export async function getAccountFicheSharesReceived(workspaceId: string, entityI
   }))
 }
 
+export type AccountVision = {
+  organizationId: string
+  companyId: string
+  isMine: boolean
+  ownerUserId: string
+  ownerName: string
+  shareNote: string | null
+}
+
+/** Visions disponibles pour le compte actuellement ouvert : la mienne si elle
+ *  existe (appariée par domaine), plus tout ce qui m'a été partagé pour la
+ *  même entreprise. Alimente le sélecteur « Moi | [Nom] » de la fiche compte. */
+export async function listAccountVisions(workspaceId: string, accountId: string): Promise<AccountVision[]> {
+  const { data, error } = await getSupabase().rpc('list_account_visions', {
+    p_organization_id: workspaceId, p_company_id: accountId,
+  })
+  if (error) throw error
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    organizationId: String(row.organization_id),
+    companyId: String(row.company_id),
+    isMine: Boolean(row.is_mine),
+    ownerUserId: String(row.owner_user_id),
+    ownerName: String(row.owner_name ?? 'Membre'),
+    shareNote: row.share_note ? String(row.share_note) : null,
+  }))
+}
+
+export type SharedAccountEntry = {
+  organizationId: string
+  entityId: string
+  name: string
+  domain: string | null
+  industry: string | null
+  fromUserId: string
+  fromName: string
+  note: string | null
+  sharedAt: string
+  alreadyMine: boolean
+}
+
+/** Fiches compte partagées à moi, quelle que soit l'organisation où elles
+ *  vivent — mêmes raisons que listSharedWithMe côté fiche personne. */
+export async function listSharedAccountsWithMe(): Promise<SharedAccountEntry[]> {
+  const { data, error } = await getSupabase().rpc('list_shared_accounts_with_me')
+  if (error) throw error
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    organizationId: String(row.organization_id),
+    entityId: String(row.entity_id),
+    name: String(row.name ?? 'Sans nom'),
+    domain: row.domain ? String(row.domain) : null,
+    industry: row.industry ? String(row.industry) : null,
+    fromUserId: String(row.from_user_id),
+    fromName: String(row.from_name ?? 'Membre'),
+    note: row.note ? String(row.note) : null,
+    sharedAt: String(row.shared_at),
+    alreadyMine: Boolean(row.already_mine),
+  }))
+}
+
 /** Verrou SPEC-09 : masque le compte (mémoire, mêmes politiques à venir) aux
  *  non-autorisés. Seul l'auteur du verrou peut le lever (appliqué par la RLS
  *  resource_lock_owner_release, pas seulement côté client). */

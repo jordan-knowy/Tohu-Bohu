@@ -2,6 +2,15 @@
    ticker/toolbar/popover/passation/modale). Seule la grille de la table
    diffère (colonnes propres aux personnes : poste, compte, dernier contact). */
 
+.pa .pa-shared-with-me{margin-bottom:14px;padding:12px 14px;border:1px solid var(--violet-x);background:var(--violet-s);border-radius:var(--r-md)}
+.pa .pa-shared-with-me-title{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--violet-d);margin-bottom:9px}
+.pa .pa-shared-with-me-list{display:flex;flex-wrap:wrap;gap:8px}
+.pa .pa-shared-with-me-row{display:flex;align-items:center;gap:9px;padding:7px 12px 7px 7px;background:#fff;border:1px solid var(--grid);border-radius:999px;text-decoration:none;color:inherit;max-width:280px}
+.pa .pa-shared-with-me-row:hover{border-color:var(--violet)}
+.pa .pa-shared-with-me-copy{display:flex;flex-direction:column;min-width:0}
+.pa .pa-shared-with-me-copy strong{font-family:var(--font);font-size:12px;color:var(--t1);white-space:normal;word-break:break-word}
+.pa .pa-shared-with-me-copy span{font-family:var(--mono);font-size:9.5px;color:var(--t3);white-space:normal;word-break:break-word}
+
 .pa .dxpp-head,.pa .dxpp-row{display:grid;grid-template-columns:24px 20px 38px 1.05fr .85fr .85fr .6fr 42px 78px 118px 40px 44px;gap:13px;align-items:center}
 .pa .dxpp-head{padding:11px 18px;font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--border);background:#FBFAFE}
 .pa .dxpp-head .center{justify-content:center;text-align:center}
