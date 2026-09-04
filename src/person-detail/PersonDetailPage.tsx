@@ -4,11 +4,12 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { AccountConnectorsPill } from '../account-detail/AccountRelationView'
-import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, listFicheVisions, renamePerson, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, setPersonWatch, sharePerson, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
-import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView, V48PersonSourceNote } from './V48PersonViews'
+import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, grantPersonAccess, listAccessGrants, listFicheVisions, renamePerson, revokePersonAccess, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
+import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
 import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
+import { setTopbarHeader } from '../shell/topbarHeaderSignal'
 
 type PageContext = { workspaceId: string; userId: string }
 type PersonDetailTab = 'profile' | 'relation' | 'live'
@@ -75,6 +76,9 @@ function ChipMenu({ label, value, color, options, onSelect, icon }: {
 
 /** Affectation de la fiche : owner (assigné depuis les membres du workspace) +
  *  visibilité organisation / restreinte. Persisté dans person_settings. */
+const ShareIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="M8.2 10.9l7-3.6M8.2 13.1l7 3.6" /></svg>
+const LockIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2.2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /></svg>
+
 function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, run] = useBusy()
@@ -83,8 +87,9 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   const [visOpen, setVisOpen] = useState(false)
   const [ownerPos, setOwnerPos] = useState<{ top: number; left: number } | null>(null)
   const [visPos, setVisPos] = useState<{ top: number; left: number } | null>(null)
-  const [passationOpen, setPassationOpen] = useState(false)
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
+  const [grantedIds, setGrantedIds] = useState<string[] | null>(null)
+  const [memberQuery, setMemberQuery] = useState('')
   // Les deux menus sont portalés sur document.body (voir CSS .v48-affect-pop) pour ne
   // jamais se retrouver visuellement cachés derrière une section suivante de la fiche —
   // donc la fermeture au clic extérieur doit aussi tenir compte des refs de menu, pas
@@ -104,6 +109,29 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
     return () => document.removeEventListener('click', close)
   }, [])
 
+  // Portalés sur document.body en position:fixed (calculée au clic) : sans ce recalage,
+  // scroller la fiche pendant que le menu est ouvert le laisse « flotter » loin de son
+  // bouton au lieu de rester ancré dessous. Retour testing sur le menu Organisation.
+  useEffect(() => {
+    if (!ownerOpen && !visOpen) return
+    const reposition = () => {
+      if (ownerOpen && ownerBtnRef.current) {
+        const rect = ownerBtnRef.current.getBoundingClientRect()
+        setOwnerPos({ top: rect.bottom + 6, left: rect.left })
+      }
+      if (visOpen && visBtnRef.current) {
+        const rect = visBtnRef.current.getBoundingClientRect()
+        setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 360) })
+      }
+    }
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [ownerOpen, visOpen])
+
   const openOwner = () => {
     if (!ownerOpen && ownerBtnRef.current) {
       const rect = ownerBtnRef.current.getBoundingClientRect()
@@ -115,9 +143,11 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   const openVis = () => {
     if (!visOpen && visBtnRef.current) {
       const rect = visBtnRef.current.getBoundingClientRect()
-      setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 250) })
+      setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 360) })
     }
     setVisOpen((value) => !value); setOwnerOpen(false)
+    if (members === null) void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([]))
+    if (grantedIds === null) void listAccessGrants(person.workspaceId, person.id).then(setGrantedIds).catch(() => setGrantedIds([]))
   }
   const chooseOwner = (ownerUserId: string | null, name: string) => void run('owner', async () => {
     await setPersonOwner(data, userId, ownerUserId)
@@ -127,51 +157,83 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   })
   const chooseVisibility = (visibility: 'workspace' | 'restricted') => void run('vis', async () => {
     await setPersonVisibility(data, userId, visibility)
-    setVisOpen(false)
-    toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe.')
+    if (visibility === 'restricted' && !person.locked) await setPersonLock(data, userId, true)
+    if (visibility === 'workspace' && person.locked && person.lockedByMe) await setPersonLock(data, userId, false)
+    toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe invitée.')
     await refresh()
   })
+  const toggleGrant = (member: WorkspaceMember) => void run(`grant-${member.id}`, async () => {
+    const isGranted = (grantedIds ?? []).includes(member.id)
+    if (isGranted) {
+      await revokePersonAccess(data, member.id)
+      setGrantedIds((ids) => (ids ?? []).filter((id) => id !== member.id))
+    } else {
+      await grantPersonAccess(data, userId, member.id)
+      setGrantedIds((ids) => [...(ids ?? []), member.id])
+    }
+  })
+  const filteredMembers = (members ?? []).filter((member) => member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
 
   return <div className="v48-owner-card v48-affect">
-    <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
-    <div className="v48-affect-body">
-      <span className="v48-owner-l">Owner de la fiche</span>
-      <strong>{person.primaryOwnerName ?? 'Non affecté'}</strong>
-      <div className="v48-affect-actions">
-        <span className="v48-affect-menu">
-          <button ref={ownerBtnRef} type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
-          {ownerOpen && ownerPos && createPortal(
-            <div ref={ownerMenuRef} className="v48-affect-pop" role="menu" style={{ top: ownerPos.top, left: ownerPos.left }}>
-              {members === null
-                ? <div className="v48-affect-loading">Chargement…</div>
-                : members.length === 0
-                  ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
-                  : <>
-                    {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === person.primaryOwnerUserId} className={member.id === person.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
-                      <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
-                    </button>)}
-                    {person.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
-                  </>}
-            </div>, document.body)}
-        </span>
-        <span className="v48-affect-menu">
-          <button ref={visBtnRef} type="button" className={`v48-affect-vis vis-${person.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={openVis}>
-            {person.visibility === 'restricted' ? 'Restreint' : 'Organisation'} <span aria-hidden="true">▾</span>
-          </button>
-          {visOpen && visPos && createPortal(
-            <div ref={visMenuRef} className="v48-affect-pop wide" role="menu" style={{ top: visPos.top, left: visPos.left }}>
-              <button type="button" role="menuitemradio" aria-checked={person.visibility === 'workspace'} className={`vo ${person.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
-                <div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div>
-              </button>
-              <button type="button" role="menuitemradio" aria-checked={person.visibility === 'restricted'} className={`vo ${person.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
-                <div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe restreinte.</div>
-              </button>
-            </div>, document.body)}
-        </span>
-        <button type="button" className="v48-affect-link v48-affect-handover" disabled={busy !== null} onClick={() => setPassationOpen(true)}>Passer la relation</button>
+    <div className="v48-owner-row">
+      <span className="v48-owner-avatar">{initials(person.primaryOwnerName ?? 'À confirmer')}</span>
+      <div className="v48-affect-body">
+        <span className="v48-owner-l">Owner de la fiche</span>
+        <strong>{person.primaryOwnerName ?? 'Non affecté'}</strong>
+        <div className="v48-affect-actions">
+          <span className="v48-affect-menu">
+            <button ref={ownerBtnRef} type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
+            {ownerOpen && ownerPos && createPortal(
+              <div ref={ownerMenuRef} className="v48-affect-pop" role="menu" style={{ top: ownerPos.top, left: ownerPos.left }}>
+                {members === null
+                  ? <div className="v48-affect-loading">Chargement…</div>
+                  : members.length === 0
+                    ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
+                    : <>
+                      {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === person.primaryOwnerUserId} className={member.id === person.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
+                        <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
+                      </button>)}
+                      {person.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
+                    </>}
+              </div>, document.body)}
+          </span>
+        </div>
       </div>
     </div>
-    {passationOpen && <PassationModal data={data} userId={userId} refresh={refresh} onClose={() => setPassationOpen(false)} />}
+    <span className="v48-affect-menu v48-affect-vis-menu">
+      <button ref={visBtnRef} type="button" className={`v48-affect-vis vis-${person.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={openVis}>
+        <span className="v48-affect-vis-ic" aria-hidden="true">{person.visibility === 'restricted' ? LockIcon : ShareIcon}</span>
+        {person.visibility === 'restricted' ? `Restreint · ${grantedIds?.length ?? 0} pers.` : 'Organisation'} <span aria-hidden="true">▾</span>
+      </button>
+      {visOpen && visPos && createPortal(
+        <div ref={visMenuRef} className="v48-affect-pop wide" role="menu" style={{ top: visPos.top, left: visPos.left }}>
+          <button type="button" role="menuitemradio" aria-checked={person.visibility === 'workspace'} className={`vo ${person.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
+            <span className="vo-ic vo-ic-org">{ShareIcon}</span>
+            <span><div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div></span>
+          </button>
+          <button type="button" role="menuitemradio" aria-checked={person.visibility === 'restricted'} className={`vo ${person.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
+            <span className="vo-ic vo-ic-lock">{LockIcon}</span>
+            <span><div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe invitée uniquement.</div></span>
+          </button>
+          {person.visibility === 'restricted' && <div className="vo-grants">
+            <p className="vo-grants-l">Personnes invitées</p>
+            <input type="text" className="vo-grants-search" placeholder="Rechercher une personne…" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} />
+            <div className="vo-grants-list">
+              {members === null || grantedIds === null
+                ? <div className="v48-affect-loading">Chargement…</div>
+                : filteredMembers.map((member) => <label key={member.id} className="vo-grant-row">
+                  <span className="v48-affect-ini">{initials(member.fullName)}</span>
+                  <span>{member.fullName}</span>
+                  <input type="checkbox" checked={grantedIds.includes(member.id)} disabled={busy !== null} onChange={() => toggleGrant(member)} />
+                </label>)}
+            </div>
+            <p className="vo-grants-note">Seul le détail des échanges est masqué aux non-invités.</p>
+          </div>}
+          <p className="vo-foot">{person.visibility === 'restricted'
+            ? (person.lockedByName ? `Restreint par ${person.lockedByName} · ${relativeDate(person.lockedAt).toLowerCase()}` : 'Restreint')
+            : 'Visible par toute l’organisation'}</p>
+        </div>, document.body)}
+    </span>
   </div>
 }
 
@@ -195,52 +257,6 @@ function VisionSwitcher({ visions, activeContactId, onSwitch }: { visions: Fiche
       </button>
     ))}
   </div>
-}
-
-/** Partage de fiche : choix d'un membre de l'équipe + note de contexte, puis
- *  refresh. Additif — n'affecte jamais l'owner (voir sharePerson). */
-function PassationModal({ data, userId, refresh, onClose }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; onClose: () => void }) {
-  const toast = useToast()
-  const person = data.person
-  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
-  const [toUserId, setToUserId] = useState('')
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { void fetchWorkspaceMembers(person.workspaceId).then(setMembers).catch(() => setMembers([])) }, [person.workspaceId])
-  const candidates = (members ?? []).filter((member) => member.id !== userId)
-  const submit = async () => {
-    const target = candidates.find((member) => member.id === toUserId)
-    if (!target) return
-    setSaving(true)
-    try {
-      await sharePerson(data, target.id, note)
-      toast(`Fiche partagée avec ${target.fullName} — tu gardes ta propre relation.`)
-      onClose()
-      await refresh()
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Partage impossible.', 'error')
-    } finally { setSaving(false) }
-  }
-  return createPortal(
-    <div className="v48-shm" onClick={onClose}>
-      <div className="v48-shp" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="v48-shp-h"><p className="v48-shp-t">Passer la relation</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
-        <p className="v48-shp-i">Partage <b>{person.fullName}</b> avec un membre de l’équipe. Tu gardes ta propre relation — il/elle reçoit sa propre vue de cette fiche en plus.</p>
-        <p className="v48-shp-l">Partager avec</p>
-        {members === null
-          ? <div className="v48-affect-loading">Chargement…</div>
-          : <select className="pp-select" value={toUserId} onChange={(event) => setToUserId(event.target.value)} style={{ width: '100%' }}>
-              <option value="" disabled>Choisir un membre…</option>
-              {candidates.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
-            </select>}
-        <p className="v48-shp-l" style={{ marginTop: 12 }}>Note de contexte <em style={{ textTransform: 'none', letterSpacing: 0 }}>(optionnel)</em></p>
-        <textarea className="feed-txt" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex : dossier en cours sur le devis, Christèle est le bon relai." style={{ width: '100%', minHeight: 70 }} />
-        <div className="v48-shp-actions">
-          <button type="button" className="feed-btn" onClick={onClose}>Annuler</button>
-          <button type="button" className="feed-save" disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Partage…' : 'Partager la fiche'}</button>
-        </div>
-      </div>
-    </div>, document.body)
 }
 
 function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; readOnly: boolean }) {
@@ -272,55 +288,56 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
     await refresh()
   })
   const subtitle = [person.jobTitle, data.employment?.accountName].filter(Boolean).join(' · ')
-  return <div className="hero-header v48-identity-card">
+  return <div className="hero-header v48-identity-card person-hero">
     <div className="hero-body v48-identity-body">
       <div className="hero-left v48-identity-left">
-        <div className="v48-avatar-wrap">
-          <ContactAvatar src={person.avatarUrl} name={person.fullName} />
-          <i aria-hidden="true" />
-        </div>
-        <div className="v48-identity-copy">
-          <div className="v48-eyebrow"><Link to="/app/people" className="v48-eyebrow-back">← Personnes</Link> / {person.fullName}</div>
-          <div className="v48-name-row">
-            <div className="hero-name">
-            {editingName
-              ? <form className="hero-name-edit" onSubmit={saveName}>
-                <label className="sr-only" htmlFor="hero-name-input">Nom complet</label>
-                <input id="hero-name-input" className="pp-input" value={nameValue} onChange={(event) => setNameValue(event.target.value)} autoFocus />
-                <button className="contact-copy" disabled={busy !== null}>OK</button>
-                <button type="button" className="contact-copy" onClick={() => setEditingName(false)}>✕</button>
-              </form>
-              : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
-            <FavoriteRow data={data} userId={userId} refresh={refresh} />
+        <div className="v48-identity-top">
+          <div className="v48-avatar-wrap">
+            <ContactAvatar src={person.avatarUrl} name={person.fullName} />
+            <i aria-hidden="true" />
+          </div>
+          <div className="v48-identity-copy">
+            <div className="v48-eyebrow">Personnes / {person.fullName}</div>
+            <div className="v48-name-row">
+              <div className="hero-name">
+              {editingName
+                ? <form className="hero-name-edit" onSubmit={saveName}>
+                  <label className="sr-only" htmlFor="hero-name-input">Nom complet</label>
+                  <input id="hero-name-input" className="pp-input" value={nameValue} onChange={(event) => setNameValue(event.target.value)} autoFocus />
+                  <button className="contact-copy" disabled={busy !== null}>OK</button>
+                  <button type="button" className="contact-copy" onClick={() => setEditingName(false)}>✕</button>
+                </form>
+                : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
+              <FavoriteRow data={data} userId={userId} refresh={refresh} />
+              </div>
+            </div>
+            <div className="hero-sub">
+              <span>{subtitle || 'Fonction à confirmer'}</span>
+              {person.location && <><span className="hero-dot" /><span>{person.location}</span></>}
             </div>
           </div>
-          <div className="hero-sub">
-            <span>{subtitle || 'Fonction à confirmer'}</span>
-            {person.location && <><span className="hero-dot" /><span>{person.location}</span></>}
-            {person.primaryOwnerName && <><span className="hero-dot" /><span>Owner : {person.primaryOwnerName}</span></>}
-          </div>
-          <div className="mh-meta">
-            <ChipMenu
-              label="Relation"
-              value={person.relationshipType}
-              color={RELATION_COLORS[person.relationshipType ?? ''] ?? '#6B6480'}
-              options={RELATIONSHIP_TYPES.map((value) => ({ value, hint: RELATION_VERBS[value] ?? '', color: RELATION_COLORS[value] }))}
-              onSelect={setRelation}
-            />
-            <ChipMenu
-              label="Rôle"
-              value={person.decisionRole}
-              icon={<span className="rel-ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#C9B8FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="2.4" /><circle cx="5" cy="19" r="2.4" /><circle cx="19" cy="19" r="2.4" /><path d="M12 7.4v3.2M12 10.6L5.8 16.6M12 10.6l6.2 6" /></svg></span>}
-              options={DECISION_ROLES.map((value) => ({ value, hint: ROLE_POWER[value] ?? '' }))}
-              onSelect={setRole}
-            />
-            {data.employment && <Link className="v48-account-chip" to={`/app/accounts/${data.employment.accountId}`}>
-              <span className="v48-account-chip-label">Entreprise</span>
-              <span className="v48-account-chip-logo">{initials(data.employment.accountName)}</span>
-              <strong>{data.employment.accountName}</strong>
-              <span>→</span>
-            </Link>}
-          </div>
+        </div>
+        <div className="mh-meta">
+          <ChipMenu
+            label="Relation"
+            value={person.relationshipType}
+            color={RELATION_COLORS[person.relationshipType ?? ''] ?? '#6B6480'}
+            options={RELATIONSHIP_TYPES.map((value) => ({ value, hint: RELATION_VERBS[value] ?? '', color: RELATION_COLORS[value] }))}
+            onSelect={setRelation}
+          />
+          <ChipMenu
+            label="Rôle"
+            value={person.decisionRole}
+            icon={<span className="rel-ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#C9B8FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="2.4" /><circle cx="5" cy="19" r="2.4" /><circle cx="19" cy="19" r="2.4" /><path d="M12 7.4v3.2M12 10.6L5.8 16.6M12 10.6l6.2 6" /></svg></span>}
+            options={DECISION_ROLES.map((value) => ({ value, hint: ROLE_POWER[value] ?? '' }))}
+            onSelect={setRole}
+          />
+          {data.employment && <Link className="v48-account-chip" to={`/app/accounts/${data.employment.accountId}`}>
+            <span className="v48-account-chip-label">Entreprise</span>
+            <span className="v48-account-chip-logo">{initials(data.employment.accountName)}</span>
+            <strong>{data.employment.accountName}</strong>
+            <span>→</span>
+          </Link>}
         </div>
       </div>
       <div className="hero-right v48-identity-right">
@@ -335,27 +352,6 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
         {!readOnly && <OwnerAffectation data={data} userId={userId} refresh={refresh} />}
       </div>
     </div>
-  </div>
-}
-
-function WatchCard({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
-  const toast = useToast()
-  const [busy, run] = useBusy()
-  const toggleWatch = () => void run('watch', async () => {
-    await setPersonWatch(data, userId, !data.person.watchEnabled)
-    toast(data.person.watchEnabled ? 'Veille désactivée.' : 'Veille activée — signaux internes & externes.')
-    await refresh()
-  })
-  return <div className="kveille rail-veille">
-    <span className="kveille-ic" aria-hidden="true">🛰️</span>
-    <div className="kveille-tx">
-      <div className="kveille-t">Veille Tohu</div>
-      <div className="kveille-s">signaux internes &amp; externes</div>
-    </div>
-    <button type="button" className={`ktog ${data.person.watchEnabled ? 'on' : ''}`} disabled={busy !== null} aria-pressed={data.person.watchEnabled} onClick={toggleWatch}>
-      <span className="ktog-lbl">{data.person.watchEnabled ? 'Activée' : 'Désactivée'}</span>
-      <span className="ktog-sw" aria-hidden="true" />
-    </button>
   </div>
 }
 
@@ -661,7 +657,6 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, o
   // de régénérer et obtenir le « comment aborder » ancré sur les échanges.
   const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
   return <>
-    <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <VisionSwitcher visions={visions} activeContactId={activeContactId} onSwitch={onSwitchVision} />
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
@@ -685,7 +680,6 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, o
     /></div>}
     {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
-    <V48PersonSourceNote data={data} />
     {contactOpen && <PersonContactDialog data={data} userId={userId} refresh={refresh} onClose={() => setContactOpen(false)} />}
   </>
 }
@@ -718,6 +712,11 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
     }
   }, [view.organizationId, view.contactId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
+  useEffect(() => {
+    if (!data) return
+    setTopbarHeader({ backTo: '/app/people', backLabel: 'Retour', title: data.person.fullName })
+    return () => setTopbarHeader(null)
+  }, [data?.person.fullName])
 
   if (error === 'PERSON_NOT_FOUND') return <div className="ra-state"><h1>Personne introuvable</h1><p>Cette personne n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/people">Retour aux personnes</Link></div>
   if (error === 'PERSON_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas les droits nécessaires pour consulter cette personne.</p><Link to="/app/people">Retour aux personnes</Link></div>

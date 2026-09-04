@@ -209,6 +209,23 @@ export type PersonSourceStatus = {
   error: string | null
 }
 
+/** contacts.enrichment_data (recherche web) — jamais du contenu de messages,
+ *  toujours sourcé (url/source par entrée). Null tant qu'aucun enrichissement n'a eu lieu. */
+export type PersonEnrichmentActivity = { title: string; date: string | null; source: string | null; url: string | null }
+export type PersonEnrichmentContact = { name: string; role: string | null; why: string | null }
+export type PersonEnrichmentProfile = {
+  summary: string | null
+  currentRole: string | null
+  currentCompany: string | null
+  roleStartedAt: string | null
+  roleConfidence: string | null
+  location: string | null
+  linkedinUrl: string | null
+  talkingPoints: string[]
+  relatedPeople: PersonEnrichmentContact[]
+  recentActivity: PersonEnrichmentActivity[]
+}
+
 export type PersonHistoryEvent = {
   id: string
   type: 'meeting' | 'email' | 'signal' | 'note' | 'career' | 'score'
@@ -269,6 +286,8 @@ export interface PersonDetailData {
     updatedAt: string | null
     locked: boolean
     lockedByMe: boolean
+    lockedByName: string | null
+    lockedAt: string | null
   }
 
   summary: {
@@ -343,6 +362,7 @@ export interface PersonDetailData {
   careerEntries: PersonCareerEntry[]
   memoryEntries: PersonMemoryEntry[]
   keyMoments: PersonKeyMoment[]
+  enrichment: PersonEnrichmentProfile | null
   history: PersonHistoryEvent[]
   nameSuggestion: PersonNameSuggestion | null
   mergeSuggestions: PersonMergeSuggestion[]

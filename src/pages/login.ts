@@ -15,6 +15,26 @@ function setError(message: string): void {
   if (errorBox) errorBox.textContent = message
 }
 
+// Lien d'invitation d'équipe (voir supabase/functions/invite-team-member) : porte
+// l'identité de l'invitant directement dans l'URL plutôt que via un lien magique
+// Supabase — Tohu n'a que du SSO (Google/Microsoft/LinkedIn), donc la personne se
+// connecte normalement ici, avec juste ce message contextuel en plus.
+const inviteParams = new URLSearchParams(window.location.search)
+const invitedBy = inviteParams.get('invited_by')
+const invitedOrg = inviteParams.get('org')
+if (invitedBy) {
+  const eyebrow = document.querySelector('#auth-eyebrow')
+  const title = document.querySelector('#auth-title')
+  const intro = document.querySelector('#auth-intro')
+  const help = document.querySelector('#auth-help')
+  if (eyebrow) eyebrow.textContent = 'Invitation'
+  if (title) title.textContent = `${invitedBy} t’ajoute à son équipe`
+  if (intro) intro.textContent = invitedOrg
+    ? `Connecte-toi pour rejoindre ${invitedOrg} sur Tohu.`
+    : 'Connecte-toi pour rejoindre son équipe sur Tohu.'
+  if (help) help.remove()
+}
+
 async function routeExistingSession(): Promise<void> {
   if (!isSupabaseConfigured) return
   const { data } = await getSupabase().auth.getSession()

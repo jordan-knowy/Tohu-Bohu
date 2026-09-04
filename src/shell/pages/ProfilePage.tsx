@@ -61,7 +61,7 @@ function buildSelfDetail(profile: ProfileRow, behavior: Behavior, workspaceId: s
       relationshipType: 'Interne', decisionRole: null, relationshipRole: null,
       favorite: false, watchEnabled: false, archivedAt: null, primaryOwnerName: profile.full_name,
       primaryOwnerUserId: null, visibility: 'workspace',
-      createdAt: null, updatedAt, locked: false, lockedByMe: false,
+      createdAt: null, updatedAt, locked: false, lockedByMe: false, lockedByName: null, lockedAt: null,
     },
     summary: behavior?.executive_summary ? {
       text: behavior.executive_summary, confidence: behavior.global_confidence, generatedAt: updatedAt,
@@ -90,7 +90,7 @@ function buildSelfDetail(profile: ProfileRow, behavior: Behavior, workspaceId: s
       insights: [], evidences: [], updatedAt,
     },
     sources: sourceRows(behavior), recommendations: [], signals: [], contactDetails: [], careerEntries: [],
-    memoryEntries: [], keyMoments: [], history: [], nameSuggestion: null, mergeSuggestions: [],
+    memoryEntries: [], enrichment: null, keyMoments: [], history: [], nameSuggestion: null, mergeSuggestions: [],
   }
 }
 

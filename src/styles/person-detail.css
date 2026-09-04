@@ -962,8 +962,10 @@
 .pp .rel-chip{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:11px;font-weight:600;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(212,197,245,.42);cursor:pointer;transition:.15s}
 .pp .rel-chip:hover{background:rgba(255,255,255,.28);border-color:rgba(212,197,245,.55)}
 .pp .rel-k{font-family:var(--mono);color:rgba(212,197,245,.6);text-transform:uppercase;letter-spacing:.06em;font-size:8px;font-weight:700}
-.pp .rel-dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block;box-shadow:0 0 0 3px rgba(255,255,255,.12)}
-.pp .rel-ic{display:inline-flex;align-items:center}
+/* Légèrement remontés (margin-top négatif) : centrés dans la box de la ligne, dot et
+   icône paraissaient décalés vers le bas par rapport au texte du chip. Retour testing. */
+.pp .rel-dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block;box-shadow:0 0 0 3px rgba(255,255,255,.12);margin-top:-1px}
+.pp .rel-ic{display:inline-flex;align-items:center;margin-top:-1px}
 .pp .rel-v{font-weight:700;color:#fff;font-size:12px}
 .pp .rel-c{color:rgba(212,197,245,.7);font-size:10px;margin-left:1px}
 .pp .live-ic{display:inline-flex;align-items:center;vertical-align:-2px;margin-right:3px}
@@ -1270,11 +1272,12 @@
 .pp .relhist.collapsed .rh-tl{display:none}
 .pp .relhist.collapsed .rh-toggle{display:none}
 .pp .relhist.collapsed .rh-synth{border-bottom:0;margin-bottom:0}
-.pp .rh-expand{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.03em;color:var(--violet);background:transparent;border:0;border-top:1px solid var(--border);padding:12px 0 3px;margin-top:8px;cursor:pointer}
-.pp .relhist.collapsed .rh-expand{border-top:1px solid var(--border)}
-.pp .rh-expand svg{width:13px;height:13px;transition:transform .2s ease}
+/* Pilule pleine largeur (pas un lien texte discret) — s'assombrit au survol, texte
+   blanc. Retour testing : devait matcher la capture (fond lavande → violet foncé). */
+.pp .rh-expand{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font);font-size:13px;font-weight:800;letter-spacing:0;color:var(--violet);background:var(--lav);border:1px solid transparent;border-radius:999px;padding:14px 0;margin-top:14px;cursor:pointer;transition:background .15s,color .15s}
+.pp .rh-expand svg{width:14px;height:14px;transition:transform .2s ease}
 .pp .relhist:not(.collapsed) .rh-expand svg{transform:rotate(180deg)}
-.pp .rh-expand:hover{color:var(--violet-d,var(--violet))}
+.pp .rh-expand:hover{background:var(--violet-d);color:#fff}
 .pp .kfav{display:flex;align-items:center;gap:12px;background:var(--lavande,#F4F1FC);border:1px solid var(--border);border-radius:12px;padding:11px 15px;margin-bottom:15px}
 .pp .kfav-star{width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;flex:none;color:var(--t3);transition:all .15s}
 .pp .kfav.on .kfav-star{background:#FDF4E3;border-color:var(--amber);color:var(--amber)}
@@ -1847,14 +1850,14 @@
 }
 .ra-content .pp>.hero-header{
   margin-bottom:14px;
-  border:1px solid #dcd5f0;
-  border-radius:16px;
+  border:1px solid #ECE9F5;
+  border-radius:24px;
   background:#fff;
-  box-shadow:none;
+  box-shadow:0 4px 16px rgba(26,16,64,.04);
   color:var(--t1);
 }
 .ra-content .pp>.hero-header::before{display:none}
-.ra-content .pp>.hero-header .hero-body{padding:20px 24px}
+.ra-content .pp>.hero-header .hero-body{padding:22px 36px}
 .ra-content .pp>.hero-header .hero-name{color:var(--t1);font-size:29px;letter-spacing:-.02em}
 .ra-content .pp>.hero-header .hero-name-edit-btn{
   border-color:#dcd5f0;
@@ -1887,6 +1890,9 @@
   border-color:#dcd5f0;
   background:#fff;
   color:var(--t1);
+  min-height:38px;
+  padding:0 14px;
+  border-radius:999px;
 }
 .ra-content .pp>.hero-header .rel-k{color:#8b84a3}
 .ra-content .pp>.hero-header .rel-v{color:var(--t1)}
@@ -1963,16 +1969,33 @@
 
 /* V48 — identité commune */
 /* Bandeau au-dessus des cartes suivantes pour que les menus (owner / organisation)
-   passent en premier plan et ne soient pas recouverts. (Retour testing.) */
-.ra-content .pp>.v48-identity-card{position:relative;z-index:20}
+   passent en premier plan et ne soient pas recouverts. (Retour testing.)
+   z-index sous celui du topbar sticky (20) : au scroll, la carte doit passer
+   derrière le bandeau du haut, jamais devant. */
+.ra-content .pp>.v48-identity-card{position:relative;z-index:1}
 .ra-content .pp>.v48-identity-card .v48-identity-body{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:24px;
-  padding:20px 24px;
+  padding:22px 36px;
 }
 .ra-content .pp>.v48-identity-card .v48-identity-left{display:flex;align-items:center;gap:16px;min-width:0}
+/* Fiche Personne (.person-hero) : l'avatar reste au niveau du nom (pas centré sur
+   toute la hauteur de la carte) et les chips Relation/Rôle/Entreprise descendent
+   en bas de la carte, alignées à gauche sur le même bord que la photo de profil
+   (pas indentées sous le nom) — proportions de la maquette. */
+.ra-content .pp>.v48-identity-card.person-hero .v48-identity-body{align-items:stretch}
+.ra-content .pp>.v48-identity-card.person-hero .v48-identity-left{flex-direction:column;align-items:stretch;justify-content:space-between;gap:0}
+.person-hero .v48-identity-top{display:flex;align-items:flex-start;gap:16px;min-width:0}
+/* Un peu plus d'air entre fil d'ariane / nom / sous-titre — trop collés. Retour testing. */
+.person-hero .v48-eyebrow{margin-bottom:7px}
+.ra-content .pp>.v48-identity-card.person-hero .hero-name{margin-bottom:7px}
+.ra-content .pp>.v48-identity-card.person-hero .hero-sub{margin-bottom:0}
+/* Avatar centré sur le nom (gras, gros), pas sur l'ensemble fil d'ariane + nom :
+   décalé du haut de la hauteur du fil d'ariane, moins la moitié de l'écart de
+   hauteur avatar/nom. Retour testing. */
+.person-hero .v48-avatar-wrap{margin-top:5px}
 .v48-avatar-wrap,.v48-account-avatar{position:relative;flex:0 0 auto}
 /* Avatar personne rond → le halo ::after (border-radius:inherit) devient rond aussi
    (sinon voyant vert "carré" autour du profil). Retour testing P1.5. */
@@ -2003,16 +2026,16 @@
 .v48-account-chip-label{color:#8b84a3;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
 .v48-account-chip-logo{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet);color:#fff;font-family:var(--font);font-size:9px;font-weight:800}
 .v48-account-chip strong{font-family:var(--font);font-size:12px}
-.v48-identity-right{display:flex;align-items:center;gap:22px;flex:0 0 auto}
+.v48-identity-right{display:flex;align-items:center;gap:28px;flex:0 0 auto}
 .v48-reliability{text-align:right}
-.v48-reliability>span,.v48-owner-card>div>span{display:block;color:#8b84a3;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
-.v48-reliability>strong{display:block;margin:5px 0;font-family:var(--font);font-size:19px}
-.v48-reliability-faible{color:#c97a20}.v48-reliability-moyen{color:#6e50c8}.v48-reliability-élevé{color:#2ea86a}.v48-reliability-none{color:#8b84a3}
-.v48-reliability>div{display:flex;justify-content:flex-end;gap:14px;color:#5f5878;font-size:10px}
-.v48-reliability>div b{color:var(--t1);font-family:var(--font);font-size:12px}
-.v48-owner-card{min-width:220px;display:flex;align-items:center;gap:11px;padding-left:22px;border-left:1px solid #e7e2f4}
-.v48-owner-avatar{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:11px;background:var(--violet);color:#fff;font-family:var(--font);font-size:11px;font-weight:800}
-.v48-owner-card strong{display:block;margin:2px 0;font-family:var(--font);font-size:13px}
+.v48-reliability>span,.v48-owner-card .v48-owner-l{display:block;color:#8E84C4;font-size:10px;font-family:var(--mono);font-weight:400;letter-spacing:.16em;text-transform:uppercase}
+.v48-reliability>strong{display:block;margin:9px 0 0;font-family:var(--font);font-size:20px;line-height:1.1}
+.v48-reliability-faible{color:#C87517}.v48-reliability-moyen{color:#6e50c8}.v48-reliability-élevé{color:#2ea86a}.v48-reliability-none{color:#8b84a3}
+.v48-reliability>div{display:flex;justify-content:flex-end;gap:14px;color:#65598F;font-size:12px;margin-top:11px}
+.v48-reliability>div b{color:#160D43;font-family:var(--font);font-size:12px;font-weight:700}
+.v48-owner-card{width:260px;flex:0 0 260px;display:flex;flex-direction:column;gap:16px;padding-left:28px;border-left:1px solid #ECE9F5}
+.v48-owner-row{display:flex;align-items:flex-start;gap:12px}
+.v48-owner-avatar{width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#6D49D5;color:#fff;font-family:var(--font);font-size:16px;font-weight:800;flex:none}
 .v48-owner-card small{display:inline-flex;padding:3px 8px;border-radius:999px;background:#e6f3f5;color:#1e7a88;font-size:9px}
 @keyframes v48-halo{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:.25;transform:scale(1.07)}}
 @keyframes v48-pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -2029,7 +2052,6 @@
 .v48-empty{padding:28px 18px;text-align:center;color:#8b84a3}
 .v48-empty>span{width:38px;height:38px;display:grid;place-items:center;margin:0 auto 8px;border-radius:12px;background:#f4f1fc;color:var(--violet)}
 .v48-empty p{max-width:440px;margin:auto;font-size:11px;line-height:1.55}
-.v48-source-note{max-width:1320px;margin:24px auto 0;color:#5f5878;font-size:10px}.v48-source-note a{color:var(--violet)}
 
 /* V48 — Mon profil : mêmes primitives que la fiche Personne, adaptées au
    responsable connecté et à son portefeuille. */
@@ -2052,19 +2074,25 @@
 /* V48 — Profil */
 .v48-person-profile{display:grid;gap:12px}
 /* Blocs « Prochain RDV » et « Posture à adopter » indépendants (pas 2 blocs dans un bloc blanc). Retour testing P3.5. */
-.v48-person-profile .now{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;margin-bottom:12px}
+.v48-person-profile .now{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;margin-bottom:12px;align-items:stretch}
+/* min-height (pas height) : la grille étire les deux cartes sur la même hauteur — celle
+   de la plus haute des deux — quel que soit le contenu (ex. « Aucun rendez-vous
+   synchronisé » plus long que la date d'un rendez-vous réel). Les textes sont bornés
+   ci-dessous (1 puis 2 lignes) pour que cette hauteur reste stable dans les deux états. */
 .v48-person-profile .rdv,.v48-person-profile .po{min-height:104px;border-radius:12px}
 .v48-person-profile .rdv{display:flex;align-items:center;gap:14px;padding:15px 18px;background:var(--violet);color:#fff}
 .v48-person-profile .rdv-icon{flex:0 0 auto}.v48-person-profile .rdv-icon svg{width:22px;height:22px}
 .v48-person-profile .rdv>div{min-width:0;flex:1}.v48-person-profile .rdv-l{margin:0;display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;opacity:.72}
-.v48-person-profile .rdv-t{margin:3px 0 2px;font-family:var(--font);font-weight:800;font-size:16px}.v48-person-profile .rdv-s{margin:0;opacity:.78;font-size:10px;line-height:1.45}
+.v48-person-profile .rdv-t{margin:3px 0 2px;font-family:var(--font);font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v48-person-profile .rdv-s{margin:0;opacity:.78;font-size:10px;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .v48-person-profile .lvb2{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.16);font-family:var(--mono);font-size:8px;letter-spacing:.1em}
 .v48-person-profile .lvd{width:5px;height:5px;border-radius:50%;background:#96ddb8;animation:v48-pulse 1.9s ease-in-out infinite}
-.v48-person-profile .rdv-b{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:7px 13px;white-space:nowrap;background:transparent;color:#fff;cursor:pointer}
-.v48-person-profile .rdv-b svg{width:14px;height:14px}.v48-person-profile .rdv-b:hover{background:rgba(255,255,255,.14)}
+.v48-person-profile .rdv-b{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;border:1px solid #fff;border-radius:999px;padding:7px 13px;white-space:nowrap;background:#fff;color:var(--violet);cursor:pointer}
+.v48-person-profile .rdv-b svg{width:14px;height:14px}.v48-person-profile .rdv-b:hover{background:rgba(255,255,255,.88)}
 .v48-person-profile .po{padding:18px 20px;background:var(--lav);display:flex;flex-direction:column;justify-content:center}
 .v48-person-profile .po-l{margin:0;display:flex;align-items:center;gap:10px;color:var(--violet);font-size:9px;letter-spacing:.18em;text-transform:uppercase}
-.v48-person-profile .po-t{margin:9px 0 0;font-family:var(--font);font-size:16px;font-weight:800;line-height:1.45}
+.v48-person-profile .po-t{margin:9px 0 0;font-family:var(--font);font-size:16px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.v48-person-profile .po-t em{font-style:normal;color:var(--violet)}
 @media (max-width:1080px){.v48-person-profile .now{grid-template-columns:1fr}}
 
 /* Primitives de carte V57 partagées par tous les onglets Personne (Profil ET Relation).
@@ -2073,6 +2101,8 @@
 .v48-tab-panel .sec{overflow:hidden;border:1px solid var(--grid);border-radius:16px;background:#fff}
 .v48-tab-panel .sec-h{display:flex;align-items:center;gap:11px;min-height:56px;padding:12px 20px;border-bottom:1px solid var(--line);color:var(--violet)}
 .v48-tab-panel .sec-h svg{width:17px;height:17px}.v48-tab-panel .sec-t{margin:0;color:var(--t2);font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;text-transform:uppercase}
+.v48-tab-panel .sec-ic{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--lav);color:var(--violet);flex:none}
+.v48-tab-panel .sec-ic svg{width:17px;height:17px}
 .v48-tab-panel .cnt{margin-left:auto;color:var(--t3);font-size:10px}.v48-tab-panel .cnt b{color:var(--violet)}
 .v48-tab-panel .sec-b{padding:18px 20px 20px}
 .v48-tab-panel .hint-l{margin:0 0 14px;font-size:12px;color:var(--t2);line-height:1.55}
@@ -2108,7 +2138,7 @@
 .v48-tab-panel .lvs-h b{font-family:var(--font);font-weight:800;color:var(--t1)}
 .v48-tab-panel .lvs-i{width:7px;height:7px;border-radius:50%;background:var(--sage);flex:0 0 auto;animation:v48-pulse 1.9s ease-in-out infinite}
 .v48-tab-panel .lvs-bar{display:block;position:relative;height:3px;border-radius:999px;background:#EFEBF9;overflow:hidden}
-.v48-tab-panel .lvs-bar::after{content:"";position:absolute;left:0;top:0;height:100%;width:100%;border-radius:999px;background:var(--sage)}
+.v48-tab-panel .lvs-bar::after{content:"";position:absolute;left:0;top:0;height:100%;width:100%;border-radius:999px;background:var(--violet-l)}
 /* « Dernière analyse » : scan lumineux qui balaie (live) au lieu d'une barre verte figée. Retour testing P3.4. */
 .v48-tab-panel .lvs-bar::before{content:"";position:absolute;top:0;height:100%;width:40%;border-radius:999px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:lvs-scan 2.4s ease-in-out infinite;z-index:1}
 @keyframes lvs-scan{0%{left:-45%}100%{left:105%}}
@@ -2152,10 +2182,22 @@
 @media (max-width:620px){.v48-person-profile .dd{grid-template-columns:1fr;gap:16px}}
 
 .v48-detail-fold{overflow:hidden;border:1px solid #dcd5f0;border-radius:14px;background:#fff}
-.v48-detail-fold>summary{list-style:none;min-height:58px;display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer}
+/* Le contenu vit dans .fold-row (div), pas directement sur <summary> : certains
+   moteurs gèrent mal display:flex posé sur <summary> (marqueur natif qui décale le
+   contenu) — isoler la mise en page dans un div garantit l'alignement à gauche
+   quel que soit le navigateur. Retour testing. */
+.v48-detail-fold>summary{list-style:none;min-height:58px;padding:12px 20px;cursor:pointer}
 .v48-detail-fold>summary::-webkit-details-marker{display:none}.v48-detail-fold>summary svg{width:18px;height:18px;color:var(--violet)}
-.v48-detail-fold>summary strong{font-family:var(--font);font-size:12px;letter-spacing:.12em;text-transform:uppercase}.v48-detail-fold>summary span{margin-left:auto;color:#8b84a3;font-size:10px}
-.v48-detail-fold>summary>b{color:#8b84a3;transition:transform .2s}.v48-detail-fold[open]>summary>b{transform:rotate(180deg)}
+.v48-detail-fold>summary .fold-row{display:flex;align-items:center;justify-content:flex-start;gap:12px;width:100%}
+.v48-detail-fold>summary .fold-ic{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--lav);color:var(--violet);flex:none}
+.v48-detail-fold>summary .fold-ic svg{width:17px;height:17px}
+/* Même typo que .sec-t (« Profil comportemental ») : mono, poids 500, pas le gras
+   par défaut d'un <strong> — pour lire comme le même niveau de titre. Retour testing. */
+.v48-detail-fold>summary strong{margin:0;color:var(--t2);font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;text-align:left}
+/* :not(.fold-ic) car .fold-ic est aussi un <span> — sans ce filtre, margin-left:auto
+   s'appliquait AUSSI à l'icône et poussait le titre vers le centre. Bug trouvé sur capture. */
+.v48-detail-fold>summary span:not(.fold-ic){margin-left:auto;color:#8b84a3;font-size:10px}
+.v48-detail-fold>summary>div>b{color:#8b84a3;transition:transform .2s}.v48-detail-fold[open]>summary>div>b{transform:rotate(180deg)}
 .v48-person-profile .fold-b{padding:2px 20px 20px}
 .v48-person-profile .g2{display:grid;grid-template-columns:1fr 1fr;gap:0 30px}
 .v48-person-profile .cs2{display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
@@ -2180,8 +2222,6 @@
 .v48-person-profile .dm-f{position:absolute;top:0;bottom:0;background:var(--dc,var(--violet));border-radius:4px}
 .v48-person-profile .dm-v{font-family:var(--font);font-weight:800;font-size:14.5px;text-align:right;color:var(--dc,var(--violet))}
 @media (max-width:760px){.v48-person-profile .dm{grid-template-columns:86px 1fr 30px}.v48-person-profile .dm-p{display:none}}
-.v48-person-profile .ft{margin-top:26px;font-size:11.5px;color:var(--t2)}
-.v48-person-profile .ft a{color:var(--violet)}
 
 .v48-shm{position:fixed;inset:0;z-index:500;background:rgba(26,16,64,.32);display:flex;align-items:center;justify-content:center;padding:24px}
 .v48-shp{width:min(430px,100%);max-height:86vh;overflow:auto;background:#fff;border:1px solid var(--grid);border-radius:18px;padding:22px 24px 24px}
@@ -2283,6 +2323,7 @@
 .v48-signal-spotlight{padding:20px;border-left:3px solid #c97a20}.v48-signal-spotlight>small b{color:var(--t1)}
 .v48-signal-spotlight>span{display:inline-flex;margin-top:12px;padding:4px 9px;border-radius:999px;background:#fff5e8;color:#9a5b16;font-size:8px;text-transform:uppercase}.v48-signal-spotlight>strong{display:block;margin:8px 0 5px;font-family:var(--font);font-size:14px}
 .v48-signal-spotlight p{margin:0;color:#5f5878;font-size:11px;line-height:1.5}.v48-signal-spotlight em{display:block;margin-top:9px;color:#8b84a3;font-size:9px;font-style:normal}
+.v48-signal-spotlight .v48-sig-open{display:inline-flex;margin-top:12px;padding:8px 14px;border:1px solid var(--grid);border-radius:999px}
 .v48-hooks>div{padding:4px 20px 18px}.v48-hooks article{display:flex;gap:12px;padding:14px 0;border-top:1px solid #e7e2f4}.v48-hooks article>span{width:32px;height:32px;display:grid;place-items:center;flex:none;border-radius:10px;background:#f4f1fc;color:var(--violet)}.v48-hooks svg{width:16px;height:16px}
 .v48-hooks h3{margin:0 0 5px;font-family:var(--font);font-size:13px}.v48-hooks p{margin:0;color:#5f5878;font-size:11px;line-height:1.5}.v48-hooks small{display:block;margin-top:6px;color:#8b84a3;font-size:9px}
 
@@ -2320,6 +2361,8 @@
 .v48-watch-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dcd5f0;border-radius:15px;background:#fff;text-align:left;cursor:pointer}.v48-watch-card>span{font-size:20px}.v48-watch-card div{flex:1}.v48-watch-card strong,.v48-watch-card small{display:block}.v48-watch-card small{margin-top:3px;color:#8b84a3;font-size:9px}.v48-watch-card>b{color:#8b84a3;font-size:9px}.v48-watch-card.on>b{color:#2ea86a}
 .v48-watch-pill{display:inline-flex;align-items:center;gap:5px;color:#8b84a3;font-size:8px;text-transform:uppercase;border:1px solid var(--grid);background:#fff;border-radius:999px;padding:4px 9px;cursor:pointer;font-family:var(--mono);letter-spacing:.03em}.v48-watch-pill:hover{border-color:var(--vl)}.v48-watch-pill i{width:6px;height:6px;border-radius:50%;background:#8b84a3}.v48-watch-pill.on{color:#1e6b47;border-color:#c7e7d5;background:#f0f9f4}.v48-watch-pill.on i{background:#2ea86a}
 /* Signaux récents — cartes maquette (rail date · liseré coloré · canal · tag · action) */
+.v48-signals-scope{margin:-6px 20px 8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--t3)}
+.v48-section-title .ktog{gap:6px}.v48-section-title .ktog-lbl{font-size:8px}.v48-section-title .ktog-sw{width:32px;height:19px}.v48-section-title .ktog-sw:before{width:14px;height:14px}.v48-section-title .ktog.on .ktog-sw:before{transform:translateX(13px)}
 .v48-signals-sync{display:flex;align-items:center;gap:7px;margin:0 20px 4px;font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;color:var(--t2)}.v48-signals-sync b{color:var(--t1)}
 .v48-signals-sync i{width:7px;height:7px;border-radius:50%;background:#2ea86a;box-shadow:0 0 0 0 rgba(46,168,106,.5);animation:v48-sync-pulse 2s infinite}
 .v48-signals-sync.off i{background:#c4bcda;animation:none}.v48-signals-sync.off{color:var(--t3)}
@@ -2348,6 +2391,38 @@
 .v48-sig-acts button.on{border-color:#c7e7d5;background:#eef8f2;color:#1e6b47}.v48-sig-acts button.no.on{border-color:#f2cdd3;background:#fdf1f3;color:#a6303f}
 .v48-sig-acts button:disabled{opacity:.5;cursor:default}
 
+/* Parcours — cartes d'expérience (logo · titre · période/durée · description ·
+   tag source + lien compte), formation en résumé repliable. */
+.v48-cv-panel{padding:6px 20px 20px}
+.v48-cv-label{margin:4px 0 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3)}
+.v48-cv-list{display:flex;flex-direction:column;gap:10px}
+.v48-cv-item{display:flex;gap:14px;padding:16px;border:1px solid var(--grid);border-radius:14px;background:#fff}
+.v48-cv-item.now{border-color:var(--violet);box-shadow:0 0 0 3px var(--violet-s)}
+.v48-cv-logo{width:42px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#1E3D31;color:#fff;font-family:var(--font);font-weight:800;font-size:13px}
+.v48-cv-logo.edu{background:#2896A8}
+.v48-cv-content{flex:1;min-width:0}
+.v48-cv-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.v48-cv-top strong{font-family:var(--font);font-weight:800;font-size:14px;color:var(--t1)}
+.v48-cv-new{font-family:var(--mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:#9a5b16;background:#fff5e8;border-radius:999px;padding:3px 8px}
+.v48-cv-meta{margin:5px 0 0;font-size:11px;color:var(--t2)}
+.v48-cv-desc{margin:6px 0 0;font-size:11.5px;line-height:1.55;color:var(--t2)}
+.v48-cv-foot{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.v48-cv-tag{font-family:var(--mono);font-size:8px;letter-spacing:.06em;color:var(--t3);background:var(--bg2);border-radius:999px;padding:4px 9px}
+.v48-cv-link{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--violet);text-decoration:none}
+.v48-cv-link:hover{text-decoration:underline}
+.v48-cv-verify{display:flex;gap:8px}
+.v48-cv-verify button{border:0;background:none;padding:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--violet);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.v48-cv-verify button:disabled{opacity:.5;cursor:default}
+.v48-cv-edu{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.v48-cv-edu>summary{list-style:none;display:flex;align-items:center;gap:10px;cursor:pointer}
+.v48-cv-edu>summary::-webkit-details-marker{display:none}
+.v48-cv-edu-l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3)}
+.v48-cv-edu-preview{flex:1;min-width:0;font-size:12px;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v48-cv-edu-chev{font-style:normal;color:var(--t3);transition:transform .2s}
+.v48-cv-edu[open] .v48-cv-edu-chev{transform:rotate(180deg)}
+.v48-cv-edu .v48-cv-list{margin-top:12px}
+@media(max-width:560px){.v48-cv-item{flex-wrap:wrap}.v48-cv-link{margin-left:0}}
+
 @media(max-width:1050px){
   .v48-relation-columns,.v48-account-live-grid{grid-template-columns:1fr}
   .v48-behavior-grid{grid-template-columns:1fr}.v48-behavior-grid>div+div{border-left:0;border-top:1px solid #e7e2f4}
@@ -2358,7 +2433,7 @@
   .v48-now-grid,.v48-insight-grid,.v48-org-grid,.v48-orgc-grid,.v48-detail-grid,.v48-firmographic-grid{grid-template-columns:1fr}
   .v48-now-grid{padding:12px}.v48-detail-grid article:nth-child(2){border-top:1px solid #e7e2f4}
   .v48-identity-right{align-items:stretch;flex-direction:column}.v48-reliability{text-align:left}.v48-reliability>div{justify-content:flex-start}
-  .v48-owner-card{min-width:0;padding:12px 0 0;border-left:0;border-top:1px solid #e7e2f4}
+  .v48-owner-card{width:100%;flex:1 1 auto;min-width:0;padding:16px 0 0;border-left:0;border-top:1px solid #e7e2f4}
   .v48-history-kpis{grid-template-columns:1fr}.v48-history-kpis>div{border-left:0;border-top:1px solid #e7e2f4}.v48-history-kpis>div:first-child{border-top:0}
   .v48-owner-relay{align-items:flex-start;flex-direction:column}.v48-owner-relay>div{align-items:flex-start;flex-direction:column}.v48-owner-relay span>i{display:none}
   .v48-memory-form{flex-direction:column}.v48-memory-form button{align-self:stretch}
@@ -2432,14 +2507,19 @@
 .pp .v48-person-relation .eg-due{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--violet);background:#F4F1FC;border-radius:999px;padding:3px 9px;margin:6px 0 0}
 .pp .v48-person-relation .eg-due.over{color:#A6303F;background:#FCEEF0}
 .pp .v48-person-relation .eg-src{font-family:var(--mono);font-size:9px;letter-spacing:.02em;color:var(--t3);margin:5px 0 0}
-.pp .v48-person-relation .eg-b{margin-left:auto;display:flex;gap:8px}
+/* Qui doit honorer l'engagement — même diamètre que les boutons d'action juste
+   après, pour une rangée d'actions bien alignée. Retour testing. */
+.pp .v48-person-relation .eg-av{width:34px;height:34px;flex:0 0 auto;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--grid);background:var(--lav);color:var(--violet);font-family:var(--font);font-size:11px;font-weight:800}
+.pp .v48-person-relation .eg-av img{width:100%;height:100%;object-fit:cover}
+.pp .v48-person-relation .eg-b{margin-left:0;display:flex;gap:8px}
 .pp .v48-person-relation .eg-b button{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--grid);background:#fff;color:var(--t3);border-radius:50%;cursor:pointer;padding:0;flex:0 0 auto;transition:all .14s}
 .pp .v48-person-relation .eg-b button svg{width:16px;height:16px}
 .pp .v48-person-relation .eg-b button.ok:hover{border-color:#C7E7D5;background:#EEF8F2;color:#1E6B47}
 .pp .v48-person-relation .eg-b button.no:hover{border-color:#F2CDD3;background:#FCEEF0;color:#A6303F}
 .pp .v48-person-relation .eg-b button:disabled{opacity:.5;cursor:default}
-/* Bouton « i » de preuve + pop-up noir (canal · date · extrait source). Retour testing : engagements = mode source/preuve. */
-.pp .v48-person-relation .eg-b button.info{width:30px;height:30px;border-color:var(--vl);color:var(--violet);font-family:var(--font);font-weight:800;font-size:12px}
+/* Bouton « i » de preuve + pop-up noir (canal · date · extrait source). Retour testing : engagements = mode source/preuve.
+   Même largeur/hauteur que .ok/.no (34px) : un diamètre différent les désalignait visuellement. */
+.pp .v48-person-relation .eg-b button.info{border-color:var(--vl);color:var(--violet);font-family:var(--font);font-weight:800;font-size:12px}
 .pp .v48-person-relation .eg-b button.info:hover,.pp .v48-person-relation .eg-b button.info[aria-expanded="true"]{background:var(--violet);border-color:var(--violet);color:#fff}
 .pp .v48-person-relation .eg-proof{flex:1 1 100%;order:9;margin-top:4px;background:#171426;color:#EDE9F7;border-radius:11px;padding:12px 14px;box-shadow:0 14px 36px rgba(20,15,40,.25)}
 .pp .v48-person-relation .eg-proof-meta{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#B9AEE0;margin-bottom:7px}
@@ -2476,6 +2556,12 @@
 .pp .v48-person-relation .kmi-t{font-family:var(--font);font-weight:800;font-size:13.5px;line-height:1.4;margin:0;letter-spacing:-.01em}
 .pp .v48-person-relation .kmi-s{font-size:11.5px;line-height:1.5;color:var(--t2);margin:3px 0 0}
 .pp .v48-person-relation .kmi-e{flex:0 0 auto;font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;border-radius:999px;padding:4px 10px;background:var(--kmb);color:var(--kmt)}
+/* Croix d'écartement : masquée par défaut, apparaît au survol de la carte, passe
+   au rouge au survol d'elle-même. Retour testing. */
+.pp .v48-person-relation .kmi-x{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:0;border-radius:50%;background:rgba(255,255,255,.7);color:var(--t3);cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s}
+.pp .v48-person-relation .kmi-x svg{width:11px;height:11px}
+.pp .v48-person-relation .kmi:hover .kmi-x,.pp .v48-person-relation .kmi-x:focus-visible{opacity:1}
+.pp .v48-person-relation .kmi-x:hover{background:#FCEEF0;color:#D94F63}
 @media(max-width:560px){.pp .v48-person-relation .kmi{flex-wrap:wrap;gap:9px 12px}.pp .v48-person-relation .kmi-c{flex:1 1 100%;order:3}.pp .v48-person-relation .kmi-e{margin-left:auto}}
 
 /* ── Historique & mémoire : porteur + compteur + label moments ────────── */
@@ -2524,31 +2610,54 @@
 .pp .ch-tip-x{font-family:var(--font);font-weight:700;font-size:10px;color:#CDBBFF;margin-top:4px;white-space:normal;max-width:190px;line-height:1.35}
 
 /* ── Affectation owner + visibilité (carte identité) ──────────────────── */
-.pp .v48-affect{position:relative}
+.pp .v48-affect{position:relative;display:flex;flex-direction:column;gap:16px}
 .pp .v48-affect-body{min-width:0}
-.pp .v48-owner-l{display:block;color:#8b84a3;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
-.pp .v48-affect-body>strong{display:block;margin:2px 0 5px;font-family:var(--font);font-size:13px}
-.pp .v48-affect-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pp .v48-owner-l{display:block;color:#8E84C4;font-size:10px;font-family:var(--mono);font-weight:400;letter-spacing:.16em;text-transform:uppercase}
+.pp .v48-affect-body>strong{display:block;margin:6px 0 0;font-family:var(--font);font-size:16px;line-height:1.15;color:#160D43}
+.pp .v48-affect-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
 .pp .v48-affect-menu{position:relative;display:inline-flex}
-.pp .v48-affect-link{background:none;border:0;padding:0;font-family:var(--mono);font-size:10px;color:var(--violet);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.pp .v48-affect-link{background:none;border:0;padding:0;font-family:var(--font);font-size:12px;font-weight:600;color:#6B48D6;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .pp .v48-affect-link:disabled{opacity:.5;cursor:default}
-.pp .v48-affect-handover{color:var(--t2)}.pp .v48-affect-handover:hover:not(:disabled){color:var(--violet)}
 .pp .v48-vision-switcher{display:inline-flex;gap:2px;margin:0 0 14px;padding:3px;background:var(--bg2);border:1px solid var(--grid);border-radius:999px}
 .pp .v48-vision-switcher button{border:0;background:none;font-family:var(--mono);font-size:10px;letter-spacing:.03em;color:var(--t2);padding:6px 15px;border-radius:999px;cursor:pointer}
 .pp .v48-vision-switcher button.on{background:var(--violet);color:#fff}
-.pp .v48-affect-vis{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;border:1px solid var(--grid);border-radius:999px;padding:3px 9px;background:#fff;cursor:pointer;color:var(--t2)}
-.pp .v48-affect-vis.vis-restricted{color:var(--amber);border-color:var(--amber-l)}
+.pp .v48-affect-vis-menu{display:block;width:100%}
+.pp .v48-affect-vis{display:flex;width:100%;box-sizing:border-box;align-items:center;justify-content:center;gap:8px;height:44px;font-family:var(--font);font-size:13px;font-weight:700;letter-spacing:0;border:1px solid #B9E2E9;border-radius:999px;padding:0 16px;background:#F1FAFC;cursor:pointer;color:#19788A}
+.pp .v48-affect-vis:hover{background:#E6F6F8}
+.pp .v48-affect-vis-ic{display:inline-flex}.pp .v48-affect-vis-ic svg{width:15px;height:15px}
+.pp .v48-affect-vis.vis-restricted{color:#fff;border-color:var(--violet);background:var(--violet)}
+.pp .v48-affect-vis.vis-restricted:hover{background:var(--violet-d)}
+/* Carte d'option (Organisation / Restreint) avec contour — même style au survol
+   qu'à l'état sélectionné (.on), juste plus discret (gris vs violet). Retour testing. */
+.v48-affect-pop .vo{display:flex;align-items:flex-start;gap:14px;width:100%;box-sizing:border-box;padding:14px 16px;border-radius:16px;border:1.5px solid transparent;transition:border-color .15s,background .15s}
+.v48-affect-pop .vo:hover{border-color:var(--grid);background:var(--lav)}
+.v48-affect-pop .vo.on{border-color:var(--violet);background:#fff}
+.v48-affect-pop .vo-ic{width:44px;height:44px;flex:none;border-radius:13px;display:flex;align-items:center;justify-content:center}
+.v48-affect-pop .vo-ic svg{width:19px;height:19px}
+.v48-affect-pop .vo-ic-org{background:rgba(40,150,168,.12);color:#1E7A88}
+.v48-affect-pop .vo-ic-lock{background:var(--violet-s);color:var(--violet)}
+.v48-affect-pop .vo-t{font-family:var(--font);font-weight:800;font-size:15px;color:var(--t1)}
+.v48-affect-pop .vo-d{font-size:13px;color:var(--t2);margin-top:3px;line-height:1.45}
+.v48-affect-pop .vo-grants{margin-top:8px;padding-top:12px;border-top:1px solid var(--grid)}
+.v48-affect-pop .vo-grants-l{margin:4px 9px 8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.v48-affect-pop .vo-grants-search{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px 14px;border:1px solid var(--grid);border-radius:12px;font-family:var(--sans);font-size:12.5px;color:var(--t1)}
+.v48-affect-pop .vo-grants-search:focus{outline:none;border-color:var(--violet)}
+.v48-affect-pop .vo-grants-list{max-height:160px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.v48-affect-pop .vo-grant-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:12px;color:var(--t1);font-family:var(--font)}
+.v48-affect-pop .vo-grant-row:hover{background:var(--lav)}
+.v48-affect-pop .vo-grant-row>span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v48-affect-pop .vo-grant-row input{flex:none;margin:0}
+.v48-affect-pop .vo-grants-note{margin:10px 0 0;padding:12px 14px;border-radius:12px;background:var(--lav);font-size:12.5px;color:var(--t1);line-height:1.5}
+.v48-affect-pop .vo-foot{margin:10px 2px 2px;font-size:11px;color:var(--violet)}
+.v48-affect-pop.wide{max-height:min(70vh,460px)}
 /* Portalé sur document.body (voir OwnerAffectation) : position:fixed + z-index élevé
  * pour ne jamais se retrouver caché derrière une section suivante de la fiche — même
  * principe que .rel-menu, non scopé sous .pp puisque le nœud DOM en sort une fois porté. */
-.v48-affect-pop{position:fixed;z-index:9999;min-width:210px;max-height:280px;overflow:auto;padding:6px;background:#fff;border:1px solid var(--grid);border-radius:12px;box-shadow:0 18px 48px rgba(20,15,40,.25)}
-.v48-affect-pop.wide{min-width:250px}
-.v48-affect-pop button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 9px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--t1)}
-.v48-affect-pop button:hover{background:var(--lav)}
-.v48-affect-pop button.on{background:var(--violet-s)}
+.v48-affect-pop{position:fixed;z-index:9999;min-width:210px;max-height:280px;overflow:auto;padding:10px;background:#fff;border:1px solid var(--grid);border-radius:20px;box-shadow:0 18px 48px rgba(20,15,40,.25)}
+.v48-affect-pop.wide{min-width:360px}
+.v48-affect-pop button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1.5px solid transparent;background:none;border-radius:10px;padding:8px 9px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--t1);transition:border-color .15s,background .15s}
+.v48-affect-pop button:hover{background:var(--lav);border-color:var(--grid)}
+.v48-affect-pop button.on{background:var(--violet-s);border-color:var(--violet)}
 .v48-affect-ini{width:24px;height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet);color:#fff;font-size:9px;font-weight:800}
-.v48-affect-pop .vo{display:block}
-.v48-affect-pop .vo .vo-t{font-family:var(--font);font-weight:800;font-size:12.5px}
-.v48-affect-pop .vo .vo-d{font-size:11px;color:var(--t2);margin-top:2px;line-height:1.4}
 .pp .v48-affect-clear{color:var(--coral)!important}
 .pp .v48-affect-loading{padding:8px 9px;font-size:11px;color:var(--t3)}

@@ -1,5 +1,31 @@
 import { createContext, useCallback, useContext, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { DataSourceReference } from './types'
+
+/** Icônes V48 partagées entre les vues Profil/Relation/Live (person) — un seul jeu
+ *  de traits pour toute la fiche personne, évite la divergence visuelle entre fichiers. */
+export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' }) {
+  const paths: Record<typeof name, ReactNode> = {
+    calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M4 10h16M8 3.5v4M16 3.5v4" /></>,
+    profile: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" /><circle cx="12" cy="12" r="2.5" /></>,
+    pulse: <path d="M3 12h4l2-5 4 10 2-5h6" />,
+    commitment: <><path d="M4.5 5.5h5a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H4.5Z" /><path d="M19.5 5.5h-5A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h5.5Z" /></>,
+    career: <><circle cx="6.5" cy="6" r="2.5" /><circle cx="17.5" cy="18" r="2.5" /><path d="M6.5 8.5v5a4.5 4.5 0 0 0 4.5 4.5h4" /></>,
+    signal: <><path d="M5 12a7 7 0 0 1 14 0M8 15a4 4 0 0 1 8 0" /><circle cx="12" cy="18" r="1" /></>,
+    sparkle: <><path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3Z" /><path d="m18 14 .8 2.2 2.2.8-2.2.8L18 20l-.8-2.2L15 17l2.2-.8Z" /></>,
+    share: <><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="M8.2 10.9l7-3.6M8.2 13.1l7 3.6" /></>,
+    sliders: <><path d="M4.4 7.4h15.2M4.4 12h15.2M4.4 16.6h15.2" /><circle cx="9" cy="7.4" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7.4" cy="16.6" r="2" /></>,
+  }
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
+}
+
+export function SectionTitle({ icon, title, meta }: { icon: Parameters<typeof V48Icon>[0]['name']; title: string; meta?: ReactNode }) {
+  return <header className="v48-section-title">
+    <span><V48Icon name={icon} /></span>
+    <h2>{title}</h2>
+    {meta && <div>{meta}</div>}
+  </header>
+}
 
 export function formatDate(value: string | null, fallback = 'À confirmer'): string {
   if (!value) return fallback

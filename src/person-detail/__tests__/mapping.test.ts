@@ -34,6 +34,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     profileNames: new Map(),
     degradedReasons: [],
     lockedBy: null,
+    lockedAt: null,
     nameSuggestion: null,
     mergeSuggestions: [],
     ...overrides,

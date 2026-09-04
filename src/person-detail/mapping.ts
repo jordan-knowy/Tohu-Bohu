@@ -16,6 +16,9 @@ import {
   type PersonCognitiveTheme,
   type PersonContactDetail,
   type PersonDetailData,
+  type PersonEnrichmentActivity,
+  type PersonEnrichmentContact,
+  type PersonEnrichmentProfile,
   type PersonEvidence,
   type PersonHistoryEvent,
   type PersonKeyMoment,
@@ -427,6 +430,33 @@ export function buildContactDetails(detailRows: Row[], contact: Row): PersonCont
   return [...persisted, ...legacy]
 }
 
+/** contacts.enrichment_data (recherche web) → lecture seule, jamais fabriquée. Une
+ *  seule colonne JSON pour le résultat de l'agent d'enrichissement (talkingPoints,
+ *  relatedPeople, recentActivity…) — pas de table dédiée. */
+export function buildEnrichmentProfile(contact: Row): PersonEnrichmentProfile | null {
+  const enrichment = object(contact.enrichment_data)
+  if (!Object.keys(enrichment).length) return null
+  const talkingPoints = Array.isArray(enrichment.talkingPoints) ? enrichment.talkingPoints.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : []
+  const relatedPeople: PersonEnrichmentContact[] = Array.isArray(enrichment.relatedPeople)
+    ? enrichment.relatedPeople.map((item) => object(item)).filter((item) => text(item.name)).map((item) => ({ name: text(item.name) ?? '', role: text(item.role), why: text(item.why) }))
+    : []
+  const recentActivity: PersonEnrichmentActivity[] = Array.isArray(enrichment.recentActivity)
+    ? enrichment.recentActivity.map((item) => object(item)).filter((item) => text(item.title)).map((item) => ({ title: text(item.title) ?? '', date: text(item.date), source: text(item.source), url: text(item.url) }))
+    : []
+  return {
+    summary: text(enrichment.summary),
+    currentRole: text(enrichment.currentRole),
+    currentCompany: text(enrichment.currentCompany),
+    roleStartedAt: text(enrichment.roleStartedAt),
+    roleConfidence: text(enrichment.roleConfidence),
+    location: text(enrichment.location),
+    linkedinUrl: text(enrichment.linkedinUrl),
+    talkingPoints,
+    relatedPeople,
+    recentActivity,
+  }
+}
+
 /** contact_career_path (héritée) → shape person_career_entries, statut « probable ». */
 export function legacyCareerRows(rows_: Row[]): Row[] {
   return rows_.map((row) => ({
@@ -606,6 +636,7 @@ export type PersonDetailRaw = {
   profileNames: Map<string, string>
   degradedReasons: string[]
   lockedBy: string | null
+  lockedAt: string | null
   nameSuggestion: Row | null
   mergeSuggestions: Row[]
 }
@@ -681,6 +712,8 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       updatedAt: text(contact.updated_at),
       locked: raw.lockedBy !== null,
       lockedByMe: raw.lockedBy !== null && raw.lockedBy === raw.userId,
+      lockedByName: raw.lockedBy !== null ? raw.profileNames.get(raw.lockedBy) ?? null : null,
+      lockedAt: raw.lockedAt,
     },
     summary: summaryText
       ? { text: summaryText, confidence: num(raw.summaryRow.confidence), generatedAt: text(raw.summaryRow.generated_at), provenance: provenance(raw.summaryRow, { sourceType: 'summary', sourceLabel: 'Synthèse Tohu', inferenceLevel: 'inferred' }) }
@@ -742,6 +775,7 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     contactDetails,
     careerEntries,
     memoryEntries,
+    enrichment: buildEnrichmentProfile(contact),
     keyMoments: buildKeyMoments(raw.keyMoments),
     history: buildHistory(raw.meetings, raw.messages, signals, memoryEntries, careerEntries),
     nameSuggestion: buildNameSuggestion(raw.nameSuggestion),

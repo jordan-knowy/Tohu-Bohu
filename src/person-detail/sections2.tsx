@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { saveSignalFeedback } from '../services/data'
+import { isBehavioralSignal } from '../services/signal-labels'
 import { initials } from '../lib/auth'
 import {
   addPersonContactDetail, addPersonFile, addPersonNote, addPersonVoiceNote,
-  archivePersonContactDetail, clearPersonContactDetail, setCareerVerification, setPrimaryContactDetail,
+  archivePersonContactDetail, clearPersonContactDetail, setCareerVerification, setPersonWatch, setPrimaryContactDetail,
   updatePersonContactDetail, validateContactDetail,
 } from './service'
-import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent } from './types'
-import { Csec, Empty, confidenceLevel, formatDate, formatMonth, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
+import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent, PersonSignal } from './types'
+import { Empty, SectionTitle, formatDate, formatMonth, relativeDate, useBusy, useToast } from './ui'
 import { ACCEPTED_TRANSCRIPT_EXTENSIONS, fetchTranscriptJob, startTranscriptIngest } from '../services/transcript-ingest'
 
 const isTranscriptFile = (name: string): boolean =>
@@ -16,7 +17,6 @@ const isTranscriptFile = (name: string): boolean =>
 
 type SectionProps = { data: PersonDetailData; userId: string; refresh: () => Promise<void> }
 
-const TimelineIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="6" cy="5" r="2.2" /><circle cx="6" cy="13" r="2.2" /><path d="M6 7.2v3.6M9 5h9M9 13h6" /></svg>
 const PenIcon = <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6E50C8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
 const ClockIcon = <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
 const ClipIcon = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.6 1.6 0 0 1-2.3-2.3L14.6 8" /></svg>
@@ -26,50 +26,96 @@ const MicIcon = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stro
 
 const CAREER_STATUS: Record<string, string> = { confirmed: 'Confirmé', probable: 'Probable', to_confirm: 'À confirmer', rejected: 'Infirmé' }
 
+function monthYearLabel(iso: string | null): string | null {
+  if (!iso) return null
+  const date = new Date(iso)
+  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('fr-FR', { month: 'short', year: 'numeric' }).format(date) : null
+}
+
+/** Durée écoulée entre deux dates, au grain le plus lisible (jours / mois / ans) —
+ *  jamais une estimation arbitraire, juste un arrondi de calendrier. */
+function durationBetween(startIso: string | null, endIso: string | null): string | null {
+  if (!startIso) return null
+  const start = new Date(startIso).getTime()
+  const end = endIso ? new Date(endIso).getTime() : Date.now()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
+  const days = Math.floor((end - start) / 86_400_000)
+  const months = Math.floor(days / 30.44)
+  if (months >= 12) {
+    const years = Math.floor(months / 12)
+    const restMonths = months % 12
+    return `${years} an${years > 1 ? 's' : ''}${restMonths ? ` ${restMonths} mois` : ''}`
+  }
+  if (months >= 1) {
+    const restDays = Math.round(days - months * 30.44)
+    return `${months} mois${restDays > 0 ? ` ${restDays} j` : ''}`
+  }
+  return `${Math.max(1, days)} j`
+}
+
 export function CareerSection({ data, userId, refresh }: SectionProps) {
   const [busy, run] = useBusy()
   const toast = useToast()
-  const [expanded, setExpanded] = useState(false)
   const entries = data.careerEntries.filter((entry) => entry.verificationStatus !== 'rejected')
-  const current = entries.filter((entry) => entry.current || entry.entryType === 'detected_change')
-  const rest = entries.filter((entry) => !current.includes(entry))
+  const experience = entries.filter((entry) => entry.entryType !== 'education')
+  const education = entries.filter((entry) => entry.entryType === 'education')
   const validate = (entryId: string, status: 'confirmed' | 'rejected') => run(`career-${entryId}`, async () => {
     await setCareerVerification(data, userId, entryId, status)
     toast(status === 'confirmed' ? 'Entrée confirmée.' : 'Entrée infirmée — historisée.')
     await refresh()
   })
   const linkedInLive = data.sources.some((source) => source.provider === 'linkedin' && source.status === 'connected')
-  return <Csec id="sec-cv" icon={TimelineIcon} title="Parcours · CV vivant & veille">
+  return <section className="v48-section v48-cv">
+    <SectionTitle icon="career" title="Parcours" meta={linkedInLive ? <span className="live-badge"><span className="live-dot" />Live CV · LinkedIn</span> : undefined} />
     {!entries.length
       ? <Empty title="Aucun parcours sourcé">Aucune expérience ou formation vérifiable n’est encore rattachée à cette personne. Le parcours se remplira via LinkedIn, les signaux ou une saisie manuelle.</Empty>
-      : <>
-        {linkedInLive && <div className="cv-head-row"><span className="live-badge"><span className="live-dot" />Live CV · synchronisé LinkedIn</span></div>}
-        <div className="cv-tl">
-          {(expanded ? entries : current.length ? current : entries.slice(0, 1)).map((entry) => <div className={`cv-item ${entry.current ? 'now' : ''}`} key={entry.id}>
-            <div className="cv-mono" style={{ background: entry.current ? '#5B3FA8' : '#E8E3F5', color: entry.current ? '#fff' : '#8A82A8' }}>{initials(entry.organizationName)}</div>
-            <div className="cv-body">
-              <div className="cv-top">
-                <div className="cv-role">{entry.title}</div>
-                {entry.current && <span className="cv-live"><span className="live-dot" />actuel</span>}
-                <span className={`pp-chip pp-chip-${entry.verificationStatus}`}>{entry.entryType === 'detected_change' ? 'Nouveau poste détecté — à confirmer' : CAREER_STATUS[entry.verificationStatus]}</span>
+      : <div className="v48-cv-panel">
+        {experience.length > 0 && <>
+          <p className="v48-cv-label">Expérience</p>
+          <div className="v48-cv-list">
+            {experience.map((entry) => {
+              const dateText = entry.current
+                ? (entry.startedAt ? `depuis ${monthYearLabel(entry.startedAt)}` : null)
+                : (entry.startedAt ? `${monthYearLabel(entry.startedAt)} – ${entry.endedAt ? monthYearLabel(entry.endedAt) : 'présent'}` : null)
+              const duration = durationBetween(entry.startedAt, entry.current ? null : entry.endedAt)
+              const tag = `${entry.provenance.sourceLabel ?? 'Source à confirmer'} · ${entry.entryType === 'detected_change' ? 'à confirmer' : (CAREER_STATUS[entry.verificationStatus] ?? 'à confirmer')}`.toUpperCase()
+              return <div className={`v48-cv-item ${entry.current ? 'now' : ''}`} key={entry.id}>
+                <span className="v48-cv-logo">{initials(entry.organizationName)}</span>
+                <div className="v48-cv-content">
+                  <div className="v48-cv-top">
+                    <strong>{entry.title}{entry.organizationName ? ` – ${entry.organizationName}` : ''}</strong>
+                    {entry.current && <span className="v48-live"><i />Live</span>}
+                    {entry.entryType === 'detected_change' && <span className="v48-cv-new">Nouveau poste détecté</span>}
+                  </div>
+                  <p className="v48-cv-meta">{[dateText, duration].filter(Boolean).join(' · ') || 'Période à confirmer'}</p>
+                  {entry.description && <p className="v48-cv-desc">{entry.description}</p>}
+                  <div className="v48-cv-foot">
+                    <span className="v48-cv-tag">{tag}</span>
+                    {entry.accountId && <Link className="v48-cv-link" to={`/app/accounts/${entry.accountId}`}>Fiche entreprise →</Link>}
+                    {(entry.verificationStatus === 'to_confirm' || entry.verificationStatus === 'probable') && <span className="v48-cv-verify">
+                      <button type="button" disabled={busy !== null} onClick={() => void validate(entry.id, 'confirmed')}>Confirmer</button>
+                      <button type="button" disabled={busy !== null} onClick={() => void validate(entry.id, 'rejected')}>Infirmer</button>
+                    </span>}
+                  </div>
+                </div>
               </div>
-              <div className="cv-org">{entry.organizationName}{entry.entryType === 'education' ? ' · formation' : ''}</div>
-              <div className="cv-meta">{[entry.location, [entry.startedAt ? formatDate(entry.startedAt) : null, entry.current ? 'présent' : entry.endedAt ? formatDate(entry.endedAt) : null].filter(Boolean).join(' → ')].filter(Boolean).join(' · ') || 'Période à confirmer'}</div>
-              {entry.description && <div className="tl-desc">{entry.description}</div>}
-              <div className="rh-ev-src">↳ {provenanceLabel(entry.provenance)}</div>
-              {(entry.verificationStatus === 'to_confirm' || entry.verificationStatus === 'probable') && <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button type="button" className="krs-b sm yes" disabled={busy !== null} onClick={() => void validate(entry.id, 'confirmed')}>Confirmer</button>
-                <button type="button" className="krs-b sm no" disabled={busy !== null} onClick={() => void validate(entry.id, 'rejected')}>Infirmer</button>
-                {entry.accountId && <Link className="krs-b sm" to={`/app/accounts/${entry.accountId}`}>Ouvrir le compte</Link>}
-              </div>}
-            </div>
-          </div>)}
-        </div>
-        {rest.length > 0 && <button type="button" className="cv-more" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-          {expanded ? 'Réduire le parcours ↑' : `Voir le parcours complet (${entries.length} entrées) ↓`}
-        </button>}
-      </>}
-  </Csec>
+            })}
+          </div>
+        </>}
+        {education.length > 0 && <details className="v48-cv-edu">
+          <summary><span className="v48-cv-edu-l">Formation</span><span className="v48-cv-edu-preview">{education.map((entry) => entry.title).join(' · ')}</span><span className="v48-section-count"><b>{education.length}</b></span><i className="v48-cv-edu-chev">⌄</i></summary>
+          <div className="v48-cv-list">
+            {education.map((entry) => <div className="v48-cv-item" key={entry.id}>
+              <span className="v48-cv-logo edu">{initials(entry.organizationName)}</span>
+              <div className="v48-cv-content">
+                <strong>{entry.title}</strong>
+                <p className="v48-cv-meta">{[entry.organizationName, monthYearLabel(entry.startedAt)].filter(Boolean).join(' · ')}</p>
+              </div>
+            </div>)}
+          </div>
+        </details>}
+      </div>}
+  </section>
 }
 
 // ─── Mémoire relationnelle ─────────────────────────────────────────────────
@@ -348,6 +394,10 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | EventTag>('all')
   const [limit, setLimit] = useState(12)
+  // Écarter un moment qui compte : pas de colonne d'archivage côté person_key_moments
+  // aujourd'hui, donc affichage seulement (revient au reload). À faire persister le
+  // jour où le besoin de le garder masqué durablement se confirme.
+  const [dismissedMomentIds, setDismissedMomentIds] = useState<Set<string>>(new Set())
 
   const monthly = useMemo(() => {
     const counts = new Map<string, number>()
@@ -361,6 +411,7 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
   const max = monthly.reduce((best, [, count]) => Math.max(best, count), 1)
   const commitmentCount = data.memoryEntries.filter((entry) => entry.entryType === 'commitment').length
   const moments = useMemo(() => buildRelationalMoments(data), [data])
+  const visibleMoments = moments.filter((moment) => !dismissedMomentIds.has(moment.id))
   const classified = useMemo(() => classifyTimeline(data, moments), [data, moments])
   const filtered = filter === 'all' ? classified : classified.filter((event) => event.tag === filter)
   const firstMonth = data.relationship.firstInteractionAt ? formatMonth(data.relationship.firstInteractionAt.slice(0, 7)) : '—'
@@ -391,11 +442,14 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
       <div className="hm-k"><p className="hm-kv">{firstMonth}</p><p className="hm-kl">Début collaboration</p></div>
     </div>
 
-    {memory && (moments.length > 0
+    {memory && (visibleMoments.length > 0
       ? <div className="km-block">
-        <p className="km-l">Les moments qui comptent<span className="km-n">{moments.length}</span></p>
+        <p className="km-l">Les moments qui comptent<span className="km-n">{visibleMoments.length}</span></p>
         <div className="km">
-          {moments.map((moment) => { const tag = IMPACT_TO_TAG[moment.impact]; return <div key={moment.id} className={`kmi ${tag}`}>
+          {visibleMoments.map((moment) => { const tag = IMPACT_TO_TAG[moment.impact]; return <div key={moment.id} className={`kmi ${tag}`}>
+            <button type="button" className="kmi-x" title="Écarter ce moment" aria-label="Écarter ce moment de l’historique" onClick={() => setDismissedMomentIds((ids) => new Set(ids).add(moment.id))}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
             <span className="kmi-d">{momentDate(moment.occurredAt)}</span>
             <span className="kmi-p" aria-hidden="true" />
             <div className="kmi-c"><p className="kmi-t">{moment.title}</p>{moment.summary && <p className="kmi-s">{moment.summary}</p>}</div>
@@ -406,7 +460,7 @@ export function HistoryCard({ data, memory }: { data: PersonDetailData; memory?:
       : <p className="km-empty">Les moments clés (jalons, frictions, silences) apparaîtront après l’analyse du contenu des échanges.</p>)}
 
     <button type="button" className="rh-expand" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      {open ? 'Réduire les échanges' : 'En savoir + · voir tous les échanges'} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      {open ? 'Réduire' : 'En savoir +'} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
     </button>
 
     {open && (classified.length === 0
@@ -546,61 +600,80 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
 
 // ─── Rail : signaux récents ────────────────────────────────────────────────
 
-const SignalGlyph = <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="18.4" r="1.4" fill="currentColor" stroke="none" /><path d="M8 15a5.5 5.5 0 0 1 8 0" /><path d="M5.2 12a9.5 9.5 0 0 1 13.6 0" /></svg>
+// Catégorie d'un signal → tag + tonalité (couleur du liseré), dérivée du type réel —
+// même logique que côté Compte (V48AccountViews.signalCategory), adaptée : PersonSignal
+// n'a pas de champ impact, on lit seulement type/sourceType.
+function signalCategory(signal: PersonSignal): { tag: string; tone: 'friction' | 'positive' | 'external' | 'internal' | 'context' } {
+  const hay = `${signal.type} ${signal.provenance.sourceType ?? ''}`.toLowerCase()
+  if (/friction|risk|risque|churn|silence|retard|perdu|tension|deadline|échéance|impayé|litige/.test(hay)) return { tag: 'Friction', tone: 'friction' }
+  if (/opportun|reprise|growth|win|renforce|levée|funding|expansion|signature/.test(hay)) return { tag: 'Opportunité', tone: 'positive' }
+  if (/pappers|rcs|registre|news|press|monitoring|veille|mobility|job|externe|linkedin|nomination|gouvernance/.test(hay)) return { tag: 'Externe', tone: 'external' }
+  if (isBehavioralSignal(signal.type)) return { tag: 'Interne', tone: 'internal' }
+  return { tag: 'Contexte', tone: 'context' }
+}
 
-function confidenceColor(confidence: number | null): string {
-  if (confidence === null) return 'var(--t4)'
-  return confidence >= 70 ? 'var(--sage)' : confidence >= 40 ? 'var(--amber)' : 'var(--coral)'
+// Action contextuelle : n'apparaît que si une vraie URL source existe.
+function signalAction(signal: PersonSignal): { label: string; url: string } | null {
+  const url = signal.provenance.sourceUrl
+  if (!url) return null
+  const label = signal.provenance.sourceLabel ?? ''
+  if (/pappers|rcs/i.test(label)) return { label: 'Ouvrir la fiche Pappers →', url }
+  if (/outlook|gmail|mail|email/i.test(label)) return { label: 'Ouvrir le mail →', url }
+  return { label: 'Ouvrir la source →', url }
 }
 
 export function SignalsCard({ data, userId, refresh }: SectionProps) {
   const [busy, run] = useBusy()
   const toast = useToast()
-  const [showAll, setShowAll] = useState(false)
-  const navigate = useNavigate()
-  // « Mouvements détectés » = signaux externes/veille (changement de poste, actualité,
-  // activité récente), PAS les traits comportementaux (posture) qui vivent sur le profil
-  // et le CV Live. Retour testing P2.3.
-  const movements = data.signals.filter((signal) => /monitoring|veille|^ai[_-]/i.test(signal.provenance.sourceType ?? ''))
-  const shown = showAll ? movements : movements.slice(0, 5)
-  const validate = (signalId: string, verdict: 'confirmed' | 'dismissed') => run(`signal-${signalId}`, async () => {
-    await saveSignalFeedback(signalId, userId, verdict)
-    toast(verdict === 'confirmed' ? 'Signal confirmé.' : 'Signal infirmé.')
+  const [expanded, setExpanded] = useState(false)
+  const toggleWatch = () => void run('watch', async () => {
+    await setPersonWatch(data, userId, !data.person.watchEnabled)
+    toast(data.person.watchEnabled ? 'Veille désactivée.' : 'Veille activée — signaux internes & externes.')
     await refresh()
   })
-  return <div className="sig-card">
-    <div className="sig-head">
-      <div className="sig-ic">{SignalGlyph}</div>
-      <div>
-        <div className="sig-ttl">Mouvements détectés</div>
-        <div className="sig-sub">{data.person.fullName.split(' ')[0]} · actualité &amp; activité externe</div>
-      </div>
-    </div>
-    <div className="sig-body">
-      {!movements.length && <Empty title="Aucun mouvement détecté">Les mouvements externes (changement de poste, actualité, activité récente) apparaîtront après les prochaines synchronisations.</Empty>}
-      {shown.map((signal) => <div className="sig-item" key={signal.id}>
-        <div className="sig-emoji" style={{ ['--ico' as string]: '#6E50C8', ['--ico-bg' as string]: '#F0EBFB' }}>{SignalGlyph}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="sig-it-t">{signal.title}</div>
-          {signal.summary && <div className="sig-it-d">{signal.summary}</div>}
-          <div className="sig-meta">
-            <span className="sig-conf" style={{ background: confidenceColor(signal.provenance.confidence) }} aria-label={confidenceLevel(signal.provenance.confidence) ? `Confiance ${confidenceLevel(signal.provenance.confidence)}` : 'Confiance à confirmer'} />
-            <span className="sig-src">{signal.provenance.sourceLabel}</span>
-            <span className="sig-date">{formatDate(signal.provenance.observedAt)}</span>
-            <span className="sig-tag">{signal.provenance.inferenceLevel ?? 'observé'}</span>
+  const validate = (signalId: string, verdict: 'confirmed' | 'dismissed') => run(`signal-${signalId}`, async () => {
+    await saveSignalFeedback(signalId, userId, verdict)
+    await refresh()
+  })
+  const lastSync = data.sources.map((source) => source.lastSyncedAt).filter((value): value is string => value !== null).sort().pop() ?? null
+  const sourcesLabel = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
+  const shown = expanded ? data.signals : data.signals.slice(0, 4)
+  const rest = data.signals.length - shown.length
+  return <section className="v48-section v48-signals">
+    <SectionTitle icon="signal" title="Signaux récents" meta={<>
+      <span className="v48-section-count"><b>{data.signals.length}</b></span>
+      <button type="button" className={`ktog ${data.person.watchEnabled ? 'on' : ''}`} disabled={busy !== null} aria-pressed={data.person.watchEnabled} onClick={toggleWatch}>
+        <span className="ktog-lbl">Veille</span>
+        <span className="ktog-sw" aria-hidden="true" />
+      </button>
+    </>} />
+    <p className="v48-signals-scope">{data.person.fullName.split(' ')[0]} · individu · {sourcesLabel}</p>
+    {data.person.watchEnabled
+      ? <div className="v48-signals-sync"><i />Dernière synchronisation : <b>{lastSync ? relativeDate(lastSync).toLowerCase() : 'à confirmer'}</b></div>
+      : <div className="v48-signals-sync off"><i />Veille coupée — aucun nouveau signal ne sera collecté.</div>}
+    <div className="v48-sig-list">
+      {shown.map((signal) => {
+        const cat = signalCategory(signal)
+        const action = signalAction(signal)
+        return <article className={`v48-sig tone-${cat.tone}`} key={signal.id}>
+          <div className="v48-sig-rail"><span className="v48-sig-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span><i className="v48-sig-dot" /></div>
+          <div className="v48-sig-body">
+            <div className="v48-sig-head"><h3>{signal.title}</h3><span className="v48-sig-cat">{cat.tag}</span></div>
+            <p>{signal.summary || 'Détail en cours de consolidation.'}</p>
+            <div className="v48-sig-foot">
+              {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
+              {action && <a className="v48-sig-open" href={action.url} target="_blank" rel="noreferrer">{action.label}</a>}
+              <span className="v48-sig-acts">
+                <button className={signal.validationStatus === 'confirmed' ? 'on' : ''} disabled={busy !== null} onClick={() => void validate(signal.id, 'confirmed')} title="Confirmer">✓</button>
+                <button className={signal.validationStatus === 'dismissed' ? 'on no' : 'no'} disabled={busy !== null} onClick={() => void validate(signal.id, 'dismissed')} title="Infirmer">×</button>
+              </span>
+            </div>
           </div>
-          <div className="sigfb" style={{ display: 'flex', gap: 5, marginTop: 7 }}>
-            {signal.validationStatus
-              ? <span className="sigfb-done">{signal.validationStatus === 'confirmed' ? '✓ Confirmé' : '✕ Infirmé'} par toi</span>
-              : <>
-                <button type="button" className="krs-b sm yes" disabled={busy !== null} onClick={() => void validate(signal.id, 'confirmed')}>Confirmer</button>
-                <button type="button" className="krs-b sm no" disabled={busy !== null} onClick={() => void validate(signal.id, 'dismissed')}>Infirmer</button>
-              </>}
-          </div>
-        </div>
-      </div>)}
-      {movements.length > 5 && <button type="button" className="cv-more" onClick={() => setShowAll((value) => !value)}>{showAll ? 'Réduire' : `Voir + (${movements.length - 5} de plus)`}</button>}
-      <button type="button" className="cv-more" onClick={() => navigate(`/app/signals?personId=${data.person.id}`)}>Voir tous les signaux →</button>
+        </article>
+      })}
+      {!data.signals.length && <Empty title="Aucun signal détecté">Les signaux internes et externes apparaîtront après les prochaines synchronisations.</Empty>}
     </div>
-  </div>
+    {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
+    {expanded && data.signals.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
+  </section>
 }

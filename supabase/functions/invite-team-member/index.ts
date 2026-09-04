@@ -72,30 +72,24 @@ Deno.serve(async (request) => {
       return json({ error: 'Une invitation est déjà en attente pour cette adresse.' }, 409)
     }
 
-    const redirectTo = `${Deno.env.get('APP_URL') ?? 'https://tohu.co'}/app/account?invitation=accepted`
-    // generateLink (au lieu de inviteUserByEmail) ne déclenche AUCUN email — il ne
-    // fait que créer/retrouver l'utilisateur et fournir le lien d'action. L'email
-    // envoyé à la personne invitée est le nôtre, via Resend + la DA Tohu, plus bas.
-    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-      type: 'invite',
-      email,
-      options: { redirectTo, data: { invited_organization_id: organizationId } },
-    })
-    let inviteUrl = redirectTo
-    if (linkError) {
-      // Déjà un compte Tohu (autre organisation) : rien à créer, un lien de
-      // connexion classique suffit — la personne rejoint l'organisation une fois
-      // connectée (organization_invitations, upserté plus bas, fait foi).
-      if (!/already.*registered|already.*exists/i.test(linkError.message)) throw linkError
-    } else if (linkData?.properties?.action_link) {
-      inviteUrl = linkData.properties.action_link
-    }
-
     const { data: inviterProfile } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle()
     const { data: organization } = await supabase.from('organizations').select('name').eq('id', organizationId).maybeSingle()
+    const inviterName = String(inviterProfile?.full_name ?? user.email ?? 'Un membre de l’équipe')
+    const organizationName = String(organization?.name ?? 'ton équipe')
+    // Tohu n'a aucune authentification par mot de passe ou lien magique — seul
+    // le SSO (Google/Microsoft/LinkedIn) existe (voir login.html). Un lien
+    // auth.admin.generateLink({type:'invite'}) authentifierait donc la personne
+    // silencieusement via un mécanisme que l'app ne sait ensuite jamais réutiliser
+    // (pas de mot de passe à définir). Le lien pointe donc simplement vers la page
+    // de connexion Tohu, où elle se connecte normalement via SSO ; l'invitation
+    // (organization_invitations, upsertée plus bas) est de toute façon rattachée
+    // par email dès la connexion, quel que soit le mécanisme d'auth utilisé
+    // (accept_my_organization_invitations, appelé à chaque démarrage de l'app).
+    const inviteUrl = `${Deno.env.get('APP_URL') ?? 'https://tohu.co'}/connexion?invited_by=${encodeURIComponent(inviterName)}&org=${encodeURIComponent(organizationName)}`
+
     const rendered = renderTeamInvite({
-      inviterName: String(inviterProfile?.full_name ?? user.email ?? 'Un membre de l’équipe'),
-      organizationName: String(organization?.name ?? 'ton équipe'),
+      inviterName,
+      organizationName,
       role,
       inviteUrl,
     })

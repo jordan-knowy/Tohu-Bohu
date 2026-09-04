@@ -47,7 +47,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('communication_messages').select('id,sent_at,direction,subject,provider').eq('organization_id', workspaceId).eq('contact_id', personId).order('sent_at', { ascending: false }).limit(500),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId).eq('user_id', userId),
-    client.from('resource_lock').select('locked_by').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
+    client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
     client.from('contact_name_suggestions').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     client.from('contact_merge_suggestions').select('*').eq('organization_id', workspaceId).eq('status', 'pending').or(`contact_a_id.eq.${personId},contact_b_id.eq.${personId}`),
     client.from('meeting_participants').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
@@ -96,6 +96,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   if (text(settings.primary_owner_user_id)) profileIds.add(String(settings.primary_owner_user_id))
   if (text(contact.owner_user_id)) profileIds.add(String(contact.owner_user_id))
   memoryEntries.forEach((row) => { if (text(row.author_user_id)) profileIds.add(String(row.author_user_id)) })
+  if (text(lockRow.locked_by)) profileIds.add(String(lockRow.locked_by))
   const { data: profileData } = profileIds.size
     ? await client.from('profiles').select('id,full_name').in('id', [...profileIds])
     : { data: [] }
@@ -133,6 +134,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     profileNames,
     degradedReasons,
     lockedBy: text(lockRow.locked_by),
+    lockedAt: text(lockRow.created_at),
     nameSuggestion: nameSuggestionRow.id ? nameSuggestionRow : null,
     mergeSuggestions: mergeSuggestionRows,
   })
@@ -210,6 +212,37 @@ export async function setPersonLock(data: PersonDetailData, userId: string, lock
     .eq('subject_id', data.person.id)
     .eq('lock_state', 'active')
     .eq('locked_by', userId)
+  if (error) throw error
+}
+
+/** Personnes explicitement invitées à franchir le verrou (SPEC-09) quand la fiche
+ *  est restreinte — voir access_grant. Non transitif : une invitation par personne. */
+export async function listAccessGrants(workspaceId: string, personId: string): Promise<string[]> {
+  const { data, error } = await getSupabase().from('access_grant').select('grantee_user_id')
+    .eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('status', 'active')
+  if (error) throw error
+  return (data ?? []).map((row) => String(row.grantee_user_id))
+}
+
+export async function grantPersonAccess(data: PersonDetailData, userId: string, granteeUserId: string): Promise<void> {
+  const { error } = await getSupabase().from('access_grant').insert({
+    organization_id: data.person.workspaceId,
+    subject_type: 'contact',
+    subject_id: data.person.id,
+    grantee_user_id: granteeUserId,
+    granted_by: userId,
+  })
+  if (error) throw error
+}
+
+export async function revokePersonAccess(data: PersonDetailData, granteeUserId: string): Promise<void> {
+  const { error } = await getSupabase().from('access_grant')
+    .update({ status: 'revoked' })
+    .eq('organization_id', data.person.workspaceId)
+    .eq('subject_type', 'contact')
+    .eq('subject_id', data.person.id)
+    .eq('grantee_user_id', granteeUserId)
+    .eq('status', 'active')
   if (error) throw error
 }
 

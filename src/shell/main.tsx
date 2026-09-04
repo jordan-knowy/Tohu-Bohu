@@ -33,6 +33,7 @@ import PersonListPage from '../person-list/PersonListPage'
 import PersonDetailPage from '../person-detail/PersonDetailPage'
 import GlobalSearch from './GlobalSearch'
 import NotificationBell from './NotificationBell'
+import { useTopbarHeader } from './topbarHeaderSignal'
 import AskPage from './pages/AskPage'
 import BohuBar from './BohuBar'
 import HomePage from './pages/HomePage'
@@ -77,15 +78,15 @@ function activeNav(path: string): string {
   return ''
 }
 
-/** Affiche une fois « Tu es maintenant membre de l'équipe de X » après un clic
- *  sur le lien d'invitation — voir boot() pour la provenance de joinedTeams. */
+/** Affiche une fois « X t'a ajouté(e) à son équipe » après un clic sur le lien
+ *  d'invitation — voir boot() pour la provenance de joinedTeams. */
 function JoinedTeamToasts({ joinedTeams }: { joinedTeams: JoinedTeam[] }) {
   const toast = useToast()
   useEffect(() => {
     for (const team of joinedTeams) {
       toast(team.inviterName
-        ? `Tu es maintenant membre de l’équipe de ${team.inviterName}.`
-        : `Tu es maintenant membre de l’équipe ${team.organizationName}.`)
+        ? `${team.inviterName} t’a ajouté(e) à son équipe sur Tohu.`
+        : `Tu as rejoint l’équipe ${team.organizationName} sur Tohu.`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -97,6 +98,7 @@ function AppShell({ context }: { context: AppContext }) {
   const navigate = useNavigate()
   const active = activeNav(location.pathname)
   const page = PAGE_TITLES.find((entry) => entry.test(location.pathname)) ?? { title: 'Fiche Compte', subtitle: 'Cockpit relationnel sourcé' }
+  const topbarOverride = useTopbarHeader()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('tohu-sidebar-collapsed') === 'true')
   const [counts, setCounts] = useState({ accounts: 0, people: 0 })
   const [footer, setFooter] = useState({ name: displayName(context.session.user), plan: 'Tohu', avatarUrl: null as string | null })
@@ -167,7 +169,12 @@ function AppShell({ context }: { context: AppContext }) {
     </aside>
     <div className="app-main">
       <header className="topbar">
-        <div><h1 id="page-title">{page.title}</h1><p id="page-subtitle">{page.subtitle}</p></div>
+        {topbarOverride
+          ? <div className="topbar-back-row">
+            <button type="button" className="topbar-back" onClick={() => navigate(topbarOverride.backTo)}>← {topbarOverride.backLabel}</button>
+            <h1 id="page-title">{topbarOverride.title}</h1>
+          </div>
+          : <div><h1 id="page-title">{page.title}</h1><p id="page-subtitle">{page.subtitle}</p></div>}
         <GlobalSearch />
         <NotificationBell userId={context.session.user.id} />
       </header>

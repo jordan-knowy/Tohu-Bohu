@@ -6,7 +6,8 @@ import type { PersonApproachScenario, PersonDetailData, PersonHistoryEvent, Pers
 import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
-import { formatDate, formatMonth, relativeDate, scoreTone, useBusy, useToast } from './ui'
+import { V48Icon, SectionTitle, formatDate, formatMonth, relativeDate, scoreTone, useBusy, useToast } from './ui'
+import { ContactAvatar } from '../components/ContactAvatar'
 
 type ViewProps = {
   data: PersonDetailData
@@ -15,26 +16,14 @@ type ViewProps = {
   manualSyncAction?: ReactNode
 }
 
-function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' }) {
-  const paths: Record<typeof name, ReactNode> = {
-    calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M4 10h16M8 3.5v4M16 3.5v4" /></>,
-    profile: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" /><circle cx="12" cy="12" r="2.5" /></>,
-    pulse: <path d="M3 12h4l2-5 4 10 2-5h6" />,
-    commitment: <><path d="M4.5 5.5h5a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H4.5Z" /><path d="M19.5 5.5h-5A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h5.5Z" /></>,
-    career: <><circle cx="6.5" cy="6" r="2.5" /><circle cx="17.5" cy="18" r="2.5" /><path d="M6.5 8.5v5a4.5 4.5 0 0 0 4.5 4.5h4" /></>,
-    signal: <><path d="M5 12a7 7 0 0 1 14 0M8 15a4 4 0 0 1 8 0" /><circle cx="12" cy="18" r="1" /></>,
-    sparkle: <><path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3Z" /><path d="m18 14 .8 2.2 2.2.8-2.2.8L18 20l-.8-2.2L15 17l2.2-.8Z" /></>,
-    share: <><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="M8.2 10.9l7-3.6M8.2 13.1l7 3.6" /></>,
-  }
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
-}
-
-function SectionTitle({ icon, title, meta }: { icon: Parameters<typeof V48Icon>[0]['name']; title: string; meta?: ReactNode }) {
-  return <header className="v48-section-title">
-    <span><V48Icon name={icon} /></span>
-    <h2>{title}</h2>
-    {meta && <div>{meta}</div>}
-  </header>
+/** Fait ressortir en violet le segment le plus saillant d'un texte généré par
+ *  l'IA, si celle-ci l'a délimité par **...** — jamais de choix arbitraire côté
+ *  front sur du texte non balisé (zéro-hallu : rien n'est mis en avant sans
+ *  signal explicite de la source). */
+function renderEmphasis(text: string): ReactNode {
+  const parts = text.split(/\*\*(.+?)\*\*/g)
+  if (parts.length === 1) return text
+  return parts.map((part, index) => index % 2 === 1 ? <em key={index}>{part}</em> : part)
 }
 
 function EmptyState({ children }: { children: ReactNode }) {
@@ -52,7 +41,7 @@ function axisTier(predominancePct: number | null): AxisTier {
 // (signal net et confirmé) — sur demande explicite, à l'inverse de l'intuition
 // « petite variation = anodin (vert) » : ici une faible prédominance est le cas
 // à surveiller, une forte prédominance est le cas rassurant.
-const AXIS_TIER_COLOR: Record<AxisTier, string> = { legere: '#D94F63', moyenne: '#C97A20', forte: '#2EA86A' }
+const AXIS_TIER_COLOR: Record<AxisTier, string> = { legere: '#2EA86A', moyenne: '#C97A20', forte: '#D94F63' }
 const AXIS_TIER_WORD: Record<AxisTier, string> = { legere: 'légèrement', moyenne: 'nettement', forte: 'fortement' }
 
 const AXIS_HINT: Record<PrimaryAxisId, string> = {
@@ -242,16 +231,16 @@ function DoDontPager({ guidance }: { guidance: PersonApproachScenario[] }) {
     </div>
     {total > 1 && <div className="mvp">
       <button type="button" className="mvp-b" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>← Précédent</button>
-      <span className="mvp-i">situation {Math.min(page, total - 1) + 1} sur {total}</span>
+      <span className="mvp-i">posture {Math.min(page, total - 1) + 1} sur {total}</span>
       <button type="button" className="mvp-b" disabled={page >= total - 1} onClick={() => setPage((value) => Math.min(total - 1, value + 1))}>Suivant →</button>
     </div>}
   </>
 }
 
-/** Copie de lien uniquement — à ne pas confondre avec le vrai partage de fiche
- *  (PassationModal, qui accorde un accès réel via fiche_shares). Le lien ne
- *  fonctionnera que pour quelqu'un qui a déjà accès à cette fiche (owner ou
- *  destinataire d'un partage), pas pour tout membre de l'organisation. */
+/** Copie de lien uniquement — à ne pas confondre avec un vrai partage d'accès
+ *  (fiche_shares). Le lien ne fonctionnera que pour quelqu'un qui a déjà accès
+ *  à cette fiche (owner ou destinataire d'un partage), pas pour tout membre
+ *  de l'organisation. */
 function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const link = typeof window !== 'undefined' ? window.location.href : ''
@@ -264,7 +253,7 @@ function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => 
   }
   return <div className="v48-shm" onClick={onClose}>
     <div className="v48-shp" onClick={(event) => event.stopPropagation()}>
-      <div className="v48-shp-h"><p className="v48-shp-t">Copier le lien</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
+      <div className="v48-shp-h"><p className="v48-shp-t">Partager</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
       <p className="v48-shp-i">Une fiche relationnelle contient des inférences sur {data.person.fullName}.</p>
       <p className="v48-shp-l">Lien interne</p>
       <div className="v48-shp-lk"><span>{link}</span><button type="button" className="v48-shp-cp" onClick={copy}>{copied ? 'Copié' : 'Copier'}</button></div>
@@ -308,9 +297,6 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
   }
   const hideTip = () => setTip(null)
 
-  const meetingsWord = data.behavior.analyzedMeetingInteractions === 1 ? 'réunion' : 'réunions'
-  const emailsWord = data.behavior.analyzedEmailInteractions === 1 ? 'email' : 'emails'
-
   return <div className="v48-person-profile">
     <div className="now">
       <article className="rdv">
@@ -321,17 +307,17 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
             ? <><p className="rdv-t">{formatDate(nextMeeting.occurredAt)}</p><p className="rdv-s">{nextMeeting.title}{nextMeeting.sourceLabel ? ` · ${nextMeeting.sourceLabel}` : ''}</p></>
             : <><p className="rdv-t">Aucun rendez-vous synchronisé</p><p className="rdv-s">Connecte ou synchronise un agenda pour préparer le prochain échange.</p></>}
         </div>
-        <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Copier le lien</button>
+        <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Partager</button>
       </article>
       <article className="po">
         <p className="po-l">Posture à adopter</p>
-        <p className="po-t">{posture || 'Le profil est encore en construction. Tohu attend davantage d’échanges observables avant de recommander une posture.'}</p>
+        <p className="po-t">{posture ? renderEmphasis(posture) : 'Le profil est encore en construction. Tohu attend davantage d’échanges observables avant de recommander une posture.'}</p>
       </article>
     </div>
 
     <section className="sec bhv">
       <div className="sec-h">
-        <V48Icon name="profile" /><p className="sec-t">Profil comportemental</p>
+        <span className="sec-ic"><V48Icon name="profile" /></span><p className="sec-t">Profil comportemental</p>
         <span className="cnt"><b>{observedPrimary.length}</b> dimensions · déduites de {data.behavior.analyzedInteractions} échange{data.behavior.analyzedInteractions > 1 ? 's' : ''}</span>
       </div>
       <div className="sec-b bhv-b">
@@ -360,7 +346,7 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
               </div>}
               <BehaviorRadar axes={radarAxes} onShowTip={showTip} onHideTip={hideTip} />
               <div className="lvs">
-                <p className="lvs-h"><i className="lvs-i" /><b>Dernière analyse</b> · {formatDate(data.behavior.updatedAt)}</p>
+                <p className="lvs-h"><i className="lvs-i" /><b>Vérification auto</b> · {formatDate(data.behavior.updatedAt)}</p>
                 <span className="lvs-bar" />
               </div>
             </div>
@@ -378,7 +364,7 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
     </section>
 
     {hasProfile && <details className="v48-detail-fold">
-      <summary><V48Icon name="profile" /><strong>Le profil en détail</strong><span>{observedPrimary.length} dimensions · {cognitive.secondaryAxes.filter((axis) => axis.status !== 'insufficient').length} traits</span><b>⌄</b></summary>
+      <summary><div className="fold-row"><span className="fold-ic"><V48Icon name="sliders" /></span><strong>Le profil en détail</strong><span>{observedPrimary.length} dimensions · {cognitive.secondaryAxes.filter((axis) => axis.status !== 'insufficient').length} traits</span><b>⌄</b></div></summary>
       <div className="fold-b">
         <div className="g2">
           {primaryAxes.map((axis) => {
@@ -424,15 +410,6 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
         })}
       </div>
     </details>}
-
-    <p className="ft">
-      {data.behavior.analyzedInteractions} échange{data.behavior.analyzedInteractions > 1 ? 's' : ''} analysé{data.behavior.analyzedInteractions > 1 ? 's' : ''}
-      {data.behavior.analyzedEmailInteractions > 0 && ` (${data.behavior.analyzedEmailInteractions} ${emailsWord}`}
-      {data.behavior.analyzedMeetingInteractions > 0 && `${data.behavior.analyzedEmailInteractions > 0 ? ', ' : ' ('}${data.behavior.analyzedMeetingInteractions} ${meetingsWord}`}
-      {(data.behavior.analyzedEmailInteractions > 0 || data.behavior.analyzedMeetingInteractions > 0) && ')'}
-      {data.relationship.firstInteractionAt && data.relationship.lastInteractionAt && ` · du ${formatDate(data.relationship.firstInteractionAt)} au ${formatDate(data.relationship.lastInteractionAt)}`}
-      {' · calculé le '}{formatDate(data.behavior.updatedAt ?? data.generatedAt)}
-    </p>
 
     {tip && <div className="v48-tipx" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : 'none' }}>{tip.content}</div>}
     {shareOpen && <ShareModal data={data} onClose={() => setShareOpen(false)} />}
@@ -637,6 +614,14 @@ function EngagementProof({ data, refISO, verbatim, direction, reasoning }: {
   </>
 }
 
+/** Qui doit honorer l'engagement, en petit avatar rond — déduit des signaux réels
+ *  disponibles, jamais une identité inventée : la personne de la fiche si le message
+ *  vient d'elle (sourceDirection inbound), sinon l'owner de la fiche (à qui la
+ *  recommandation/l'engagement noté manuellement s'adresse côté équipe). */
+function EngagementAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
+  return <span className="eg-av" title={name}><ContactAvatar src={photoUrl} name={name} /></span>
+}
+
 function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommendation; data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, run] = useBusy()
@@ -655,6 +640,7 @@ function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommend
       {item.dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(item.dueAt)}</p>}
       <p className="eg-src">↳ {item.provenance.sourceLabel}</p>
     </div>
+    <EngagementAvatar name={data.person.primaryOwnerName ?? 'Owner à confirmer'} />
     <div className="eg-b">
       <button type="button" className="info" aria-expanded={proofOpen} title="D’où vient cet engagement ?" onClick={() => setProofOpen((value) => !value)}>i</button>
       <button type="button" className="ok" title="Tenu" disabled={busy !== null} onClick={() => void act('completed')}>{EG_CHECK}</button>
@@ -671,6 +657,11 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
   const toast = useToast()
   const [busy, run] = useBusy()
   const source = item.sourceType === 'manual' ? item.authorName : item.sourceLabel ?? 'Tohu'
+  const respondent = item.sourceType === 'manual'
+    ? { name: item.authorName, photo: null }
+    : item.sourceDirection === 'inbound'
+      ? { name: data.person.fullName, photo: data.person.avatarUrl }
+      : { name: data.person.primaryOwnerName ?? 'Owner à confirmer', photo: null }
   const [proofOpen, setProofOpen] = useState(false)
   const { title, dueAt } = memoryDue(item.content)
   const status: EngagementState = isOverdue(dueAt) ? { cls: 'late', label: 'Glissé' } : { cls: 'open', label: 'À faire' }
@@ -691,6 +682,7 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
       {dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(dueAt)}</p>}
       <p className="eg-src">↳ {source} · {formatDate(item.sourceOccurredAt ?? item.createdAt)}</p>
     </div>
+    <EngagementAvatar name={respondent.name} photoUrl={respondent.photo} />
     <div className="eg-b">
       <button type="button" className="info" aria-expanded={proofOpen} title="D’où vient cet engagement ?" onClick={() => setProofOpen((value) => !value)}>i</button>
       <button type="button" className="ok" title="Tenu — garder en mémoire" disabled={busy !== null} onClick={resolve}>{EG_CHECK}</button>
@@ -736,7 +728,7 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   return <div className="v48-person-relation">
     <div className="cols">
       <section className="sec rel-card">
-        <div className="sec-h"><V48Icon name="pulse" /><p className="sec-t">Notre relation</p>
+        <div className="sec-h"><span className="sec-ic"><V48Icon name="pulse" /></span><p className="sec-t">Notre relation</p>
           <button type="button" className="det det-i" aria-label="Détail du calcul du score" onClick={() => setMethodologyOpen(true)}>i</button></div>
         <div className="sec-b">
           <div className="rel-top">
@@ -759,7 +751,7 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
       </section>
 
       <section className="sec">
-        <div className="sec-h"><V48Icon name="commitment" /><p className="sec-t">Engagements pris</p><span className="cnt"><b>{engagementCount}</b> à suivre</span></div>
+        <div className="sec-h"><span className="sec-ic"><V48Icon name="commitment" /></span><p className="sec-t">Engagements pris</p><span className="cnt"><b>{engagementCount}</b> à suivre</span></div>
         <div className="sec-b">
           <p className="hint-l">Ce qui a été promis dans les échanges. Garde ce qui compte, écarte le reste.</p>
           {engagementCount > 0
@@ -776,26 +768,44 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   </div>
 }
 
+/** « il y a X » pour un évènement passé (contrairement à relativeDate, bascule sur
+ *  les mois au-delà de 31 j — nécessaire pour dater un changement de poste). */
+function timeAgoLabel(value: string | null): string {
+  if (!value) return 'date à confirmer'
+  const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000))
+  if (days === 0) return 'aujourd’hui'
+  if (days < 31) return `il y a ${days} j`
+  const months = Math.floor(days / 30.44)
+  if (months < 12) return `il y a ${months} mois`
+  const years = Math.floor(months / 12)
+  return `il y a ${years} an${years > 1 ? 's' : ''}`
+}
+
 function InsightBand({ data }: { data: PersonDetailData }) {
   // Le spotlight « depuis votre dernier échange » privilégie une actualité réelle,
   // pas un trait comportemental (registre, tonalité…) qui n'est pas un événement daté.
   const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
-  // Insight concret (P2.8) : la prochaine action réellement à mener, tirée d'un
-  // engagement ouvert (reco déclenchée ou engagement pris non résolu) — jamais inventée.
-  const openReco = data.recommendations.find((item) => ['open', 'in_progress', 'postponed'].includes(item.status) && (item.kind === 'coaching' || item.triggerSignal !== null))
-  const openCommitment = data.memoryEntries.find((item) => ['commitment', 'decision', 'engagement'].includes(item.entryType) && !item.resolvedAt)
-  const nextStep = openReco?.recommendedAction || openReco?.title || openCommitment?.content?.replace(/\s*—\s*échéance\s+\d{4}-\d{2}-\d{2}\s*$/, '') || null
+  const signalUrl = signal?.provenance.sourceUrl ?? null
+  // Sous-encart daté de la carte gauche : le dernier changement de poste détecté
+  // (jamais inventé — vide si le CV n'a rien détecté de nouveau).
+  const nested = data.careerEntries.find((entry) => entry.entryType === 'detected_change') ?? null
+  const reading = data.summary?.text || data.behavior.executiveSummary || 'Lecture en cours de construction'
+  const sources = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
   return <div className="v48-insight-grid">
-    <article className="v48-insight">
-      <span><V48Icon name="sparkle" /></span>
-      <div><small>Ce que montrent les échanges</small><strong>{data.summary?.text || data.behavior.executiveSummary || 'Lecture en cours de construction'}</strong>
-        {nextStep && <p className="v48-insight-step"><b>Prochaine action</b>{nextStep}</p>}
-        <p>Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'}</p>
-      </div>
+    <article className="v48-insight filled">
+      <div className="v48-insight-head"><span className="v48-insight-ic"><V48Icon name="sparkle" /></span><small>Ce que montrent les échanges</small></div>
+      <strong>{reading}</strong>
+      {nested && <div className="v48-insight-nested">
+        <small>{timeAgoLabel(nested.startedAt)}</small>
+        <b>{nested.title}</b>
+        {nested.description && <p>{nested.description}</p>}
+      </div>}
+      <p className="v48-insight-src">Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {sources}</p>
     </article>
     <article className="v48-signal-spotlight">
       <small>Depuis votre dernier échange <b>{formatDate(data.relationship.lastInteractionAt)}</b></small>
-      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeDate(signal.provenance.observedAt).toLowerCase()}</em></>
+      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeDate(signal.provenance.observedAt).toLowerCase()}</em>
+        {signalUrl && <a className="v48-sig-open" href={signalUrl} target="_blank" rel="noreferrer">Voir la publication →</a>}</>
         : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}
     </article>
   </div>
@@ -803,14 +813,27 @@ function InsightBand({ data }: { data: PersonDetailData }) {
 
 export function V48PersonLiveView({ data, userId, refresh }: ViewProps) {
   const currentCareer = data.careerEntries.find((item) => item.current)
-  const hookCandidates = [
-    data.summary?.text ? { title: 'Synthèse relationnelle', text: data.summary.text, source: data.summary.provenance?.sourceLabel } : null,
+  // Points d'accroche RÉELS (recherche web) en priorité — relations en commun puis
+  // sujets de conversation — sinon repli sur la lecture déjà disponible (synthèse,
+  // actualité de poste, style d'échange) pour ne jamais afficher un vide évitable.
+  const enrichment = data.enrichment
+  const enrichmentHooks = enrichment ? [
+    ...enrichment.relatedPeople.map((person) => ({
+      title: [person.name, person.role].filter(Boolean).join(' · '),
+      text: person.why ?? 'Relation identifiée via la recherche web — peut faciliter une mise en relation.',
+      source: 'LinkedIn · Recherche web',
+    })),
+    ...enrichment.talkingPoints.map((point) => ({ title: 'Sujet à aborder', text: point, source: 'Recherche web · Suggestion' })),
+  ].slice(0, 5) : []
+  const fallbackHookCandidates = [
+    data.summary?.text ? { title: 'Synthèse relationnelle', text: data.summary.text, source: data.summary.provenance?.sourceLabel ?? null } : null,
     currentCareer?.description
       ? { title: 'Actualité professionnelle', text: currentCareer.description, source: currentCareer.provenance.sourceLabel }
       : null,
     data.behavior.executiveSummary ? { title: 'Style d’échange', text: data.behavior.executiveSummary, source: 'Échanges observés' } : null,
   ]
-  const hooks = hookCandidates.filter((item): item is NonNullable<(typeof hookCandidates)[number]> => item !== null)
+  const fallbackHooks = fallbackHookCandidates.filter((item): item is NonNullable<(typeof fallbackHookCandidates)[number]> => item !== null)
+  const hooks = enrichmentHooks.length ? enrichmentHooks : fallbackHooks
 
   return <div className="v48-person-live">
     <InsightBand data={data} />
@@ -831,15 +854,4 @@ export function V48PersonLiveView({ data, userId, refresh }: ViewProps) {
       </aside>
     </div>
   </div>
-}
-
-export function V48PersonSourceNote({ data }: { data: PersonDetailData }) {
-  const connected = data.sources.filter((source) => source.status === 'connected')
-  return <footer className="v48-source-note">
-    {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} retrouvé{data.relationship.totalInteractions > 1 ? 's' : ''}
-    {' · '}{data.behavior.analyzedInteractions} analysé{data.behavior.analyzedInteractions > 1 ? 's' : ''}
-    {' · '}calculé {formatDate(data.generatedAt)}
-    {connected.length > 0 && <> · {connected.map((source) => source.label).join(' + ')}</>}
-    {data.employment && <> · <Link to={`/app/accounts/${data.employment.accountId}`}>{data.employment.accountName}</Link></>}
-  </footer>
 }
