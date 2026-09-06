@@ -7,6 +7,8 @@ import TranscriptImport from './TranscriptImport'
 
 // Logos officiels (Simple Icons, MIT) — monochrome, colorés via currentColor comme les autres icônes de l'app.
 const GOOGLE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/></svg>'
+// Logo Google en couleurs (remplace GOOGLE_ICON monochrome ci-dessus pour la carte connecteur).
+const GOOGLE_LOGO_URL = 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/Google-workspace.webp'
 const MICROSOFT_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0v11.408h11.408V0zm12.594 0v11.408H24V0zM0 12.594V24h11.408V12.594zm12.594 0V24H24V12.594z"/></svg>'
 // Non issue de Simple Icons (indisponible en fetch direct) — pictogramme générique
 // « personnes + bulle », à remplacer par le vrai logo Teams si besoin visuel exact.
@@ -22,11 +24,11 @@ const READAI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGr
 // (OAuth applicatif propre à Tohu, géré par une edge function connect-<provider>
 // qui renvoie une authorizeUrl puis persiste le token côté serveur au retour).
 type ConnectorDefinition =
-  | { provider: string; label: string; description: string; icon: string; kind: 'supabase'; auth: Provider; scopes: string }
-  | { provider: string; label: string; description: string; icon: string; kind: 'edge'; functionSlug: string }
+  | { provider: string; label: string; description: string; icon: string; iconUrl?: string; kind: 'supabase'; auth: Provider; scopes: string }
+  | { provider: string; label: string; description: string; icon: string; iconUrl?: string; kind: 'edge'; functionSlug: string }
 
 export const connectorDefinitions: ConnectorDefinition[] = [
-  { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat, contacts et calendrier Google.', icon: GOOGLE_ICON, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/contacts.readonly' },
+  { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat, contacts et calendrier Google.', icon: GOOGLE_ICON, iconUrl: GOOGLE_LOGO_URL, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/contacts.readonly' },
   { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
@@ -245,7 +247,9 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
           ? `● Connecté${row?.last_synced_at ? ` · synchro ${formatDate(row.last_synced_at)}` : ''}`
           : row?.status === 'error' ? '● Erreur de connexion' : '○ Non connecté'
         return <article className="connector-card panel" key={definition.provider}>
-          <span className={`connector-icon${definition.provider === 'read_ai' ? ' connector-icon--brand' : ''}`} dangerouslySetInnerHTML={{ __html: definition.icon }} />
+          {definition.iconUrl
+            ? <span className="connector-icon"><img src={definition.iconUrl} alt="" /></span>
+            : <span className={`connector-icon${definition.provider === 'read_ai' ? ' connector-icon--brand' : ''}`} dangerouslySetInnerHTML={{ __html: definition.icon }} />}
           <div>
             <h3>{definition.label}</h3>
             <p>{definition.description}</p>

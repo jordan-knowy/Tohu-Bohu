@@ -262,6 +262,20 @@ Deno.serve(async (req) => {
     const { context: companyContext, skip: skipCompanyResearch } = companyContextFor(c);
 
     const currentNameIsPlaceholder = looksLikePlaceholderName(c.full_name ?? '', email);
+    // Historique de carrière (expériences passées + formation) : recherche PLUS
+    // coûteuse qu'un simple "y a-t-il du nouveau", donc jamais répétée à chaque
+    // cycle — seulement au tout premier enrichissement réussi (aucune ligne
+    // experience/education encore en base) et seulement au palier A (le seul
+    // qui a le budget de recherche pour ça). Un historique passé ne change pas :
+    // pas besoin de le re-demander toutes les 12-24h comme le poste actuel.
+    let fetchFullCareerHistory = false;
+    if (tier === 'A') {
+      const { count: careerHistoryCount } = await supabase.from('person_career_entries')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', c.organization_id).eq('contact_id', c.id)
+        .in('entry_type', ['experience', 'education']);
+      fetchFullCareerHistory = !careerHistoryCount;
+    }
     let enr: any = null;
     try {
       enr = await runEnrichmentAgentThrottled(supabase, {
@@ -269,6 +283,7 @@ Deno.serve(async (req) => {
         company: c.companies?.name ?? '', linkedinUrl: '', knownLinkedinUrl: '',
         tier, domainType, sourceHints: sourceHintsFor(domainType), skipCompanyResearch, companyContext,
         nameLooksLikePlaceholder: currentNameIsPlaceholder,
+        fetchFullCareerHistory,
         alreadyKnown: { previousEnrichment: previous, note: 'Détecte surtout les CHANGEMENTS récents (poste, activité) vs le déjà-connu.' },
         usageLog: { client: supabase, organizationId: c.organization_id, userId: c.owner_user_id ?? null, fn: 'monitor-contacts' },
       });
@@ -394,6 +409,39 @@ Deno.serve(async (req) => {
             last_verified_at: enrichedAt,
             updated_at: enrichedAt,
           }).eq('id', currentCareer.id);
+        }
+      }
+
+      // Historique complet (une seule fois — voir fetchFullCareerHistory ci-dessus) :
+      // expériences passées et formation, jamais le poste actuel (déjà géré au-dessus).
+      if (fetchFullCareerHistory) {
+        const historyBase = {
+          organization_id: c.organization_id, contact_id: c.id, is_current: false,
+          verification_status: 'to_confirm', source_type: 'ai_monitoring', source_label: 'Veille Tohu',
+          source_url: enr.linkedinUrl ?? null, observed_at: enrichedAt, last_verified_at: enrichedAt,
+          confidence: 60, inference_level: 'observable',
+        };
+        const pastExperience = Array.isArray(enr.pastExperience) ? enr.pastExperience : [];
+        if (pastExperience.length) {
+          await supabase.from('person_career_entries').insert(pastExperience.slice(0, 15).map((job: any) => ({
+            ...historyBase,
+            entry_type: 'experience',
+            title: String(job.title ?? '').slice(0, 200),
+            organization_name: String(job.company ?? '').slice(0, 200),
+            started_at: job.startDate ?? null,
+            ended_at: job.endDate ?? null,
+          })).filter((row: any) => row.title && row.organization_name));
+        }
+        const education = Array.isArray(enr.education) ? enr.education : [];
+        if (education.length) {
+          await supabase.from('person_career_entries').insert(education.slice(0, 10).map((entry: any) => ({
+            ...historyBase,
+            entry_type: 'education',
+            title: String(entry.degree ?? '').slice(0, 200),
+            organization_name: String(entry.school ?? '').slice(0, 200),
+            started_at: entry.startDate ?? null,
+            ended_at: entry.endDate ?? null,
+          })).filter((row: any) => row.title && row.organization_name));
         }
       }
 

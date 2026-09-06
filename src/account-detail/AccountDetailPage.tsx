@@ -4,22 +4,25 @@ import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { displayName, initials } from '../lib/auth'
-import { confidenceLevel } from '../person-detail/ui'
+import { ToastProvider, confidenceLevel, useBusy, useToast } from '../person-detail/ui'
 import { saveSignalFeedback } from '../services/data'
-import { verifySuperAdmin } from '../super-admin/service'
 import { RELATION_COLORS } from '../account-list/mapping'
+import { setTopbarHeader } from '../shell/topbarHeaderSignal'
 import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/service'
 import {
   addAccountNote,
+  enrichAccountRegistry,
   getAccountDetail,
+  grantAccountAccess,
+  listAccountAccessGrants,
   listAccountVisions,
-  setAccountArchived,
+  revokeAccountAccess,
   setAccountFavorite,
   setAccountLock,
+  setAccountOwner,
   setAccountRelationType,
+  setAccountVisibility,
   setAccountWatch,
-  shareAccount,
-  triggerAccountEnrichment,
   updateRecommendationStatus,
   type AccountVision,
 } from './service'
@@ -92,7 +95,7 @@ function Empty({ title, children }: { title: string; children: ReactNode }) {
   return <div className="ra-empty"><span>◇</span><strong>{title}</strong><p>{children}</p></div>
 }
 
-type IconName = 'pulse' | 'people' | 'bolt' | 'clock' | 'building' | 'signal' | 'share' | 'lock' | 'sparkles' | 'ask' | 'trash' | 'restore'
+type IconName = 'pulse' | 'people' | 'bolt' | 'clock' | 'building' | 'signal'
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
@@ -102,12 +105,6 @@ function Icon({ name }: { name: IconName }) {
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     building: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 7h2m4 0h2M8 11h2m4 0h2M8 15h2m4 0h2M9 21v-3h6v3" /></>,
     signal: <><path d="M5 12a7 7 0 0 1 14 0M8 15a4 4 0 0 1 8 0" /><circle cx="12" cy="18" r="1" /></>,
-    share: <><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="m8.2 10.9 7-3.6m-7 5.8 7 3.6" /></>,
-    lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2.2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /></>,
-    sparkles: <><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Z" /><path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" /></>,
-    ask: <><path d="M4 5.5h16v11H9l-5 4v-15Z" /><path d="M9.5 10a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 3m0 1.8v.2" /></>,
-    trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></>,
-    restore: <><path d="M4 4v6h6" /><path d="M4.5 13a8 8 0 1 0 2-8.5L4 10" /></>,
   }
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
@@ -198,7 +195,7 @@ function PeopleMap({ people, navigate }: { people: AccountPerson[]; navigate: (p
     { left: 6, top: 340 },
     { left: 404, top: 340 },
   ]
-  return <Section id="account-people" title="Organigramme Live" icon="share">
+  return <Section id="account-people" title="Organigramme Live" icon="people">
     {!shown.length ? <Empty title={people.length ? 'Rôles de pouvoir non qualifiés' : 'Aucun interlocuteur lié'}>{people.length ? 'Les rôles décisionnels doivent être confirmés et persistés.' : 'Ajoute ou rattache un contact réel à ce compte.'}</Empty> :
       <div className="korg-wrap"><div className="korg m-sante">
         <svg className="korg-lines" viewBox="0 0 600 445" preserveAspectRatio="none" aria-hidden="true"><g stroke="#C9BEE8" strokeWidth="1.5" fill="none"><path d="M300 101 L300 130" /><path d="M101 130 L499 130" /><path d="M101 130 L101 175" /><path d="M499 130 L499 175" /><path d="M101 270 L101 340" /><path d="M499 270 L499 340" /></g></svg>
@@ -390,26 +387,6 @@ function WatchCard({ data, open }: { data: AccountDetailData; open: () => void }
   </button>
 }
 
-function EnrichAccountButton({ companyId, accountName }: { companyId: string; accountName: string }) {
-  const [busy, setBusy] = useState(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
-  const run = async () => {
-    setBusy(true)
-    setFeedback(null)
-    try {
-      const result = await triggerAccountEnrichment(companyId)
-      setFeedback(result.scanned > 0
-        ? `${result.scanned} contact${result.scanned > 1 ? 's' : ''} analysé${result.scanned > 1 ? 's' : ''} · ${result.enriched} enrichi${result.enriched > 1 ? 's' : ''}.`
-        : `Aucun contact tracké à enrichir pour ${accountName}.`)
-    } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Enrichissement impossible.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return <span className="account-enrich"><button className="kfav-star" onClick={() => void run()} disabled={busy} title="Enrichir maintenant (super admin)" aria-label="Enrichir maintenant"><Icon name="sparkles" /></button>{feedback && <small>{feedback}</small>}</span>
-}
-
 const ACCOUNT_RELATION_TYPES = Object.keys(RELATION_COLORS)
 
 /** Chip « Relation » de la fiche compte — éditable (portail menu, même
@@ -481,7 +458,165 @@ function RelationChip({ data, userId, refresh }: { data: AccountDetailData; user
   </span>
 }
 
-function AccountHero({ data, userId, toggleFavorite, openPeople, refresh }: { data: AccountDetailData; userId: string; toggleFavorite: () => Promise<void>; openPeople: () => void; refresh: () => Promise<void> }) {
+/** Affectation de la fiche compte : owner (assigné depuis les membres du
+ *  workspace) + visibilité organisation / restreinte. Persisté dans
+ *  account_settings — même composant que la fiche Personne (OwnerAffectation
+ *  dans person-detail/PersonDetailPage.tsx), adapté à AccountDetailData. */
+const AcctShareIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="M8.2 10.9l7-3.6M8.2 13.1l7 3.6" /></svg>
+const AcctLockIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2.2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /></svg>
+
+function AccountOwnerAffectation({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
+  const toast = useToast()
+  const [busy, run] = useBusy()
+  const account = data.account
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const [visOpen, setVisOpen] = useState(false)
+  const [ownerPos, setOwnerPos] = useState<{ top: number; left: number } | null>(null)
+  const [visPos, setVisPos] = useState<{ top: number; left: number } | null>(null)
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
+  const [grantedIds, setGrantedIds] = useState<string[] | null>(null)
+  const [memberQuery, setMemberQuery] = useState('')
+  const ownerBtnRef = useRef<HTMLButtonElement>(null)
+  const visBtnRef = useRef<HTMLButtonElement>(null)
+  const ownerMenuRef = useRef<HTMLDivElement>(null)
+  const visMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!ownerBtnRef.current?.contains(target) && !ownerMenuRef.current?.contains(target)) setOwnerOpen(false)
+      if (!visBtnRef.current?.contains(target) && !visMenuRef.current?.contains(target)) setVisOpen(false)
+    }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [])
+
+  useEffect(() => {
+    if (!ownerOpen && !visOpen) return
+    const reposition = () => {
+      if (ownerOpen && ownerBtnRef.current) {
+        const rect = ownerBtnRef.current.getBoundingClientRect()
+        setOwnerPos({ top: rect.bottom + 6, left: rect.left })
+      }
+      if (visOpen && visBtnRef.current) {
+        const rect = visBtnRef.current.getBoundingClientRect()
+        setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 360) })
+      }
+    }
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [ownerOpen, visOpen])
+
+  const openOwner = () => {
+    if (!ownerOpen && ownerBtnRef.current) {
+      const rect = ownerBtnRef.current.getBoundingClientRect()
+      setOwnerPos({ top: rect.bottom + 6, left: rect.left })
+    }
+    setOwnerOpen((value) => !value); setVisOpen(false)
+    if (members === null) void fetchWorkspaceMembers(account.workspaceId).then(setMembers).catch(() => setMembers([]))
+  }
+  const openVis = () => {
+    if (!visOpen && visBtnRef.current) {
+      const rect = visBtnRef.current.getBoundingClientRect()
+      setVisPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 360) })
+    }
+    setVisOpen((value) => !value); setOwnerOpen(false)
+    if (members === null) void fetchWorkspaceMembers(account.workspaceId).then(setMembers).catch(() => setMembers([]))
+    if (grantedIds === null) void listAccountAccessGrants(account.workspaceId, account.id).then(setGrantedIds).catch(() => setGrantedIds([]))
+  }
+  const chooseOwner = (ownerUserId: string | null, name: string) => void run('owner', async () => {
+    await setAccountOwner(data, userId, ownerUserId)
+    setOwnerOpen(false)
+    toast(ownerUserId ? `Fiche affectée à ${name}.` : 'Owner retiré.')
+    await refresh()
+  })
+  const chooseVisibility = (visibility: 'workspace' | 'restricted') => void run('vis', async () => {
+    await setAccountVisibility(data, userId, visibility)
+    if (visibility === 'restricted' && !account.locked) await setAccountLock(data, userId, true)
+    if (visibility === 'workspace' && account.locked && account.lockedByMe) await setAccountLock(data, userId, false)
+    toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe invitée.')
+    await refresh()
+  })
+  const toggleGrant = (member: WorkspaceMember) => void run(`grant-${member.id}`, async () => {
+    const isGranted = (grantedIds ?? []).includes(member.id)
+    if (isGranted) {
+      await revokeAccountAccess(data, member.id)
+      setGrantedIds((ids) => (ids ?? []).filter((id) => id !== member.id))
+    } else {
+      await grantAccountAccess(data, userId, member.id)
+      setGrantedIds((ids) => [...(ids ?? []), member.id])
+    }
+  })
+  const filteredMembers = (members ?? []).filter((member) => member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
+
+  return <div className="v48-owner-card v48-affect">
+    <div className="v48-owner-row">
+      <span className="v48-owner-avatar">{initials(account.primaryOwnerName ?? 'À confirmer')}</span>
+      <div className="v48-affect-body">
+        <span className="v48-owner-l">Owner du compte</span>
+        <strong>{account.primaryOwnerName ?? 'Non affecté'}</strong>
+        <div className="v48-affect-actions">
+          <span className="v48-affect-menu">
+            <button ref={ownerBtnRef} type="button" className="v48-affect-link" aria-haspopup="menu" aria-expanded={ownerOpen} disabled={busy !== null} onClick={openOwner}>Changer l’owner</button>
+            {ownerOpen && ownerPos && createPortal(
+              <div ref={ownerMenuRef} className="v48-affect-pop" role="menu" style={{ top: ownerPos.top, left: ownerPos.left }}>
+                {members === null
+                  ? <div className="v48-affect-loading">Chargement…</div>
+                  : members.length === 0
+                    ? <div className="v48-affect-loading">Aucun membre trouvé.</div>
+                    : <>
+                      {members.map((member) => <button key={member.id} type="button" role="menuitemradio" aria-checked={member.id === account.primaryOwnerUserId} className={member.id === account.primaryOwnerUserId ? 'on' : ''} onClick={() => chooseOwner(member.id, member.fullName)}>
+                        <span className="v48-affect-ini">{initials(member.fullName)}</span>{member.fullName}
+                      </button>)}
+                      {account.primaryOwnerUserId && <button type="button" className="v48-affect-clear" onClick={() => chooseOwner(null, '')}>Retirer l’owner</button>}
+                    </>}
+              </div>, document.body)}
+          </span>
+        </div>
+      </div>
+    </div>
+    <span className="v48-affect-menu v48-affect-vis-menu">
+      <button ref={visBtnRef} type="button" className={`v48-affect-vis vis-${account.visibility}`} aria-haspopup="menu" aria-expanded={visOpen} disabled={busy !== null} onClick={openVis}>
+        <span className="v48-affect-vis-ic" aria-hidden="true">{account.visibility === 'restricted' ? AcctLockIcon : AcctShareIcon}</span>
+        {account.visibility === 'restricted' ? `Restreint · ${grantedIds?.length ?? 0} pers.` : 'Organisation'} <span aria-hidden="true">▾</span>
+      </button>
+      {visOpen && visPos && createPortal(
+        <div ref={visMenuRef} className="v48-affect-pop wide" role="menu" style={{ top: visPos.top, left: visPos.left }}>
+          <button type="button" role="menuitemradio" aria-checked={account.visibility === 'workspace'} className={`vo ${account.visibility === 'workspace' ? 'on' : ''}`} onClick={() => chooseVisibility('workspace')}>
+            <span className="vo-ic vo-ic-org">{AcctShareIcon}</span>
+            <span><div className="vo-t">Organisation</div><div className="vo-d">Visible par tous — nourrit le cerveau collectif.</div></span>
+          </button>
+          <button type="button" role="menuitemradio" aria-checked={account.visibility === 'restricted'} className={`vo ${account.visibility === 'restricted' ? 'on' : ''}`} onClick={() => chooseVisibility('restricted')}>
+            <span className="vo-ic vo-ic-lock">{AcctLockIcon}</span>
+            <span><div className="vo-t">Restreint</div><div className="vo-d">Détail relationnel visible par l’équipe invitée uniquement.</div></span>
+          </button>
+          {account.visibility === 'restricted' && <div className="vo-grants">
+            <p className="vo-grants-l">Personnes invitées</p>
+            <input type="text" className="vo-grants-search" placeholder="Rechercher une personne…" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} />
+            <div className="vo-grants-list">
+              {members === null || grantedIds === null
+                ? <div className="v48-affect-loading">Chargement…</div>
+                : filteredMembers.map((member) => <label key={member.id} className="vo-grant-row">
+                  <span className="v48-affect-ini">{initials(member.fullName)}</span>
+                  <span>{member.fullName}</span>
+                  <input type="checkbox" checked={grantedIds.includes(member.id)} disabled={busy !== null} onChange={() => toggleGrant(member)} />
+                </label>)}
+            </div>
+            <p className="vo-grants-note">Seul le détail des échanges est masqué aux non-invités.</p>
+          </div>}
+          <p className="vo-foot">{account.visibility === 'restricted'
+            ? (account.lockedByName ? `Restreint par ${account.lockedByName} · ${formatDate(account.lockedAt)}` : 'Restreint')
+            : 'Visible par toute l’organisation'}</p>
+        </div>, document.body)}
+    </span>
+  </div>
+}
+
+function AccountHero({ data, userId, readOnly, toggleFavorite, openPeople, refresh }: { data: AccountDetailData; userId: string; readOnly: boolean; toggleFavorite: () => Promise<void>; openPeople: () => void; refresh: () => Promise<void> }) {
   const account = data.account
   return <section className={`hero-header account-detail-hero v48-identity-card ${account.archivedAt ? 'archived' : ''}`}>
     <div className="hero-body v48-identity-body">
@@ -501,10 +636,7 @@ function AccountHero({ data, userId, toggleFavorite, openPeople, refresh }: { da
         </div>
       </div>
       <div className="hero-right v48-identity-right">
-        <div className="v48-owner-card">
-          <span className="v48-owner-avatar">{initials(account.primaryOwnerName ?? 'À confirmer')}</span>
-          <div><span>Owner du compte</span><strong>{account.primaryOwnerName ?? 'À confirmer'}</strong><small>Organisation</small></div>
-        </div>
+        {!readOnly && <AccountOwnerAffectation data={data} userId={userId} refresh={refresh} />}
       </div>
     </div>
   </section>
@@ -540,9 +672,7 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const [error, setError] = useState<string | null>(null)
   const [watchOpen, setWatchOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<AccountDetailTab>('relation')
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [coordsOpen, setCoordsOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
   const [visions, setVisions] = useState<AccountVision[]>([])
   // Même logique que côté fiche personne : la vision affichée peut vivre dans
   // une autre organisation que le workspace actif (compte partagé par un membre
@@ -563,7 +693,11 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
   }, [view.companyId, view.organizationId])
   useEffect(() => { void refresh() }, [refresh])
-  useEffect(() => { void verifySuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false)) }, [])
+  useEffect(() => {
+    if (!data) return
+    setTopbarHeader({ backTo: '/app/accounts', backLabel: 'Retour', title: data.account.name })
+    return () => setTopbarHeader(null)
+  }, [data?.account.name])
   if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <FicheSkeleton label="Chargement de la fiche compte…" />
@@ -572,34 +706,10 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   const readOnly = activeVision ? !activeVision.isMine : false
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }
-  const archived = Boolean(account.archivedAt)
-  const toggleArchived = async () => {
-    if (!archived && !window.confirm(`Supprimer ${account.name} de Tohu ? Le compte sera masqué des listes mais l’historique réel (contacts, signaux, échanges) reste conservé — tu pourras le restaurer à tout moment.`)) return
-    await setAccountArchived(data, context.session.user.id, !archived)
-    window.dispatchEvent(new Event('tohu:workspace-updated'))
-    await refresh()
-  }
-  const toggleLock = async () => {
-    await setAccountLock(data, context.session.user.id, !account.lockedByMe)
-    await refresh()
-  }
-  return <div className="pp account-pp">
-    <div className="pp-back account-toolbar">
-      <Link to="/app/accounts">← Comptes</Link>
-      <div className="account-toolbar-actions" aria-label="Actions de la fiche">
-        {isSuperAdmin && <EnrichAccountButton companyId={account.id} accountName={account.name} />}
-        <Link className="kfav-star" to={`/app/ask?accountId=${account.id}`} title="Demander à Tohu" aria-label="Demander à Tohu"><Icon name="ask" /></Link>
-        {!readOnly && <button className="kfav-star" onClick={() => setShareOpen(true)} title="Partager ce compte avec un membre de l’équipe" aria-label="Partager ce compte"><Icon name="share" /></button>}
-        {!readOnly && (account.locked && !account.lockedByMe
-          ? <button className="kfav-star" disabled title="Verrouillé par un autre collaborateur" aria-label="Verrouillé par un autre collaborateur"><Icon name="lock" /></button>
-          : <button className="kfav-star" onClick={() => void toggleLock()} aria-pressed={account.lockedByMe} title={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'} aria-label={account.lockedByMe ? 'Lever le verrou' : 'Verrouiller ce compte'}><Icon name="lock" /></button>)}
-        {!readOnly && <button className="kfav-star" onClick={() => void toggleArchived()} title={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} aria-label={archived ? 'Restaurer ce compte' : 'Supprimer ce compte'} style={{ color: archived ? 'var(--sage)' : 'var(--coral)' }}><Icon name={archived ? 'restore' : 'trash'} /></button>}
-      </div>
-    </div>
+  return <ToastProvider><div className="pp account-pp">
     <VisionSwitcher visions={visions} activeCompanyId={view.companyId} onSwitch={(vision) => setView({ organizationId: vision.organizationId, companyId: vision.companyId })} />
     {readOnly && <div className="ra-degraded">Vision de {activeVision?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
     {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
-    <div className="v48-page-live"><span className="v48-live"><i />Live</span></div>
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Live &amp; Signaux</button>
@@ -608,22 +718,22 @@ export default function AccountDetailPage({ context }: { context: PageContext })
       </button>
       <AccountConnectorsPill sources={data.sources} />
     </nav>
-    <AccountHero data={data} userId={context.session.user.id} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} refresh={refresh} />
+    <AccountHero data={data} userId={context.session.user.id} readOnly={readOnly} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} refresh={refresh} />
     {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><AccountRelationView data={data} userId={context.session.user.id} currentUserName={displayName(context.session.user)} refresh={refresh} navigate={navigate} /></main>}
     {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
     <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
-    {coordsOpen && <AccountContactDialog data={data} navigate={navigate} onClose={() => setCoordsOpen(false)} />}
-    {shareOpen && <ShareAccountModal data={data} userId={context.session.user.id} onClose={() => setShareOpen(false)} />}
-  </div>
+    {coordsOpen && <AccountContactDialog data={data} navigate={navigate} refresh={refresh} onClose={() => setCoordsOpen(false)} />}
+  </div></ToastProvider>
 }
 
 const AcctGlobeIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" /></svg>
 const AcctPinIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6.4-5.8 6.4-10.2a6.4 6.4 0 1 0-12.8 0C5.6 15.2 12 21 12 21z" /><circle cx="12" cy="10.6" r="2.3" /></svg>
+const AcctBuildingIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
 
 /** Panneau latéral « Coordonnées » du compte (site, localisation, interlocuteurs) —
  *  glisse depuis la droite, réutilise le CSS .pc-* de la fiche personne via .pp. */
-function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetailData; navigate: (path: string) => void; onClose: () => void }) {
+function AccountContactDialog({ data, navigate, refresh, onClose }: { data: AccountDetailData; navigate: (path: string) => void; refresh: () => Promise<void>; onClose: () => void }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -633,6 +743,21 @@ function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetail
   const website = account.websiteUrl ?? (account.domain ? `https://${account.domain}` : null)
   const people = [...data.people].sort((a, b) => (b.exchangeShare ?? 0) - (a.exchangeShare ?? 0))
   const connected = data.sources.filter((source) => source.status === 'connected')
+  const [busy, run] = useBusy()
+  const [sirenInput, setSirenInput] = useState('')
+  const [editingSiren, setEditingSiren] = useState(false)
+  const fact = (key: string) => data.firmographics.find((item) => item.key === key) ?? null
+  const registrationFact = fact('registration_number')
+  const legalFormFact = fact('legal_form')
+  const nafFact = fact('naf_code')
+  const executivesFact = fact('executives')
+  const legalRows = [registrationFact, legalFormFact, nafFact, executivesFact].filter((item): item is NonNullable<typeof item> => item !== null)
+  const submitSiren = () => void run('siren', async () => {
+    await enrichAccountRegistry(data, sirenInput.trim())
+    setSirenInput('')
+    setEditingSiren(false)
+    await refresh()
+  })
 
   return createPortal(
     <div className="pp">
@@ -669,6 +794,34 @@ function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetail
             </div>
           </>}
 
+          <p className="pc-l">Identité légale</p>
+          <div className="pc-g">
+            {registrationFact && <div className="pc-row">
+              <span className="pc-i">{AcctBuildingIcon}</span>
+              <div className="pc-c"><p className="pc-rl">SIREN</p><p className="pc-v">{String(registrationFact.value)}</p></div>
+              <a className="pc-a" href={registrationFact.provenance.sourceUrl ?? '#'} target="_blank" rel="noreferrer">Annuaire</a>
+            </div>}
+            {legalFormFact && <div className="pc-row">
+              <span className="pc-i">{AcctBuildingIcon}</span>
+              <div className="pc-c"><p className="pc-rl">Forme juridique</p><p className="pc-v">{String(legalFormFact.value)}{nafFact ? ` · NAF ${String(nafFact.value)}` : ''}</p></div>
+            </div>}
+            {executivesFact && <div className="pc-row">
+              <span className="pc-i">{AcctBuildingIcon}</span>
+              <div className="pc-c"><p className="pc-rl">Dirigeants</p><p className="pc-v">{String(executivesFact.value)}</p></div>
+            </div>}
+            {!legalRows.length && !editingSiren && <div className="pc-row"><span className="pc-i">{AcctBuildingIcon}</span><div className="pc-c"><p className="pc-rl">Identité légale</p><p className="pc-v na">à confirmer</p></div></div>}
+            {editingSiren
+              ? <form className="pc-add" onSubmit={(event) => { event.preventDefault(); submitSiren() }}>
+                <input className="pc-add-input" autoFocus inputMode="numeric" maxLength={9} value={sirenInput} onChange={(event) => setSirenInput(event.target.value.replace(/\D/g, ''))} placeholder="SIREN (9 chiffres)" aria-label="SIREN" />
+                <button className="pc-add-ok" disabled={busy !== null || sirenInput.length !== 9} aria-label="Enregistrer">✓</button>
+                <button type="button" className="pc-add-no" onClick={() => { setEditingSiren(false); setSirenInput('') }} aria-label="Annuler">✕</button>
+              </form>
+              : <button type="button" className="pc-row pc-search" disabled={busy !== null} onClick={() => { setEditingSiren(true); setSirenInput(account.siren ?? '') }}>
+                <span className="pc-i">{busy === 'siren' ? <span className="pc-spin" aria-hidden="true" /> : AcctBuildingIcon}</span>
+                <div className="pc-c"><p className="pc-rl">{account.siren ? 'Actualiser' : 'Renseigner le SIREN'}</p><p className="pc-v">{busy === 'siren' ? 'Vérification en cours…' : account.siren ? `SIREN ${account.siren} · INSEE Sirene + INPI RNE` : 'Identité légale vérifiée via INSEE Sirene + INPI RNE'}</p></div>
+              </button>}
+          </div>
+
           {connected.length > 0 && <p className="pc-src"><i />{connected.map((source) => source.label).join(' · ')}</p>}
         </div>
       </aside>
@@ -678,44 +831,6 @@ function AccountContactDialog({ data, navigate, onClose }: { data: AccountDetail
   )
 }
 
-/** Partage additif du compte : choix d'un membre de l'équipe + note de
- *  contexte. N'affecte jamais l'owner — voir shareAccount. */
-function ShareAccountModal({ data, userId, onClose }: { data: AccountDetailData; userId: string; onClose: () => void }) {
-  const account = data.account
-  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
-  const [toUserId, setToUserId] = useState('')
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
-  useEffect(() => { void fetchWorkspaceMembers(account.workspaceId).then(setMembers).catch(() => setMembers([])) }, [account.workspaceId])
-  const candidates = (members ?? []).filter((member) => member.id !== userId)
-  const submit = async () => {
-    const target = candidates.find((member) => member.id === toUserId)
-    if (!target) return
-    setSaving(true); setFeedback(null)
-    try {
-      await shareAccount(data, target.id, note)
-      onClose()
-    } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Partage impossible.')
-    } finally { setSaving(false) }
-  }
-  return <div className="ra-dialog-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="ra-dialog" role="dialog" aria-modal="true" aria-labelledby="share-account-title">
-      <header><h2 id="share-account-title">Partager {account.name}</h2><button onClick={onClose} aria-label="Fermer">×</button></header>
-      <p>Partage ce compte avec un membre de l’équipe. Tu gardes ta propre relation — il/elle reçoit sa propre vue de cette fiche en plus.</p>
-      {members === null
-        ? <p>Chargement…</p>
-        : <select className="input" value={toUserId} onChange={(event) => setToUserId(event.target.value)} style={{ width: '100%' }}>
-            <option value="" disabled>Choisir un membre…</option>
-            {candidates.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
-          </select>}
-      <textarea className="input" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note de contexte (optionnel)" style={{ width: '100%', minHeight: 70, marginTop: 10 }} />
-      {feedback && <p style={{ color: 'var(--coral)', fontSize: 11 }}>{feedback}</p>}
-      <footer><button onClick={onClose}>Annuler</button><button disabled={saving || !toUserId} onClick={() => void submit()}>{saving ? 'Partage…' : 'Partager la fiche'}</button></footer>
-    </section>
-  </div>
-}
 
 function WatchDialog({ selected, onClose, onSave }: { selected: string[]; onClose: () => void; onSave: (families: string[]) => void }) {
   const [families, setFamilies] = useState(selected)

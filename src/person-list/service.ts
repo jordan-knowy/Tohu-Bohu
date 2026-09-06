@@ -216,25 +216,17 @@ export async function archivePeople(workspaceId: string, userId: string, contact
   void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
-/** Passation : réattribue l'owner des personnes sélectionnées et historise
- *  chaque transfert dans contact_transfers. */
-export async function reassignPeople(workspaceId: string, people: PersonListRow[], toUserId: string, byUserId: string): Promise<{ transferred: number; logged: boolean }> {
+/** Partage groupé (additif) : chaque personne sélectionnée reçoit une vue en
+ *  plus pour le membre choisi. N'affecte jamais l'owner ni la relation de
+ *  l'expéditeur — même principe que sharePerson côté fiche détail, juste
+ *  appliqué à une sélection. */
+export async function sharePeople(workspaceId: string, people: PersonListRow[], toUserId: string): Promise<{ shared: number }> {
   const client = getSupabase()
-  const toMove = people.filter((person) => person.ownerId !== toUserId)
-  for (const person of toMove) await setPersonOwner(workspaceId, person.id, byUserId, toUserId)
-  if (!toMove.length) return { transferred: 0, logged: true }
-
-  const { error: updateError } = await client.from('contacts').update({ owner_user_id: toUserId })
-    .eq('organization_id', workspaceId).in('id', toMove.map((person) => person.id))
-  if (updateError) throw updateError
-
-  const { error: logError } = await client.from('contact_transfers').insert(toMove.map((person) => ({
-    organization_id: workspaceId,
-    contact_id: person.id,
-    from_user_id: person.ownerId,
-    to_user_id: toUserId,
-    kept_copy: false,
-    transferred_by: byUserId,
-  })))
-  return { transferred: toMove.length, logged: !logError }
+  for (const person of people) {
+    const { error } = await client.rpc('share_fiche', {
+      p_organization_id: workspaceId, p_entity_type: 'contact', p_entity_id: person.id, p_to_user_id: toUserId, p_note: null,
+    })
+    if (error) throw error
+  }
+  return { shared: people.length }
 }

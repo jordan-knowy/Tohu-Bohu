@@ -10,8 +10,8 @@ import { setBohuBarShrunk } from '../shell/bohuBarSignal'
 import { ToastProvider, useBusy, useToast, formatMonth } from '../person-detail/ui'
 import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, tickerDurationSeconds, type AccountListRow, type AccountTier, type PortfolioPoint, type TeamMember } from './mapping'
 import {
-  archiveAccounts, detectAccountCandidates, getAccountsOverview, reassignAccounts, setListFavorite,
-  setListOwner, setListRelationType, setListWatch, trackCandidates,
+  archiveAccounts, detectAccountCandidates, getAccountsOverview, setListFavorite,
+  setListOwner, setListRelationType, setListWatch, shareAccounts, trackCandidates,
   type AccountCandidate, type AccountsOverview,
 } from './service'
 
@@ -397,8 +397,9 @@ function PageBody({ context }: { context: PageContext }) {
     setAssignAnchor(null)
     const accounts = overview.accounts.filter((row) => selection.has(row.id))
     void run('passation', async () => {
-      const result = await reassignAccounts(context.workspaceId, accounts, memberId, context.userId)
-      toast(`Passation effectuée : ${accounts.length} compte${accounts.length > 1 ? 's' : ''}, ${result.transferred} contact${result.transferred > 1 ? 's' : ''} transféré${result.transferred > 1 ? 's' : ''}${result.logged ? '' : ' (journal de transfert indisponible)'}.`)
+      const result = await shareAccounts(context.workspaceId, accounts, memberId)
+      const memberName = overview.team.find((member) => member.id === memberId)?.name ?? 'ce membre'
+      toast(`Partage effectué : ${result.accounts} compte${result.accounts > 1 ? 's' : ''} (${result.contacts} contact${result.contacts > 1 ? 's' : ''}) partagé${result.accounts > 1 ? 's' : ''} avec ${memberName}.`)
       setPassation(false)
       setSelection(new Set())
       await refresh()
@@ -494,7 +495,7 @@ function PageBody({ context }: { context: PageContext }) {
     {(passation || passationClosing) && <div className="pa-bar-wrap"><div className={`pa-bar${passationClosing ? ' pa-bar-out' : ''}`} role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> compte{selection.size > 1 ? 's' : ''} sélectionné{selection.size > 1 ? 's' : ''}</span>
       <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Réattribuer
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Partager
       </button>
       <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer

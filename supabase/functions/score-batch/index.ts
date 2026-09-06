@@ -586,6 +586,11 @@ Deno.serve(async (req) => {
 
       const maxSingleContactInteractions = engaged.reduce((max, e) => Math.max(max, e.interactions), 0);
       const concentrationRisk = totalInteractions > 0 ? Math.round((maxSingleContactInteractions / totalInteractions) * 100) : null;
+      // Le contact qui concentre le plus d'échanges — sert d'interlocuteur concerné
+      // sur la recommandation risque_concentration (voir plus bas).
+      const dominantContactId = maxSingleContactInteractions > 0
+        ? engaged.find((e) => e.interactions === maxSingleContactInteractions)?.contactId ?? null
+        : null;
 
       const weightedScoreSum = engaged.reduce((sum, e) => sum + e.score * (1 + e.interactions), 0);
       const weightSum = engaged.reduce((sum, e) => sum + (1 + e.interactions), 0);
@@ -650,6 +655,7 @@ Deno.serve(async (req) => {
       if (concentrationRisk != null && concentrationRisk > 70 && engaged.length > 1 && !openAccountRecKey.has(`${companyId}|risque_concentration`)) {
         accountRecRows.push({
           organization_id: orgId, company_id: companyId, category: 'risque_concentration', priority: concentrationRisk,
+          contact_id: dominantContactId,
           title: 'Élargir les points de contact', justification: `${concentrationRisk}% des échanges reposent sur un seul contact.`,
           recommended_action: 'Identifier et engager d’autres interlocuteurs chez ce compte.',
           source_label: 'Moteur de recommandations Tohu', observed_at: accountNowIso, confidence, inference_level: 'inferred',

@@ -176,22 +176,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
    fiche Personne tout en conservant une mise en page Compte dédiée. */
 .ra-content:has(.account-pp){max-width:none;padding:0 22px 80px}
 .pp.account-pp{width:100%}
-.pp.account-pp .account-toolbar{max-width:1510px;min-height:58px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:8px 4px}
-.pp.account-pp .account-back{display:inline-flex;align-items:center;min-height:34px;color:var(--t2);font-family:var(--mono);font-size:10px;font-weight:800;text-decoration:none;white-space:nowrap}
-.pp.account-pp .account-back:hover{color:var(--violet);transform:translateX(-2px)}
-.pp.account-pp .account-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0}
-.pp.account-pp .account-toolbar-actions>a,
-.pp.account-pp .account-toolbar-actions>button,
-.pp.account-pp .account-enrich>button{min-height:33px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:0 11px;background:#fff;color:var(--t2);font-family:var(--mono);font-size:8.5px;font-weight:800;text-decoration:none;cursor:pointer;white-space:nowrap}
-.pp.account-pp .account-toolbar-actions svg{width:13px;height:13px}
-.pp.account-pp .account-toolbar-actions>a:hover,
-.pp.account-pp .account-toolbar-actions>button:hover,
-.pp.account-pp .account-enrich>button:hover{border-color:var(--violet-l);color:var(--violet)}
-.pp.account-pp .account-toolbar-actions>button.archive{color:var(--coral)}
-.pp.account-pp .account-toolbar-actions>button.restore{color:var(--sage)}
-.pp.account-pp .account-toolbar-actions>button[disabled]{cursor:not-allowed;opacity:.55}
-.pp.account-pp .account-enrich{position:relative;display:inline-flex}
-.pp.account-pp .account-enrich small{position:absolute;z-index:20;right:0;top:calc(100% + 6px);width:230px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--t2);box-shadow:var(--sh-md);font-size:9px;line-height:1.4}
 
 .pp.account-pp .page{max-width:1510px;margin:0 auto;padding:0 0 90px;display:grid;grid-template-columns:minmax(0,1fr) 312px;gap:18px;align-items:start}
 .pp.account-pp .col-main{min-width:0}
@@ -394,10 +378,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 }
 @media(max-width:760px){
   .ra-content:has(.account-pp){padding:0 12px 60px}
-  .pp.account-pp .account-toolbar{align-items:flex-start;padding-block:10px}
-  .pp.account-pp .account-toolbar-actions{max-width:70%;overflow-x:auto;justify-content:flex-start}
-  .pp.account-pp .account-toolbar-actions>button.archive,
-  .pp.account-pp .account-toolbar-actions>button.restore{display:none}
   .pp.account-pp .hero-body{padding:20px 18px 14px}
   .pp.account-pp .hero-left{align-items:flex-start}
   .pp.account-pp .account-hero-right{display:grid;grid-template-columns:1fr 1fr 1fr;width:100%}
@@ -419,10 +399,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
   .pp.account-pp .account-org-top{align-items:flex-start;flex-direction:column}
 }
 @media(max-width:560px){
-  .pp.account-pp .account-toolbar-actions>a,
-  .pp.account-pp .account-toolbar-actions>button{font-size:0;width:34px;padding:0;justify-content:center}
-  .pp.account-pp .account-toolbar-actions>a svg,
-  .pp.account-pp .account-toolbar-actions>button svg{width:15px;height:15px}
   .pp.account-pp .hero-av{width:46px;height:46px}
   .pp.account-pp .hero-name{font-size:20px}
   .pp.account-pp .hero-sub span:nth-of-type(n+3),
@@ -441,14 +417,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 /* Parité stricte avec l’état final du livrable Compte.
    Ces règles annulent les approximations de la première adaptation. */
 .ra-content:has(.pp.account-pp){max-width:1450px;margin:auto;padding:22px 28px 80px}
-.ra-content .pp.account-pp .account-toolbar{max-width:none;min-height:0;margin:0 0 12px;padding:0;display:flex;align-items:center;justify-content:space-between}
-.ra-content .pp.account-pp .account-toolbar> a{min-height:36px;padding:0 14px}
-.ra-content .pp.account-pp .account-toolbar-actions{display:flex;align-items:center;gap:8px;overflow:visible}
-.ra-content .pp.account-pp .account-toolbar-actions>a.kfav-star,
-.ra-content .pp.account-pp .account-toolbar-actions>button.kfav-star,
-.ra-content .pp.account-pp .account-enrich>button.kfav-star{width:36px;height:36px;min-width:36px;min-height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;font-size:0}
-.ra-content .pp.account-pp .account-toolbar-actions svg{width:16px;height:16px}
-
 .ra-content .pp.account-pp .page{max-width:1340px;margin:0 auto;padding:22px 24px 90px;display:grid;grid-template-columns:minmax(0,1fr) 312px;gap:18px;align-items:start}
 .ra-content .pp.account-pp .rail{position:sticky;top:72px;display:flex;flex-direction:column;gap:11px}
 
@@ -573,7 +541,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
   .ra-content .pp.account-pp .knode{position:relative!important;left:auto!important;top:auto!important;width:100%;margin-bottom:9px}
 }
 @media(max-width:560px){
-  .ra-content .pp.account-pp .account-toolbar-actions{max-width:none}
   .ra-content .pp.account-pp .account-confidence{display:none}
   .ra-content .pp.account-pp .account-hero-right{display:grid;grid-template-columns:1fr 1fr}
   .ra-content .pp.account-pp .hero-divider{display:none}

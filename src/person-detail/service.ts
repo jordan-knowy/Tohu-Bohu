@@ -409,7 +409,7 @@ export async function setPersonVisibility(data: PersonDetailData, userId: string
   if (error) throw error
 }
 
-export type WorkspaceMember = { id: string; fullName: string }
+export type WorkspaceMember = { id: string; fullName: string; avatarUrl: string | null }
 
 /** Membres du workspace, pour le sélecteur d'owner. */
 export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
@@ -418,9 +418,9 @@ export async function fetchWorkspaceMembers(workspaceId: string): Promise<Worksp
   if (error) throw error
   const ids = [...new Set((memberships ?? []).map((row) => String(row.user_id)).filter(Boolean))]
   if (!ids.length) return []
-  const { data: profiles } = await client.from('profiles').select('id,full_name').in('id', ids)
+  const { data: profiles } = await client.from('profiles').select('id,full_name,avatar_url').in('id', ids)
   return (profiles ?? [])
-    .map((row) => ({ id: String(row.id), fullName: String(row.full_name ?? 'Membre') }))
+    .map((row) => ({ id: String(row.id), fullName: String(row.full_name ?? 'Membre'), avatarUrl: typeof row.avatar_url === 'string' && row.avatar_url ? row.avatar_url : null }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
 

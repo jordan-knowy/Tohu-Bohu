@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode, SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { initials } from '../lib/auth'
-import { addAccountNote, updateRecommendationStatus } from './service'
+import { isReadingStale, readingSufficiency } from '../services/strategic-reading'
+import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/service'
+import { addAccountNote, generateAccountStrategicReading, setRecommendationAssignee, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson } from './types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -106,6 +108,17 @@ function providerColor(provider: string): string {
 function providerInitial(label: string): string {
   return initials(label).slice(0, 2) || '?'
 }
+// Logo officiel pour les providers qui en ont un — sinon repli sur l'initiale colorée.
+const PROVIDER_LOGO_URL: Record<string, string> = {
+  google: 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/Gmail_icon_(2026).webp',
+  gmail: 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/Gmail_icon_(2026).webp',
+  linkedin: 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/LinkedIn_logo_initials.webp',
+  read_ai: 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/Read-ai-logo.webp',
+  'read ai': 'https://bgmtzwfafcgjklgygvtx.supabase.co/storage/v1/object/public/images%20du%20site/Read-ai-logo.webp',
+}
+function providerLogoUrl(provider: string, label: string): string | null {
+  return PROVIDER_LOGO_URL[provider.toLowerCase()] ?? PROVIDER_LOGO_URL[label.toLowerCase()] ?? null
+}
 const isConnected = (s: AccountDetailData['sources'][number]) => s.status === 'connected' || (s.interactionCount ?? 0) > 0
 
 export function AccountConnectorsPill({ sources }: { sources: AccountDetailData['sources'] }) {
@@ -123,23 +136,29 @@ export function AccountConnectorsPill({ sources }: { sources: AccountDetailData[
   return (
     <div className="acnx" ref={ref} tabIndex={0} aria-label="Connecteurs du compte" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       <span className="acnx-st" aria-hidden="true">
-        {sources.slice(0, 4).map((s, i) => (
-          <i key={i} className={isConnected(s) ? '' : 'off'} style={{ background: providerColor(s.provider) }}>{providerInitial(s.label)}</i>
-        ))}
+        {sources.slice(0, 4).map((s, i) => {
+          const logo = providerLogoUrl(s.provider, s.label)
+          return <i key={i} className={isConnected(s) ? '' : 'off'} style={logo ? undefined : { background: providerColor(s.provider) }}>
+            {logo ? <img src={logo} alt="" /> : providerInitial(s.label)}
+          </i>
+        })}
       </span>
       <span className="acnx-v">{connected.length} connecté{connected.length > 1 ? 's' : ''}</span>
       {panel && createPortal(
         <div className="acnx-p" style={{ top: panel.top, right: panel.right }} role="menu" onMouseEnter={show} onMouseLeave={hide}>
-          {sources.map((s, i) => (
-            <div className="acnx-r" key={i} role="menuitem">
-              <i className={isConnected(s) ? '' : 'off'} style={{ background: providerColor(s.provider) }}>{providerInitial(s.label)}</i>
+          {sources.map((s, i) => {
+            const logo = providerLogoUrl(s.provider, s.label)
+            return <div className="acnx-r" key={i} role="menuitem">
+              <i className={isConnected(s) ? '' : 'off'} style={logo ? undefined : { background: providerColor(s.provider) }}>
+                {logo ? <img src={logo} alt="" /> : providerInitial(s.label)}
+              </i>
               <div className="acnx-n">
                 <b>{s.label}</b>
                 {s.interactionCount != null && <span className="acnx-vol">{s.interactionCount} échange{s.interactionCount > 1 ? 's' : ''}</span>}
                 <span className="acnx-note">{isConnected(s) ? 'Connecté' : (s.error || 'Non connecté')}{s.lastSyncedAt ? ` · synchro ${relativeLabel(s.lastSyncedAt)}` : ''}</span>
               </div>
             </div>
-          ))}
+          })}
         </div>, document.body)}
     </div>
   )
@@ -261,13 +280,153 @@ function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDe
 const PAGE = 5
 type Rec = AccountDetailData['recommendations'][number]
 
+/** Habillage visuel par catégorie — la donnée reste un texte libre côté back
+    (account_recommendations.category), on ne mappe ici que le rendu. */
+const CATEGORY_META: Record<string, { label: string; tone: string }> = {
+  mouvement: { label: 'Mouvement', tone: 'violet' },
+  engagement: { label: 'Engagement', tone: 'sage' },
+  relance: { label: 'Relance', tone: 'amber' },
+  opportunite: { label: 'Opportunité', tone: 'sage' },
+  couverture: { label: 'Couverture', tone: 'teal' },
+  validation: { label: 'Validation', tone: 'teal' },
+  ownership: { label: 'Ownership', tone: 'violet' },
+  risque: { label: 'Risque', tone: 'coral' },
+  risque_churn: { label: 'Risque de churn', tone: 'coral' },
+  risque_concentration: { label: 'Concentration', tone: 'coral' },
+  lecture_strategique: { label: 'Lecture stratégique', tone: 'violet' },
+}
+function categoryMeta(category: string): { label: string; tone: string } {
+  return CATEGORY_META[category] ?? { label: category.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), tone: 'violet' }
+}
+
+/** Couleur stable par interlocuteur côté client (déduite de son id) — permet de
+    distinguer d'un coup d'œil qui porte quoi sans dépendre d'une photo. */
+const OWNER_TONES = [
+  { border: '#1E7A88', bg: '#E2F4F7' },
+  { border: '#D94F63', bg: '#FDEAED' },
+  { border: '#C97A20', bg: '#FBF0E2' },
+  { border: '#2EA86A', bg: '#E4F5ED' },
+]
+function ownerTone(id: string): { border: string; bg: string } {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  return OWNER_TONES[hash % OWNER_TONES.length]!
+}
+
+// ── Avatar « porté par » (Stratégie de compte) ──────────────────────────────
+// Par défaut, une action est portée par l'owner de la fiche compte. Cliquer
+// sur l'avatar permet de la réaffecter à un membre de l'équipe interne (les
+// comptes internes d'organisation déjà en place, voir AccountOwnerAffectation)
+// ou à un interlocuteur côté client (data.people) — même mécanique de menu
+// que l'affectation d'owner, appliquée ici par action individuelle.
+function RecOwnerAvatar({ rec, data, userId, refresh, members, loadMembers }: {
+  rec: Rec
+  data: AccountDetailData
+  userId: string
+  refresh: () => Promise<void>
+  members: WorkspaceMember[] | null
+  loadMembers: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!btnRef.current?.contains(target) && !popRef.current?.contains(target)) setOpen(false)
+    }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+
+  const assignedContact = rec.assignedContactId ? data.people.find((p) => p.id === rec.assignedContactId) ?? null : null
+  const assignedMember = rec.assignedToUserId ? members?.find((m) => m.id === rec.assignedToUserId) ?? null : null
+  const isDefaultOwner = !rec.assignedToUserId && !rec.assignedContactId
+  const isYou = rec.assignedToUserId === userId
+  // Tant que personne n'a réaffecté la carte, on montre l'interlocuteur dont
+  // provient réellement l'information (rec.personId) plutôt que de plaquer
+  // systématiquement l'owner de la fiche sur toutes les cartes.
+  const sourceContact = isDefaultOwner && rec.personId ? data.people.find((p) => p.id === rec.personId) ?? null : null
+  const effectiveContact = assignedContact ?? sourceContact
+
+  const name = effectiveContact?.name ?? assignedMember?.fullName ?? rec.assignedTo ?? data.account.primaryOwnerName ?? 'Owner à confirmer'
+  const avatarUrl = effectiveContact?.avatarUrl ?? null
+  const tone = effectiveContact ? ownerTone(effectiveContact.id) : null
+  const subtitle = effectiveContact
+    ? `Côté client${effectiveContact.jobTitle ? ` · ${effectiveContact.jobTitle.toLowerCase()}` : ''}`
+    : isDefaultOwner
+      ? (isYou ? 'Vous · owner de la fiche' : 'Owner de la fiche')
+      : isYou ? 'Vous' : 'Équipe Tohu'
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 8, left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)) })
+    }
+    setOpen((value) => !value)
+    loadMembers()
+  }
+
+  const choose = (assignee: { userId: string | null; contactId: string | null }) => {
+    setOpen(false)
+    setBusy(true)
+    void setRecommendationAssignee(data, rec.id, userId, assignee).then(refresh).finally(() => setBusy(false))
+  }
+
+  return (
+    <span style={{ position: 'relative', flex: 'none' }}>
+      <button ref={btnRef} type="button" className="mv-owner" style={tone ? { borderColor: tone.border, color: tone.border, background: tone.bg } : undefined} title={`Porté par ${name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={toggle}>
+        {avatarUrl ? <img src={avatarUrl} alt="" /> : initials(name)}
+      </button>
+      {open && pos && createPortal(
+        <div ref={popRef} className="mv-owner-pop" role="menu" style={{ top: pos.top, left: pos.left }} onClick={(event) => event.stopPropagation()}>
+          <div className="mv-owner-hd">Porté par <b>{name}</b> · {subtitle}</div>
+          <div className="mv-owner-grp">Votre équipe</div>
+          {members === null
+            ? <div className="mv-owner-opt">Chargement…</div>
+            : members.map((m) => <button key={m.id} type="button" role="menuitemradio" aria-checked={rec.assignedToUserId === m.id} className={`mv-owner-opt ${rec.assignedToUserId === m.id ? 'on' : ''}`} onClick={() => choose({ userId: m.id, contactId: null })}>
+              <span className="mv-owner-ini">{m.avatarUrl ? <img src={m.avatarUrl} alt="" /> : initials(m.fullName)}</span>
+              <span className="mv-owner-opt-txt"><span className="mv-owner-opt-name">{m.fullName}</span><span className="mv-owner-opt-sub">{m.id === userId ? 'Vous' : m.id === data.account.primaryOwnerUserId ? 'Owner de la fiche' : 'Équipe Tohu'}</span></span>
+              {rec.assignedToUserId === m.id && <span className="mv-owner-opt-check">✓</span>}
+            </button>)}
+          {data.people.length > 0 && <>
+            <div className="mv-owner-grp">Côté client</div>
+            {data.people.map((p) => <button key={p.id} type="button" role="menuitemradio" aria-checked={rec.assignedContactId === p.id} className={`mv-owner-opt ${rec.assignedContactId === p.id ? 'on' : ''}`} onClick={() => choose({ userId: null, contactId: p.id })}>
+              <span className="mv-owner-ini">{p.avatarUrl ? <img src={p.avatarUrl} alt="" /> : initials(p.name)}</span>
+              <span className="mv-owner-opt-txt"><span className="mv-owner-opt-name">{p.name}</span><span className="mv-owner-opt-sub">Côté client{p.jobTitle ? ` · ${p.jobTitle.toLowerCase()}` : ''}</span></span>
+              {rec.assignedContactId === p.id && <span className="mv-owner-opt-check">✓</span>}
+            </button>)}
+          </>}
+          {!isDefaultOwner && <button type="button" className="mv-owner-opt mv-owner-reset" onClick={() => choose({ userId: null, contactId: null })}>
+            <span className="mv-owner-opt-txt"><span className="mv-owner-opt-name">Réinitialiser</span><span className="mv-owner-opt-sub">Revenir à l’owner de la fiche</span></span>
+          </button>}
+        </div>, document.body,
+      )}
+    </span>
+  )
+}
+
 // Une carte action = mouvement/engagement. Le « i » déplie la preuve (canal ·
 // date · pourquoi), comme sur la fiche personne (readme : preuves sur les deux fiches).
-function StrategyCard({ rec, busy, act }: { rec: Rec; busy: boolean; act: (status: 'completed' | 'dismissed') => void }) {
+function StrategyCard({ rec, data, userId, refresh, busy, act, members, loadMembers }: {
+  rec: Rec
+  data: AccountDetailData
+  userId: string
+  refresh: () => Promise<void>
+  busy: boolean
+  act: (status: 'completed' | 'dismissed') => void
+  members: WorkspaceMember[] | null
+  loadMembers: () => void
+}) {
   const [proof, setProof] = useState(false)
+  const meta = categoryMeta(rec.category)
   return (
     <article className="mv">
-      <span className="mv-s">{rec.category}</span>
+      <span className={`mv-s ${meta.tone}`}>{meta.label}</span>
       <div className="mv-c">
         <div className="mv-h"><p className="mv-t">{rec.title}</p><span className="mv-p">prio {rec.priority}</span></div>
         <p className="mv-d">{rec.justification}</p>
@@ -279,6 +438,7 @@ function StrategyCard({ rec, busy, act }: { rec: Rec; busy: boolean; act: (statu
         </div>}
       </div>
       <div className="mv-b">
+        <RecOwnerAvatar rec={rec} data={data} userId={userId} refresh={refresh} members={members} loadMembers={loadMembers} />
         <button className="mv-i" aria-expanded={proof} title="D’où vient cette action ?" onClick={() => setProof((v) => !v)}>i</button>
         <button className="mv-ok" disabled={busy} title="Fait" onClick={() => act('completed')}>✓</button>
         <button className="mv-no" disabled={busy} title="Écarter" onClick={() => act('dismissed')}>×</button>
@@ -291,19 +451,21 @@ function StrategySection({ data, userId, refresh }: { data: AccountDetailData; u
   const open = useMemo(() => data.recommendations.filter((r) => r.status === 'open' || r.status === 'postponed').sort((a, b) => b.priority - a.priority), [data.recommendations])
   const [page, setPage] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
   const pages = Math.max(1, Math.ceil(open.length / PAGE))
   const current = open.slice(page * PAGE, page * PAGE + PAGE)
   const act = (id: string) => async (status: 'completed' | 'dismissed') => {
     setBusy(id)
     try { await updateRecommendationStatus(data, id, userId, status); await refresh() } finally { setBusy(null) }
   }
+  const loadMembers = () => { if (members === null) void fetchWorkspaceMembers(data.account.workspaceId).then(setMembers).catch(() => setMembers([])) }
   return (
     <section className="sec">
       <div className="sec-h">{StrategyIcon}<p className="sec-t">Stratégie de compte</p><span className="cnt"><b>{open.length}</b> action{open.length > 1 ? 's' : ''}</span></div>
       <div className="sec-b">
         {open.length ? <>
           <div className="mvs">
-            {current.map((r) => <StrategyCard key={r.id} rec={r} busy={busy === r.id} act={(status) => void act(r.id)(status)} />)}
+            {current.map((r) => <StrategyCard key={r.id} rec={r} data={data} userId={userId} refresh={refresh} busy={busy === r.id} act={(status) => void act(r.id)(status)} members={members} loadMembers={loadMembers} />)}
           </div>
           {pages > 1 && <div className="mvp">
             <button className="mvp-b" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>← Précédent</button>
@@ -311,6 +473,63 @@ function StrategySection({ data, userId, refresh }: { data: AccountDetailData; u
             <button className="mvp-b" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Suivant →</button>
           </div>}
         </> : <Empty>Aucune recommandation stratégique ouverte n’est étayée actuellement.</Empty>}
+      </div>
+    </section>
+  )
+}
+
+// ── Lecture stratégique (synthèse IA bornée aux données persistées) ─────────
+const ReadingIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><path d="M9 12h7M9 15.5h7M9 8.5h4" /></svg>
+
+/** Générée à l'ouverture de l'onglet si absente/périmée (>7j), jamais en boucle :
+ *  même doctrine que la narrative de score relationnel (cache serveur 7 jours). */
+function StrategicReadingSection({ data, refresh }: { data: AccountDetailData; refresh: () => Promise<void> }) {
+  const reading = data.strategicReading
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const attempted = useRef(false)
+
+  const counts = useMemo(() => readingSufficiency({
+    contacts: data.people.length, signals: data.signals.length, interactions: data.relationship.totalInteractions, messages: 0,
+  }), [data.people.length, data.signals.length, data.relationship.totalInteractions])
+
+  const run = async (force: boolean) => {
+    setGenerating(true); setError(null)
+    try { await generateAccountStrategicReading(data, force); await refresh() }
+    catch (err) { setError(err instanceof Error ? err.message : 'Génération impossible.') }
+    finally { setGenerating(false) }
+  }
+
+  useEffect(() => {
+    if (attempted.current || generating) return
+    if (reading && !isReadingStale(reading.generatedAt, new Date())) return
+    attempted.current = true
+    void run(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reading?.generatedAt])
+
+  return (
+    <section className="sec">
+      <div className="sec-h">{ReadingIcon}<p className="sec-t">Lecture stratégique</p>
+        {reading?.confidence !== null && reading?.confidence !== undefined && <span className="cnt">confiance <b>{reading.confidence}%</b></span>}
+      </div>
+      <div className="sec-b">
+        {reading ? <>
+          <p className="sread-synthese">{reading.synthese}</p>
+          {reading.forces.length > 0 && <><p className="sread-h ok">Forces</p><ul className="sread-list ok">{reading.forces.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
+          {reading.risques.length > 0 && <><p className="sread-h no">Risques</p><ul className="sread-list no">{reading.risques.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
+          {reading.prochainesActions.length > 0 && <><p className="sread-h next">Prochaines actions</p><ul className="sread-list next">{reading.prochainesActions.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
+          <p className="sread-meta">Généré {relativeLabel(reading.generatedAt)}{reading.model ? ` · ${reading.model}` : ''} · fondé sur {reading.sourceCounts.contacts} contact{reading.sourceCounts.contacts > 1 ? 's' : ''}, {reading.sourceCounts.signals} signal{reading.sourceCounts.signals > 1 ? 'aux' : ''}, {reading.sourceCounts.interactions + reading.sourceCounts.messages} échange{reading.sourceCounts.interactions + reading.sourceCounts.messages > 1 ? 's' : ''}</p>
+          <p className="sread-note">Généré <b>uniquement</b> à partir des moments, engagements et signaux déjà persistés pour ce compte — jamais du contenu des emails eux-mêmes (non conservé).</p>
+          <div className="sread-actions"><button className="mvp-b sread-btn" disabled={generating} onClick={() => void run(true)}>{generating ? 'Régénération…' : 'Régénérer'}</button></div>
+        </> : generating ? <Empty>Génération de la lecture stratégique…</Empty>
+        : !counts.sufficient ? <>
+          <div className="sread-missing">{counts.missing.map((item, i) => <span key={i}>Il manque {item}.</span>)}</div>
+          <Empty>Lecture en construction — pas encore assez de matière persistée pour ce compte.</Empty>
+        </> : <>
+          <Empty>{error ?? 'Lecture en construction.'}</Empty>
+          <div className="sread-actions"><button className="mvp-b sread-btn" disabled={generating} onClick={() => void run(true)}>Générer</button></div>
+        </>}
       </div>
     </section>
   )
@@ -446,6 +665,7 @@ export function AccountRelationView({ data, userId, currentUserName, refresh, na
         <HealthSection data={data} currentUserName={currentUserName} onOpenModal={() => setModal(true)} />
         <StrategySection data={data} userId={userId} refresh={refresh} />
       </div>
+      <StrategicReadingSection data={data} refresh={refresh} />
       <HistorySection data={data} userId={userId} refresh={refresh} />
       {modal && <ScoreModal data={data} onClose={() => setModal(false)} />}
     </div>

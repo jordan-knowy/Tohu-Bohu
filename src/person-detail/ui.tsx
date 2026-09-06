@@ -4,7 +4,7 @@ import type { DataSourceReference } from './types'
 
 /** Icônes V48 partagées entre les vues Profil/Relation/Live (person) — un seul jeu
  *  de traits pour toute la fiche personne, évite la divergence visuelle entre fichiers. */
-export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' }) {
+export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' | 'briefcase' | 'globe' }) {
   const paths: Record<typeof name, ReactNode> = {
     calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M4 10h16M8 3.5v4M16 3.5v4" /></>,
     profile: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" /><circle cx="12" cy="12" r="2.5" /></>,
@@ -15,16 +15,31 @@ export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'co
     sparkle: <><path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3Z" /><path d="m18 14 .8 2.2 2.2.8-2.2.8L18 20l-.8-2.2L15 17l2.2-.8Z" /></>,
     share: <><circle cx="6" cy="12" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="17.5" cy="18" r="2.4" /><path d="M8.2 10.9l7-3.6M8.2 13.1l7 3.6" /></>,
     sliders: <><path d="M4.4 7.4h15.2M4.4 12h15.2M4.4 16.6h15.2" /><circle cx="9" cy="7.4" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7.4" cy="16.6" r="2" /></>,
+    briefcase: <><rect x="3.4" y="7.4" width="17.2" height="12.2" rx="2" /><path d="M8.6 7.4V5.8a2 2 0 0 1 2-2h2.8a2 2 0 0 1 2 2v1.6" /><path d="M3.4 12.6h17.2" /></>,
+    globe: <><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8" /><path d="M12 3.6a13 13 0 0 1 0 16.8a13 13 0 0 1 0-16.8" /></>,
   }
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
 
-export function SectionTitle({ icon, title, meta }: { icon: Parameters<typeof V48Icon>[0]['name']; title: string; meta?: ReactNode }) {
+export function SectionTitle({ icon, title, subtitle, meta }: { icon: Parameters<typeof V48Icon>[0]['name']; title: string; subtitle?: ReactNode; meta?: ReactNode }) {
   return <header className="v48-section-title">
     <span><V48Icon name={icon} /></span>
-    <h2>{title}</h2>
-    {meta && <div>{meta}</div>}
+    <div className="v48-section-title-text">
+      <h2>{title}</h2>
+      {subtitle && <p className="v48-section-subtitle">{subtitle}</p>}
+    </div>
+    {meta && <div className="v48-section-title-meta">{meta}</div>}
   </header>
+}
+
+/** Fait ressortir en violet le segment le plus saillant d'un texte généré par
+ *  l'IA, si celle-ci l'a délimité par **...** — jamais de choix arbitraire côté
+ *  front sur du texte non balisé (zéro-hallu : rien n'est mis en avant sans
+ *  signal explicite de la source). */
+export function renderEmphasis(text: string): ReactNode {
+  const parts = text.split(/\*\*(.+?)\*\*/g)
+  if (parts.length === 1) return text
+  return parts.map((part, index) => index % 2 === 1 ? <em key={index}>{part}</em> : part)
 }
 
 export function formatDate(value: string | null, fallback = 'À confirmer'): string {

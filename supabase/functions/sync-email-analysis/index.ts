@@ -517,7 +517,11 @@ async function loadMeetingCorpus(
  *  tout l'historique pour savoir où « maintenant » se situe. */
 async function bootstrapGmailHistoryId(token: string): Promise<string | null> {
   const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) return null
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    console.error(JSON.stringify({ fn: 'sync-email-analysis', event: 'gmail_history_bootstrap_failed', status: response.status, body: body.slice(0, 500) }))
+    return null
+  }
   const data = await response.json()
   return data.historyId ? String(data.historyId) : null
 }
@@ -584,7 +588,11 @@ const MS_DELTA_SELECT = 'id,conversationId,subject,from,toRecipients,ccRecipient
  *  complet de la boîte. */
 async function bootstrapMicrosoftDeltaLink(token: string, folder: 'Inbox' | 'SentItems'): Promise<string | null> {
   const response = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages/delta?$deltatoken=latest&$select=${MS_DELTA_SELECT}`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) return null
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    console.error(JSON.stringify({ fn: 'sync-email-analysis', event: 'ms_delta_bootstrap_failed', folder, status: response.status, body: body.slice(0, 500) }))
+    return null
+  }
   const data = await response.json()
   return data['@odata.deltaLink'] ?? null
 }
@@ -1241,7 +1249,11 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
               .select('content').eq('organization_id', organizationId).eq('contact_id', contactId).eq('entry_type', 'commitment')
             const seen = new Set((existingRows ?? []).map((row) => normalizeCommitment(String(row.content ?? ''))))
             const fresh = context.engagements
-              .map((item) => ({ item, content: item.owner === 'nous' ? `Nous : ${item.text}` : item.text }))
+              // Le préfixe "Nous : " a longtemps été posé ici pour distinguer un
+              // engagement qui nous incombe — mais l'avatar du répondant côté front
+              // (EngagementAvatar, déduit de sourceDirection) porte déjà cette
+              // information : le préfixe texte n'était que du bruit redondant.
+              .map((item) => ({ item, content: item.text }))
               .filter(({ content }) => { const key = normalizeCommitment(content); if (seen.has(key)) return false; seen.add(key); return true })
               .map(({ item, content }) => ({
                 organization_id: organizationId,
@@ -1420,16 +1432,43 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
     const cursorPatch: Record<string, unknown> = {}
 
     if (provider === 'google') {
-      const historyId = (connector.metadata as any)?.gmail_history_id ?? null
-      if (!historyId) throw new Error('Curseur Gmail manquant — attend le prochain backfill complet.')
+      let historyId = (connector.metadata as any)?.gmail_history_id ?? null
+      // Le curseur peut manquer si son bootstrap post-backfill a échoué en
+      // silence (cf. bootstrapGmailHistoryId) : on retente ici même, pour ne
+      // pas dépendre d'un futur cycle de backfill (lui-même déclenché par un
+      // usage manuel de l'app) pour ressusciter l'ingestion incrémentale.
+      if (!historyId) {
+        historyId = await bootstrapGmailHistoryId(accessToken)
+        if (!historyId) throw new Error('Curseur Gmail manquant — bootstrap indisponible, nouvelle tentative au prochain tick.')
+        cursorPatch.gmail_history_id = historyId
+      }
       const result = await gmailIncrementalMessages(accessToken, ownEmail, historyId)
       expired = result.expired
       messages = result.messages
       if (!expired && result.newHistoryId) cursorPatch.gmail_history_id = result.newHistoryId
     } else {
-      const deltaInbox = (connector.metadata as any)?.ms_delta_link_inbox ?? null
-      const deltaSent = (connector.metadata as any)?.ms_delta_link_sent ?? null
-      if (!deltaInbox || !deltaSent) throw new Error('Curseur Microsoft manquant — attend le prochain backfill complet.')
+      let deltaInbox = (connector.metadata as any)?.ms_delta_link_inbox ?? null
+      let deltaSent = (connector.metadata as any)?.ms_delta_link_sent ?? null
+      // Idem Microsoft : un bootstrap raté au dernier backfill ne doit pas
+      // bloquer indéfiniment l'incrémental — on retente le bootstrap ici.
+      if (!deltaInbox || !deltaSent) {
+        const [bootInbox, bootSent] = await Promise.all([
+          deltaInbox ? Promise.resolve(deltaInbox) : bootstrapMicrosoftDeltaLink(accessToken, 'Inbox'),
+          deltaSent ? Promise.resolve(deltaSent) : bootstrapMicrosoftDeltaLink(accessToken, 'SentItems'),
+        ])
+        deltaInbox = bootInbox
+        deltaSent = bootSent
+        if (deltaInbox) cursorPatch.ms_delta_link_inbox = deltaInbox
+        if (deltaSent) cursorPatch.ms_delta_link_sent = deltaSent
+        if (!deltaInbox || !deltaSent) {
+          // On garde la moitié réussie plutôt que de tout perdre — le prochain
+          // tick ne retentera que le côté manquant.
+          if (Object.keys(cursorPatch).length) {
+            await supabase.from('connectors').update({ metadata: { ...(connector.metadata ?? {}), ...cursorPatch }, updated_at: new Date().toISOString() }).eq('id', connector.id)
+          }
+          throw new Error('Curseur Microsoft manquant — bootstrap indisponible, nouvelle tentative au prochain tick.')
+        }
+      }
       const [inbox, sent] = await Promise.all([
         graphDeltaMessages(accessToken, 'Inbox', ownEmail, deltaInbox),
         graphDeltaMessages(accessToken, 'SentItems', ownEmail, deltaSent),
@@ -1447,7 +1486,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       // backfill plutôt que de laisser l'ingestion continue en échec silencieux —
       // un futur tick de backfill regénérera un curseur frais une fois complet.
       await supabase.from('connectors').update({
-        metadata: { ...(connector.metadata ?? {}), backfill_complete: false, backfill_before: null, gmail_history_id: null, ms_delta_link_inbox: null, ms_delta_link_sent: null },
+        metadata: { ...(connector.metadata ?? {}), backfill_complete: false, backfill_before: null, gmail_history_id: null, ms_delta_link_inbox: null, ms_delta_link_sent: null, last_incremental_error: null },
         updated_at: new Date().toISOString(),
       }).eq('id', connector.id)
       return { success: true, expired: true, messages: 0 }
@@ -1455,7 +1494,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
 
     if (!messages.length) {
       if (Object.keys(cursorPatch).length) {
-        await supabase.from('connectors').update({ metadata: { ...(connector.metadata ?? {}), ...cursorPatch }, updated_at: new Date().toISOString() }).eq('id', connector.id)
+        await supabase.from('connectors').update({ metadata: { ...(connector.metadata ?? {}), ...cursorPatch, last_incremental_error: null }, updated_at: new Date().toISOString() }).eq('id', connector.id)
       }
       return { success: true, messages: 0 }
     }
@@ -1535,7 +1574,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
     })
 
     await supabase.from('connectors').update({
-      metadata: { ...(connector.metadata ?? {}), ...cursorPatch },
+      metadata: { ...(connector.metadata ?? {}), ...cursorPatch, last_incremental_error: null },
       last_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq('id', connector.id)
@@ -1545,7 +1584,16 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       oneWayAddressesIgnored: [...incrementalEvidence.keys()].filter((email) => !eligibleEmails.has(email)).length,
     }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Ingestion incrémentale impossible' }
+    const message = error instanceof Error ? error.message : 'Ingestion incrémentale impossible'
+    // Ce chemin (cron, ~10 min) n'écrit jamais dans sync_jobs — sans ceci,
+    // un échec répété passait inaperçu indéfiniment (cf. incident du curseur
+    // Microsoft jamais bootstrappé, plusieurs jours sans ingestion silencieuse).
+    console.error(JSON.stringify({ fn: 'sync-email-analysis', mode: 'incremental', event: 'incremental_sync_failed', connector_id: connector.id, organization_id: organizationId, provider, message }))
+    await supabase.from('connectors').update({
+      metadata: { ...(connector.metadata ?? {}), last_incremental_error: { at: new Date().toISOString(), message } },
+      updated_at: new Date().toISOString(),
+    }).eq('id', connector.id)
+    return { success: false, error: message }
   }
 }
 
@@ -1605,6 +1653,9 @@ Deno.serve(async (request) => {
             connector: { id: row.id, metadata: row.metadata },
             jobId: null,
           })
+      if (result?.success === false) {
+        console.error(JSON.stringify({ fn: 'sync-email-analysis', mode: incremental ? 'cron_incremental' : 'cron_backfill', event: 'connector_sync_failed', connector_id: row.id, organization_id: row.organization_id, provider: row.provider, error: result.error }))
+      }
       results.push({ connectorId: row.id, organizationId: row.organization_id, ...result })
     }
     return json({ mode: incremental ? 'cron_incremental' : 'cron_backfill', candidates: pool.length, processed: results.length, results })

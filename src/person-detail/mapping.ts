@@ -44,6 +44,27 @@ export const text = (value: unknown): string | null => typeof value === 'string'
 export const num = (value: unknown): number | null => value === null || value === undefined || value === '' ? null : Number.isFinite(Number(value)) ? Number(value) : null
 export const bool = (value: unknown): boolean => value === true
 
+// behavioral_signals.source_ref porte tantôt une vraie URL (veille IA), tantôt un
+// repère interne ('to_confirm', etc.) — seule la première est citable comme source.
+const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value)
+const HOST_LABELS: Record<string, string> = {
+  'linkedin.com': 'LinkedIn',
+  'pappers.fr': 'Pappers',
+  'societe.com': 'Societe.com',
+  'infogreffe.fr': 'Infogreffe',
+  'contactout.com': 'ContactOut',
+}
+/** Libellé de citation dérivé du nom de domaine réel de la source — jamais une
+ *  catégorie générique ('Veille IA') quand une URL précise existe. */
+function hostLabel(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '')
+    return HOST_LABELS[host] ?? host
+  } catch {
+    return null
+  }
+}
+
 type AxisDefinition<Id extends string> = { id: Id; label: string; poleLeft: string; poleRight: string }
 
 const PRIMARY_AXIS_DEFINITIONS: ReadonlyArray<AxisDefinition<PrimaryAxisId>> = [
@@ -292,6 +313,8 @@ export function scoreWindow(history: PersonScorePoint[], months: number, now: Da
 export function buildSignals(signalRows: Row[], feedback: Map<string, string | null>): PersonSignal[] {
   return signalRows.map((row) => {
     const verdict = feedback.get(String(row.id))
+    const ref = text(row.source_ref)
+    const sourceUrl = ref && isHttpUrl(ref) ? ref : null
     return {
       id: String(row.id),
       type: text(row.signal_type) ?? 'signal',
@@ -301,7 +324,8 @@ export function buildSignals(signalRows: Row[], feedback: Map<string, string | n
       provenance: provenance(row, {
         sourceType: 'behavioral_signal',
         sourceId: String(row.id),
-        sourceLabel: sourceTypeLabel(text(row.source_type)),
+        sourceLabel: (sourceUrl && hostLabel(sourceUrl)) ?? sourceTypeLabel(text(row.source_type)),
+        sourceUrl,
         observedAt: text(row.observed_at),
         confidence: num(row.confidence),
         inferenceLevel: (text(row.inference_level) ?? 'observed') as DataSourceReference['inferenceLevel'],

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { initials } from '../lib/auth'
 import { saveSignalFeedback } from '../services/data'
-import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
+import { isBehavioralSignal } from '../services/signal-labels'
 import { addAccountNote, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson, AccountSignal } from './types'
 
@@ -170,6 +170,8 @@ export function V48AccountRelationView(props: ViewProps) {
 
 function AccountInsight({ data }: { data: AccountDetailData }) {
   const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
+  const signalCat = signal ? signalCategory(signal) : null
+  const signalUrl = signal?.provenance.sourceUrl ?? null
   // Sous-encart daté de la carte gauche : un signal notable distinct du spotlight.
   const nested = data.signals.find((item) => item.id !== signal?.id) ?? null
   const lead = [...data.people].sort((a, b) => (b.exchangeShare ?? 0) - (a.exchangeShare ?? 0))[0]
@@ -179,7 +181,7 @@ function AccountInsight({ data }: { data: AccountDetailData }) {
   const sources = data.sources.map((source) => source.label).join(' + ') || 'sources à confirmer'
   return <div className="v48-insight-grid">
     <article className="v48-insight filled">
-      <div className="v48-insight-head"><span className="v48-insight-ic"><Icon name="people" /></span><small>Ce que montrent les échanges</small></div>
+      <div className="v48-insight-head"><span className="v48-insight-ic"><Icon name="building" /></span><small>Ce que montrent les échanges</small></div>
       <strong>{reading}</strong>
       {nested && <div className="v48-insight-nested">
         <small>{relativeLabel(nested.provenance.observedAt)}</small>
@@ -188,9 +190,26 @@ function AccountInsight({ data }: { data: AccountDetailData }) {
       </div>}
       <p className="v48-insight-src">Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {sources}</p>
     </article>
-    <article className="v48-signal-spotlight"><small>Depuis votre dernier échange <b>{dateLabel(data.relationship.lastInteractionAt)}</b></small>
-      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || signal.impact || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeLabel(signal.provenance.observedAt)}</em></>
-        : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}
+    {/* Coloré par catégorie (Friction/Vigilance/Externe/Actif/Contexte), comme les
+        cartes de la liste ci-dessous — même taxonomie, même code couleur. */}
+    <article className="v48-signal-spotlight" style={{ '--spot-tone': signalCat ? SIGNAL_TONE_COLOR[signalCat.tone] : 'var(--violet)' } as CSSProperties}>
+      <div className="v48-spot-top">
+        <span className="v48-spot-eyebrow-ic"><Icon name="pulse" /></span>
+        <small>Depuis votre dernier échange <b>{dateLabel(data.relationship.lastInteractionAt)}</b></small>
+        {signalCat && <span className="v48-spot-kind">{signalCat.tag}</span>}
+      </div>
+      {signal ? <div className="v48-spot-body">
+        <span className="v48-spot-icon"><Icon name="signal" /></span>
+        <div className="v48-spot-content">
+          <strong>{signal.title}</strong>
+          <p>{signal.summary || signal.impact || 'Signal détecté, détail en cours de consolidation.'}</p>
+          <div className="v48-spot-foot">
+            {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
+            <span className="v48-spot-when">{relativeLabel(signal.provenance.observedAt)}</span>
+          </div>
+        </div>
+      </div> : <p className="v48-spot-empty">Aucun nouveau signal réel depuis le dernier échange.</p>}
+      {signalUrl && <a className="v48-spot-open" href={signalUrl} target="_blank" rel="noreferrer">Voir la source →</a>}
     </article>
   </div>
 }
@@ -209,13 +228,46 @@ function roleLabel(person: AccountPerson): string {
   return ROLE_LABELS[raw.toLowerCase()] ?? raw.replaceAll('_', ' ')
 }
 
-// Catégorie d'un signal → tag + tonalité (couleur du liseré), dérivée du type réel.
-function signalCategory(signal: AccountSignal): { tag: string; tone: 'friction' | 'positive' | 'external' | 'internal' | 'context' } {
-  const hay = `${signal.type} ${signal.provenance.sourceType} ${signal.impact ?? ''}`.toLowerCase()
-  if (/friction|risk|risque|churn|silence|retard|perdu|tension|deadline|échéance|impayé|litige/.test(hay)) return { tag: 'Friction', tone: 'friction' }
-  if (/opportun|reprise|growth|win|renforce|levée|funding|expansion|signature/.test(hay)) return { tag: 'Opportunité', tone: 'positive' }
-  if (/pappers|rcs|registre|news|press|monitoring|veille|mobility|job|externe|linkedin|nomination|gouvernance/.test(hay)) return { tag: 'Externe', tone: 'external' }
-  if (isBehavioralSignal(signal.type)) return { tag: 'Interne', tone: 'internal' }
+// Couleur vive du badge de rôle — un ton par famille de rôle, indépendant du
+// score relationnel (qui colore déjà la bordure de la carte via --person-tone).
+const ROLE_TONES: Record<string, string> = {
+  decision_maker: 'var(--teal)', decideur: 'var(--teal)', economic_buyer: 'var(--teal)',
+  gatekeeper: 'var(--coral)', filtre: 'var(--coral)',
+  influencer: 'var(--violet)', prescripteur: 'var(--violet)', prescriber: 'var(--violet)',
+  user: 'var(--sage)', utilisateur: 'var(--sage)', end_user: 'var(--sage)',
+  champion: 'var(--violet)', sponsor: 'var(--teal)', buyer: 'var(--amber)', technical: 'var(--t3)',
+}
+function roleTone(person: AccountPerson): string {
+  const raw = person.decisionRole || person.relationshipRole || person.organizationalRole
+  return raw ? ROLE_TONES[raw.toLowerCase()] ?? 'var(--t3)' : 'var(--t3)'
+}
+
+// Catégorie d'un signal → tag + tonalité, sur les 5 catégories métier (voir la
+// même logique côté fiche Personne, sections2.tsx::signalCategory — dupliquée
+// ici car AccountSignal porte un champ `impact` que PersonSignal n'a pas).
+//  - Externe   : veille sur le statut/poste déclaré (mouvement factuel).
+//  - Vigilance : risque relationnel structurel (concentration, bus factor, tension qui monte).
+//  - Friction  : un point précis resté sans réponse/non clos (relance sans retour, solde non reversé).
+//  - Actif     : ce que le compte publie ou met en place récemment.
+//  - Contexte  : le reste (mutuel, secteur commun…).
+type SignalTag = 'Externe' | 'Vigilance' | 'Friction' | 'Actif' | 'Contexte'
+type SignalTone = 'external' | 'vigilance' | 'friction' | 'active' | 'context'
+const SIGNAL_TONE_COLOR: Record<SignalTone, string> = { external: '#6E50C8', vigilance: '#C97A20', friction: '#D94F63', active: '#2EA86A', context: '#2896A8' }
+function signalCategory(signal: AccountSignal): { tag: SignalTag; tone: SignalTone } {
+  const type = signal.type.toLowerCase()
+  const text = `${signal.title} ${signal.summary ?? ''} ${signal.impact ?? ''}`.toLowerCase()
+  if (['deadline', 'silence'].includes(type) || /sans retour|sans r[ée]ponse|relanc[ée]|non revers[ée]|non r[ée]gl[ée]|impay|litige|point de friction/.test(text)) {
+    return { tag: 'Friction', tone: 'friction' }
+  }
+  if (['churn'].includes(type) || /tension|risque|concentration|bus factor/.test(text)) {
+    return { tag: 'Vigilance', tone: 'vigilance' }
+  }
+  if (['job_change', 'mobility', 'governance'].includes(type) || /\bposte\b|\bstatut\b|nomination|dirigeant/.test(text)) {
+    return { tag: 'Externe', tone: 'external' }
+  }
+  if (['recent_activity', 'news'].includes(type) || /publication|prise de parole|lancement|partenariat|événement|recrutement|levée|financement|reconnaissance|expansion|signature/.test(text)) {
+    return { tag: 'Actif', tone: 'active' }
+  }
   return { tag: 'Contexte', tone: 'context' }
 }
 
@@ -239,7 +291,7 @@ function OrgGrid({ people, navigate }: { people: AccountPerson[]; navigate: (pat
     {!sorted.length ? <Empty>Aucun interlocuteur réel n’est encore rattaché à ce compte.</Empty> :
       <div className="v48-orgc-grid">{shown.map((person) => {
         const tone = person.score !== null && person.score >= 70 ? '#2ea86a' : person.score !== null && person.score < 50 ? '#d94f63' : '#6e50c8'
-        return <button className="v48-orgc" key={person.id} onClick={() => navigate(`/app/people/${person.id}`)} style={{ '--person-tone': tone } as CSSProperties}>
+        return <button className="v48-orgc" key={person.id} onClick={() => navigate(`/app/people/${person.id}`)} style={{ '--person-tone': tone, '--role-tone': roleTone(person) } as CSSProperties}>
           <span className="v48-orgc-tag">{roleLabel(person)}</span>
           <strong className="v48-orgc-name">{person.name}</strong>
           <span className="v48-orgc-share">{person.exchangeShare === null ? 'part à confirmer' : <><b>{person.exchangeShare}%</b> des échanges</>}</span>
@@ -252,19 +304,12 @@ function OrgGrid({ people, navigate }: { people: AccountPerson[]; navigate: (pat
   </section>
 }
 
-function Firmographics({ data }: { data: AccountDetailData }) {
-  return <details className="v48-detail-fold v48-firmographics">
-    <summary><Icon name="building" /><strong>Firmographie</strong><span>{data.firmographics.length} données sourcées</span><b>⌄</b></summary>
-    <div className="v48-firmographic-grid">
-      {data.firmographics.map((fact) => <article key={fact.id}><span>{fact.key.replaceAll('_', ' ')}</span><strong>{typeof fact.value === 'string' || typeof fact.value === 'number' ? String(fact.value) : JSON.stringify(fact.value)}</strong><small>{fact.provenance.sourceLabel} · {dateLabel(fact.provenance.lastVerifiedAt || fact.provenance.observedAt)}</small></article>)}
-      {!data.firmographics.length && <Empty>Aucune donnée société vérifiée n’est disponible.</Empty>}
-    </div>
-  </details>
-}
+const ACCOUNT_SIGNAL_TAGS: SignalTag[] = ['Externe', 'Vigilance', 'Friction', 'Actif', 'Contexte']
 
 function SignalFeed({ data, userId, refresh, openWatch }: Omit<ViewProps, 'navigate'> & { openWatch: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [tagFilter, setTagFilter] = useState<'all' | SignalTag>('all')
   const validate = async (id: string, verdict: 'confirmed' | 'dismissed') => {
     setBusy(id)
     try {
@@ -275,21 +320,30 @@ function SignalFeed({ data, userId, refresh, openWatch }: Omit<ViewProps, 'navig
     }
   }
   const lastSync = useMemo(() => data.sources.map((source) => source.lastSyncedAt).filter((value): value is string => value !== null).sort().pop() ?? data.relationship.computedAt, [data])
-  const shown = expanded ? data.signals : data.signals.slice(0, 4)
-  const rest = data.signals.length - shown.length
+  const categorized = useMemo(() => data.signals.map((signal) => ({ signal, cat: signalCategory(signal) })), [data.signals])
+  const filtered = tagFilter === 'all' ? categorized : categorized.filter(({ cat }) => cat.tag === tagFilter)
+  const shown = expanded ? filtered : filtered.slice(0, 4)
+  const rest = filtered.length - shown.length
   return <section className="v48-section v48-signals">
-    <SectionTitle icon="signal" title="Signaux récents" meta={<><button type="button" className={`v48-watch-pill ${data.account.watchEnabled ? 'on' : ''}`} onClick={openWatch} title="Gérer la veille"><i />Veille {data.account.watchEnabled ? 'active' : 'coupée'}</button><span className="v48-section-count"><b>{data.signals.length}</b></span></>} />
+    <SectionTitle icon="signal" title="Signaux récents" meta={<><button type="button" className={`v48-watch-pill ${data.account.watchEnabled ? 'on' : ''}`} onClick={openWatch} title="Gérer la veille"><i />Veille {data.account.watchEnabled ? 'active' : 'coupée'}</button><span className="v48-section-count"><b>{filtered.length}</b></span></>} />
+    <div className="v48-sig-filters" role="tablist" aria-label="Filtrer les signaux par catégorie">
+      <button type="button" role="tab" aria-selected={tagFilter === 'all'} className={tagFilter === 'all' ? 'on' : ''} onClick={() => setTagFilter('all')}>Tous</button>
+      {ACCOUNT_SIGNAL_TAGS.map((tag) => <button key={tag} type="button" role="tab" aria-selected={tagFilter === tag} className={tagFilter === tag ? 'on' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}
+    </div>
     {data.account.watchEnabled
       ? <div className="v48-signals-sync"><i />Dernière synchronisation : <b>{relativeLabel(lastSync)}</b></div>
       : <div className="v48-signals-sync off"><i />Veille coupée — aucun nouveau signal ne sera collecté.</div>}
     <div className="v48-sig-list">
-      {shown.map((signal) => {
-        const cat = signalCategory(signal)
+      {shown.map(({ signal, cat }) => {
         const action = signalAction(signal)
         return <article className={`v48-sig tone-${cat.tone}`} key={signal.id}>
-          <div className="v48-sig-rail"><span className="v48-sig-when">{relativeLabel(signal.provenance.observedAt)}</span><i className="v48-sig-dot" /></div>
+          <span className="v48-sig-icon"><Icon name="signal" /></span>
           <div className="v48-sig-body">
-            <div className="v48-sig-head"><h3>{signal.title}</h3><span className="v48-sig-cat">{cat.tag}</span></div>
+            <div className="v48-sig-head">
+              <span className="v48-sig-when">{relativeLabel(signal.provenance.observedAt)}</span>
+              <span className="v48-sig-cat">{cat.tag}</span>
+            </div>
+            <h3>{signal.title}</h3>
             <p>{signal.summary || signal.impact || 'Détail en cours de consolidation.'}</p>
             <div className="v48-sig-foot">
               {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
@@ -302,10 +356,10 @@ function SignalFeed({ data, userId, refresh, openWatch }: Omit<ViewProps, 'navig
           </div>
         </article>
       })}
-      {!data.signals.length && <Empty>Aucun signal réel n’est actuellement rattaché à ce compte.</Empty>}
+      {!filtered.length && <Empty>{categorized.length ? 'Aucun signal pour cette catégorie.' : 'Aucun signal réel n’est actuellement rattaché à ce compte.'}</Empty>}
     </div>
     {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
-    {expanded && data.signals.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
+    {expanded && filtered.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
   </section>
 }
 
@@ -315,7 +369,6 @@ export function V48AccountLiveView(props: ViewProps & { openWatch: () => void })
     <div className="v48-account-live-grid">
       <div className="v48-live-col">
         <OrgGrid people={props.data.people} navigate={props.navigate} />
-        <Firmographics data={props.data} />
       </div>
       <div className="v48-live-col">
         <SignalFeed data={props.data} userId={props.userId} refresh={props.refresh} openWatch={props.openWatch} />

@@ -3,10 +3,11 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { scoreWindow } from './mapping'
 import type { PersonApproachScenario, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
-import { CareerSection, ContactsCard, HistoryCard, MemoryCard, SignalsCard } from './sections2'
+import { CareerSection, HistoryCard, MemoryCard, SignalsCard } from './sections2'
+import type { CareerHook } from './sections2'
 import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
-import { V48Icon, SectionTitle, formatDate, formatMonth, relativeDate, scoreTone, useBusy, useToast } from './ui'
+import { V48Icon, formatDate, formatMonth, relativeDate, renderEmphasis, scoreTone, useBusy, useToast } from './ui'
 import { ContactAvatar } from '../components/ContactAvatar'
 
 type ViewProps = {
@@ -16,15 +17,6 @@ type ViewProps = {
   manualSyncAction?: ReactNode
 }
 
-/** Fait ressortir en violet le segment le plus saillant d'un texte généré par
- *  l'IA, si celle-ci l'a délimité par **...** — jamais de choix arbitraire côté
- *  front sur du texte non balisé (zéro-hallu : rien n'est mis en avant sans
- *  signal explicite de la source). */
-function renderEmphasis(text: string): ReactNode {
-  const parts = text.split(/\*\*(.+?)\*\*/g)
-  if (parts.length === 1) return text
-  return parts.map((part, index) => index % 2 === 1 ? <em key={index}>{part}</em> : part)
-}
 
 function EmptyState({ children }: { children: ReactNode }) {
   return <div className="v48-empty"><span>◇</span><p>{children}</p></div>
@@ -560,11 +552,16 @@ function engagementStatus(item: PersonRecommendation): EngagementState {
 }
 
 /** Échéance encodée en fin de contenu (« … — échéance AAAA-MM-JJ ») par l'analyse :
- *  on la sort du titre pour l'afficher proprement et en déduire l'état. */
+ *  on la sort du titre pour l'afficher proprement et en déduire l'état. Le préfixe
+ *  « Nous : » (marqueur d'attribution posé par sync-email-analysis/ingest-transcript
+ *  quand l'engagement est le nôtre) est retiré à l'affichage : l'avatar du
+ *  répondant (EngagementAvatar) porte déjà cette information, le préfixe texte
+ *  est redondant. */
 function memoryDue(content: string): { title: string; dueAt: string | null } {
   const match = content.match(/\s*—\s*échéance\s+(\d{4}-\d{2}-\d{2})\s*$/)
-  if (!match || match.index === undefined) return { title: content, dueAt: null }
-  return { title: content.slice(0, match.index).trim(), dueAt: match[1] ?? null }
+  const withoutDue = !match || match.index === undefined ? content : content.slice(0, match.index).trim()
+  const title = withoutDue.replace(/^nous\s*:\s*/i, '').trim()
+  return { title, dueAt: match?.[1] ?? null }
 }
 
 // Preuve « d'où vient l'engagement » : les vrais échanges datés autour de la date
@@ -791,9 +788,13 @@ function InsightBand({ data }: { data: PersonDetailData }) {
   const nested = data.careerEntries.find((entry) => entry.entryType === 'detected_change') ?? null
   const reading = data.summary?.text || data.behavior.executiveSummary || 'Lecture en cours de construction'
   const sources = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
+  // Icône/badge du spotlight toujours violets (couleur de marque) : contrairement à la
+  // liste des signaux (où la couleur par tonalité aide à scanner), ici une seule mise
+  // en avant n'a pas besoin d'un code couleur — juste de rester cohérente visuellement.
+  const toneColor = 'var(--violet)'
   return <div className="v48-insight-grid">
     <article className="v48-insight filled">
-      <div className="v48-insight-head"><span className="v48-insight-ic"><V48Icon name="sparkle" /></span><small>Ce que montrent les échanges</small></div>
+      <div className="v48-insight-head"><span className="v48-insight-ic"><V48Icon name="briefcase" /></span><small>Ce que montrent les échanges</small></div>
       <strong>{reading}</strong>
       {nested && <div className="v48-insight-nested">
         <small>{timeAgoLabel(nested.startedAt)}</small>
@@ -802,11 +803,24 @@ function InsightBand({ data }: { data: PersonDetailData }) {
       </div>}
       <p className="v48-insight-src">Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {sources}</p>
     </article>
-    <article className="v48-signal-spotlight">
-      <small>Depuis votre dernier échange <b>{formatDate(data.relationship.lastInteractionAt)}</b></small>
-      {signal ? <><span>{signalTypeLabel(signal.type)}</span><strong>{signal.title}</strong><p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p><em>{signal.provenance.sourceLabel} · {relativeDate(signal.provenance.observedAt).toLowerCase()}</em>
-        {signalUrl && <a className="v48-sig-open" href={signalUrl} target="_blank" rel="noreferrer">Voir la publication →</a>}</>
-        : <p>Aucun nouveau signal réel depuis le dernier échange.</p>}
+    <article className="v48-signal-spotlight" style={{ '--spot-tone': toneColor } as React.CSSProperties}>
+      <div className="v48-spot-top">
+        <span className="v48-spot-eyebrow-ic"><V48Icon name="pulse" /></span>
+        <small>Depuis votre dernier échange <b>{formatDate(data.relationship.lastInteractionAt)}</b></small>
+        {signal && <span className="v48-spot-kind">{signalTypeLabel(signal.type)}</span>}
+      </div>
+      {signal ? <div className="v48-spot-body">
+        <span className="v48-spot-icon"><V48Icon name="globe" /></span>
+        <div className="v48-spot-content">
+          <strong>{signal.title}</strong>
+          <p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p>
+          <div className="v48-spot-foot">
+            {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
+            <span className="v48-spot-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span>
+          </div>
+        </div>
+      </div> : <p className="v48-spot-empty">Aucun nouveau signal réel depuis le dernier échange.</p>}
+      {signalUrl && <a className="v48-spot-open" href={signalUrl} target="_blank" rel="noreferrer">Voir la publication →</a>}
     </article>
   </div>
 }
@@ -817,20 +831,24 @@ export function V48PersonLiveView({ data, userId, refresh }: ViewProps) {
   // sujets de conversation — sinon repli sur la lecture déjà disponible (synthèse,
   // actualité de poste, style d'échange) pour ne jamais afficher un vide évitable.
   const enrichment = data.enrichment
-  const enrichmentHooks = enrichment ? [
+  // Lien « Voir le profil » : uniquement le vrai profil LinkedIn retrouvé par
+  // l'enrichissement — jamais un lien inventé pour une relation ou un sujet qui
+  // n'a pas d'URL propre.
+  const enrichmentHooks: CareerHook[] = enrichment ? [
     ...enrichment.relatedPeople.map((person) => ({
       title: [person.name, person.role].filter(Boolean).join(' · '),
       text: person.why ?? 'Relation identifiée via la recherche web — peut faciliter une mise en relation.',
       source: 'LinkedIn · Recherche web',
+      url: null,
     })),
-    ...enrichment.talkingPoints.map((point) => ({ title: 'Sujet à aborder', text: point, source: 'Recherche web · Suggestion' })),
+    ...enrichment.talkingPoints.map((point) => ({ title: 'Sujet à aborder', text: point, source: 'Recherche web · Suggestion', url: enrichment.linkedinUrl })),
   ].slice(0, 5) : []
-  const fallbackHookCandidates = [
-    data.summary?.text ? { title: 'Synthèse relationnelle', text: data.summary.text, source: data.summary.provenance?.sourceLabel ?? null } : null,
+  const fallbackHookCandidates: Array<CareerHook | null> = [
+    data.summary?.text ? { title: 'Synthèse relationnelle', text: data.summary.text, source: data.summary.provenance?.sourceLabel ?? null, url: null } : null,
     currentCareer?.description
-      ? { title: 'Actualité professionnelle', text: currentCareer.description, source: currentCareer.provenance.sourceLabel }
+      ? { title: 'Actualité professionnelle', text: currentCareer.description, source: currentCareer.provenance.sourceLabel, url: null }
       : null,
-    data.behavior.executiveSummary ? { title: 'Style d’échange', text: data.behavior.executiveSummary, source: 'Échanges observés' } : null,
+    data.behavior.executiveSummary ? { title: 'Style d’échange', text: data.behavior.executiveSummary, source: 'Échanges observés', url: null } : null,
   ]
   const fallbackHooks = fallbackHookCandidates.filter((item): item is NonNullable<(typeof fallbackHookCandidates)[number]> => item !== null)
   const hooks = enrichmentHooks.length ? enrichmentHooks : fallbackHooks
@@ -839,17 +857,9 @@ export function V48PersonLiveView({ data, userId, refresh }: ViewProps) {
     <InsightBand data={data} />
     <div className="v48-live-layout">
       <main className="v48-live-main">
-        <CareerSection data={data} userId={userId} refresh={refresh} />
-        <section className="v48-section v48-hooks">
-          <SectionTitle icon="sparkle" title="Points d’accroche" />
-          <div>
-            {hooks.map((hook) => <article key={hook.title}><span><V48Icon name="sparkle" /></span><div><h3>{hook.title}</h3><p>{hook.text}</p><small>{hook.source || 'Source à confirmer'}</small></div></article>)}
-            {!hooks.length && <EmptyState>Aucun point d’accroche suffisamment étayé n’est disponible.</EmptyState>}
-          </div>
-        </section>
+        <CareerSection data={data} userId={userId} refresh={refresh} hooks={hooks} />
       </main>
       <aside className="v48-live-rail" id="person-contact-panel">
-        <ContactsCard data={data} userId={userId} refresh={refresh} />
         <SignalsCard data={data} userId={userId} refresh={refresh} />
       </aside>
     </div>

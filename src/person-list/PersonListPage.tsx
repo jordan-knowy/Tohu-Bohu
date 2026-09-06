@@ -15,7 +15,7 @@ import {
   type PersonListRow, type TickerItem,
 } from './mapping'
 import {
-  archivePeople, detectPersonCandidates, getPeopleOverview, reassignPeople, setPersonFavorite, setPersonOwner,
+  archivePeople, detectPersonCandidates, getPeopleOverview, setPersonFavorite, setPersonOwner, sharePeople,
   setPersonWatch, trackPersonCandidate, type PeopleOverview, type PersonCandidate,
 } from './service'
 
@@ -207,8 +207,9 @@ function PageBody({ context }: { context: PageContext }) {
     setAssignAnchor(null)
     const people = overview.people.filter((row) => selection.has(row.id))
     void run('passation', async () => {
-      const result = await reassignPeople(context.workspaceId, people, memberId, context.userId)
-      toast(`Passation effectuée : ${result.transferred} personne${result.transferred > 1 ? 's' : ''} transférée${result.transferred > 1 ? 's' : ''}${result.logged ? '' : ' (journal de transfert indisponible)'}.`)
+      const result = await sharePeople(context.workspaceId, people, memberId)
+      const memberName = overview.team.find((member) => member.id === memberId)?.name ?? 'ce membre'
+      toast(`Partage effectué : ${result.shared} personne${result.shared > 1 ? 's' : ''} partagée${result.shared > 1 ? 's' : ''} avec ${memberName}.`)
       setPassation(false)
       setSelection(new Set())
       await refresh()
@@ -299,7 +300,7 @@ function PageBody({ context }: { context: PageContext }) {
     {(passation || passationClosing) && <div className="pa-bar-wrap"><div className={`pa-bar${passationClosing ? ' pa-bar-out' : ''}`} role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> personne{selection.size > 1 ? 's' : ''} sélectionnée{selection.size > 1 ? 's' : ''}</span>
       <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Réattribuer
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Partager
       </button>
       <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer

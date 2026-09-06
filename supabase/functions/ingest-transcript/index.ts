@@ -44,7 +44,7 @@ type ContactRow = { id: string; full_name: string | null; email: string | null }
 // Le transcript est stocké (meeting_transcripts) : citer un verbatim est donc
 // légitime. Un engagement n'est conservé que si sa phrase source apparaît
 // réellement dans le transcript (garde-fou anti-invention).
-type TranscriptEngagement = { content: string; confidence: number; due_date: string | null; source_quote: string | null }
+type TranscriptEngagement = { content: string; confidence: number; due_date: string | null; source_quote: string | null; direction: 'inbound' | 'outbound' }
 type TranscriptMoment = { title: string; summary: string | null; occurred_date: string | null; impact: 'friction' | 'reinforce' | 'milestone'; confidence: number }
 
 function normCommitment(value: string): string {
@@ -101,12 +101,16 @@ Transcript :\n${corpus}`
       const dueDate = typeof entry.due_date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(entry.due_date) ? String(entry.due_date).slice(0, 10) : null
       const rawQuote = typeof entry.source_quote === 'string' ? entry.source_quote.trim().replace(/^[«"']\s*|\s*[»"']$/g, '').slice(0, 240) : ''
       const quoteVerified = rawQuote.length >= 8 && corpusNorm.includes(normText(rawQuote))
-      const base = owner === 'nous' ? `Nous : ${text}` : text
+      // Qui doit honorer l'engagement se lit désormais sur `direction` (stockée en
+      // source_direction), plus sur un préfixe "Nous : " dans le texte — même
+      // convention que sync-email-analysis. L'avatar du répondant côté front
+      // (EngagementAvatar) s'appuyait déjà sur ce champ, resté à null jusqu'ici.
       return {
-        content: dueDate ? `${base} — échéance ${dueDate}` : base,
+        content: dueDate ? `${text} — échéance ${dueDate}` : text,
         confidence: Number.isFinite(Number(entry.confidence)) ? Math.max(0, Math.min(100, Number(entry.confidence))) : 50,
         due_date: dueDate,
         source_quote: quoteVerified ? rawQuote : null,
+        direction: owner === 'nous' ? 'outbound' : 'inbound',
       }
     })
   const moments = (Array.isArray(parsed.moments) ? parsed.moments : [])
@@ -419,7 +423,7 @@ Deno.serve(async (req) => {
               observed_at: startsAt,
               source_excerpt: e.source_quote,
               source_occurred_at: startsAt,
-              source_direction: null,
+              source_direction: e.direction,
             }))
           if (fresh.length) {
             const { error: memErr } = await admin.from('person_memory_entries').insert(fresh)

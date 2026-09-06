@@ -1,3 +1,5 @@
+import type { StrategicReading } from '../services/strategic-reading'
+
 export type Provenance = {
   sourceType: string
   sourceId: string | null
@@ -41,6 +43,8 @@ export type AccountRecommendation = {
   dueAt: string | null
   status: 'open' | 'completed' | 'dismissed' | 'postponed'
   assignedTo: string | null
+  assignedToUserId: string | null
+  assignedContactId: string | null
   provenance: Provenance
 }
 
@@ -84,6 +88,7 @@ export interface AccountDetailData {
     legalName: string | null
     logoUrl: string | null
     domain: string | null
+    siren: string | null
     websiteUrl: string | null
     description: string | null
     sector: string | null
@@ -103,8 +108,12 @@ export interface AccountDetailData {
     location: string | null
     tags: string[]
     primaryOwnerName: string | null
+    primaryOwnerUserId: string | null
+    visibility: 'workspace' | 'restricted'
     locked: boolean
     lockedByMe: boolean
+    lockedByName: string | null
+    lockedAt: string | null
   }
   relationship: {
     score: number | null
@@ -142,4 +151,5 @@ export interface AccountDetailData {
   signals: AccountSignal[]
   memoryEntries: AccountMemoryEntry[]
   firmographics: AccountFirmographicFact[]
+  strategicReading: StrategicReading | null
 }

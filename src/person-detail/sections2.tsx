@@ -9,7 +9,7 @@ import {
   updatePersonContactDetail, validateContactDetail,
 } from './service'
 import type { PersonContactDetail, PersonDetailData, PersonHistoryEvent, PersonSignal } from './types'
-import { Empty, SectionTitle, formatDate, formatMonth, relativeDate, useBusy, useToast } from './ui'
+import { Empty, SectionTitle, V48Icon, formatDate, formatMonth, relativeDate, renderEmphasis, useBusy, useToast } from './ui'
 import { ACCEPTED_TRANSCRIPT_EXTENSIONS, fetchTranscriptJob, startTranscriptIngest } from '../services/transcript-ingest'
 
 const isTranscriptFile = (name: string): boolean =>
@@ -53,7 +53,13 @@ function durationBetween(startIso: string | null, endIso: string | null): string
   return `${Math.max(1, days)} j`
 }
 
-export function CareerSection({ data, userId, refresh }: SectionProps) {
+export type CareerHook = { title: string; text: string; source: string | null; url: string | null }
+
+// Couleurs cycliques pour le liseré des points d'accroche — purement décoratif
+// (pas de sémantique métier par couleur), calqué sur la maquette.
+const HOOK_TONES = ['#2EA86A', '#6E50C8', '#C97A20']
+
+export function CareerSection({ data, userId, refresh, hooks = [] }: SectionProps & { hooks?: CareerHook[] }) {
   const [busy, run] = useBusy()
   const toast = useToast()
   const entries = data.careerEntries.filter((entry) => entry.verificationStatus !== 'rejected')
@@ -114,6 +120,19 @@ export function CareerSection({ data, userId, refresh }: SectionProps) {
             </div>)}
           </div>
         </details>}
+        {hooks.length > 0 && <div className="v48-cv-hooks">
+          <p className="v48-cv-label">Points d’accroche</p>
+          <div className="v48-cv-list">
+            {hooks.map((hook, index) => <div className="v48-cv-hook" style={{ '--hook-tone': HOOK_TONES[index % HOOK_TONES.length] } as React.CSSProperties} key={hook.title}>
+              <p className="v48-cv-hook-t">{renderEmphasis(hook.title)}</p>
+              <p className="v48-cv-hook-d">{hook.text}</p>
+              <div className="v48-cv-hook-f">
+                <span className="v48-cv-tag">{hook.source ?? 'Source à confirmer'}</span>
+                {hook.url && <a className="v48-cv-link" href={hook.url} target="_blank" rel="noreferrer">Voir le profil →</a>}
+              </div>
+            </div>)}
+          </div>
+        </div>}
       </div>}
   </section>
 }
@@ -600,16 +619,42 @@ export function ContactsCard({ data, userId, refresh }: SectionProps) {
 
 // ─── Rail : signaux récents ────────────────────────────────────────────────
 
-// Catégorie d'un signal → tag + tonalité (couleur du liseré), dérivée du type réel —
-// même logique que côté Compte (V48AccountViews.signalCategory), adaptée : PersonSignal
-// n'a pas de champ impact, on lit seulement type/sourceType.
-function signalCategory(signal: PersonSignal): { tag: string; tone: 'friction' | 'positive' | 'external' | 'internal' | 'context' } {
-  const hay = `${signal.type} ${signal.provenance.sourceType ?? ''}`.toLowerCase()
-  if (/friction|risk|risque|churn|silence|retard|perdu|tension|deadline|échéance|impayé|litige/.test(hay)) return { tag: 'Friction', tone: 'friction' }
-  if (/opportun|reprise|growth|win|renforce|levée|funding|expansion|signature/.test(hay)) return { tag: 'Opportunité', tone: 'positive' }
-  if (/pappers|rcs|registre|news|press|monitoring|veille|mobility|job|externe|linkedin|nomination|gouvernance/.test(hay)) return { tag: 'Externe', tone: 'external' }
-  if (isBehavioralSignal(signal.type)) return { tag: 'Interne', tone: 'internal' }
+// Catégorie d'un signal → tag + tonalité (couleur), sur les 4 vraies catégories
+// métier (pas de champ dédié en base pour l'instant, donc classification par
+// mots-clés côté front — voir la note dans la conversation : la vraie solution
+// est de faire émettre cette catégorie directement par les agents qui créent le
+// signal, à partir du contenu réel des échanges/transcripts, pas de la deviner
+// après coup ici. À traiter dans un lot dédié côté back.
+//  - Externe   : veille sur le poste déclaré en cours (mouvement de carrière factuel).
+//  - Vigilance : point d'attention relationnel, ou soupçon de recherche d'un
+//    nouveau poste déduit de l'analyse (jamais affirmé comme un fait).
+//  - Actif     : ce qu'il publie ou met en place récemment (initiative de sa part).
+//  - Contexte  : ce qui relie son activité à la mienne (suivi mutuel, secteur commun…).
+export type SignalTag = 'Externe' | 'Vigilance' | 'Actif' | 'Contexte'
+export type SignalTone = 'external' | 'vigilance' | 'active' | 'context'
+const SIGNAL_VIGILANCE_TYPES = new Set(['deadline', 'silence'])
+const SIGNAL_EXTERNAL_TYPES = new Set(['job_change', 'mobility'])
+const SIGNAL_ACTIVE_TYPES = new Set(['recent_activity'])
+export function signalCategory(signal: PersonSignal): { tag: SignalTag; tone: SignalTone } {
+  const type = signal.type.toLowerCase()
+  const text = `${signal.title} ${signal.summary ?? ''}`.toLowerCase()
+  if (SIGNAL_VIGILANCE_TYPES.has(type) || /cherche\w* (un |de )?(nouveau )?(poste|emploi)|recherch\w* (un |de )?emploi|tension|friction|risque|impay|litige|churn/.test(text)) {
+    return { tag: 'Vigilance', tone: 'vigilance' }
+  }
+  if (SIGNAL_EXTERNAL_TYPES.has(type) || /\bposte\b|\bfonction\b|nomination|départ de fonction/.test(text)) {
+    return { tag: 'Externe', tone: 'external' }
+  }
+  if (SIGNAL_ACTIVE_TYPES.has(type) || /publication|prise de parole|lancement|partenariat|événement|recrutement|levée|financement|reconnaissance/.test(text)) {
+    return { tag: 'Actif', tone: 'active' }
+  }
   return { tag: 'Contexte', tone: 'context' }
+}
+
+// Couleur associée à chaque tonalité de signal — partagée entre la liste des
+// signaux et le spotlight du bandeau insight, pour une seule palette cohérente
+// (identique à la maquette : externe violet, vigilance ambre, actif vert, contexte teal).
+export const SIGNAL_TONE_COLOR: Record<SignalTone, string> = {
+  external: '#6E50C8', vigilance: '#C97A20', active: '#2EA86A', context: '#2896A8',
 }
 
 // Action contextuelle : n'apparaît que si une vraie URL source existe.
@@ -622,10 +667,13 @@ function signalAction(signal: PersonSignal): { label: string; url: string } | nu
   return { label: 'Ouvrir la source →', url }
 }
 
+const SIGNAL_TAGS: SignalTag[] = ['Externe', 'Vigilance', 'Actif', 'Contexte']
+
 export function SignalsCard({ data, userId, refresh }: SectionProps) {
   const [busy, run] = useBusy()
   const toast = useToast()
   const [expanded, setExpanded] = useState(false)
+  const [tagFilter, setTagFilter] = useState<'all' | SignalTag>('all')
   const toggleWatch = () => void run('watch', async () => {
     await setPersonWatch(data, userId, !data.person.watchEnabled)
     toast(data.person.watchEnabled ? 'Veille désactivée.' : 'Veille activée — signaux internes & externes.')
@@ -637,28 +685,39 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
   })
   const lastSync = data.sources.map((source) => source.lastSyncedAt).filter((value): value is string => value !== null).sort().pop() ?? null
   const sourcesLabel = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
-  const shown = expanded ? data.signals : data.signals.slice(0, 4)
-  const rest = data.signals.length - shown.length
+  // Les signaux comportementaux (rythme, registre, tonalité…) sont des traits de
+  // communication, pas des évènements datés — ils vivent dans l'onglet Profil,
+  // pas dans ce flux Externe/Vigilance/Actif/Contexte.
+  const categorized = data.signals.filter((signal) => !isBehavioralSignal(signal.type)).map((signal) => ({ signal, cat: signalCategory(signal) }))
+  const filtered = tagFilter === 'all' ? categorized : categorized.filter(({ cat }) => cat.tag === tagFilter)
+  const shown = expanded ? filtered : filtered.slice(0, 4)
+  const rest = filtered.length - shown.length
   return <section className="v48-section v48-signals">
-    <SectionTitle icon="signal" title="Signaux récents" meta={<>
-      <span className="v48-section-count"><b>{data.signals.length}</b></span>
+    <SectionTitle icon="signal" title="Signaux récents" subtitle={`${data.person.fullName.split(' ')[0]} · individu · ${sourcesLabel}`} meta={<>
+      <span className="v48-section-count"><b>{filtered.length}</b></span>
       <button type="button" className={`ktog ${data.person.watchEnabled ? 'on' : ''}`} disabled={busy !== null} aria-pressed={data.person.watchEnabled} onClick={toggleWatch}>
         <span className="ktog-lbl">Veille</span>
         <span className="ktog-sw" aria-hidden="true" />
       </button>
     </>} />
-    <p className="v48-signals-scope">{data.person.fullName.split(' ')[0]} · individu · {sourcesLabel}</p>
+    <div className="v48-sig-filters" role="tablist" aria-label="Filtrer les signaux par catégorie">
+      <button type="button" role="tab" aria-selected={tagFilter === 'all'} className={tagFilter === 'all' ? 'on' : ''} onClick={() => setTagFilter('all')}>Tous</button>
+      {SIGNAL_TAGS.map((tag) => <button key={tag} type="button" role="tab" aria-selected={tagFilter === tag} className={tagFilter === tag ? 'on' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}
+    </div>
     {data.person.watchEnabled
       ? <div className="v48-signals-sync"><i />Dernière synchronisation : <b>{lastSync ? relativeDate(lastSync).toLowerCase() : 'à confirmer'}</b></div>
       : <div className="v48-signals-sync off"><i />Veille coupée — aucun nouveau signal ne sera collecté.</div>}
     <div className="v48-sig-list">
-      {shown.map((signal) => {
-        const cat = signalCategory(signal)
+      {shown.map(({ signal, cat }) => {
         const action = signalAction(signal)
         return <article className={`v48-sig tone-${cat.tone}`} key={signal.id}>
-          <div className="v48-sig-rail"><span className="v48-sig-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span><i className="v48-sig-dot" /></div>
+          <span className="v48-sig-icon"><V48Icon name="signal" /></span>
           <div className="v48-sig-body">
-            <div className="v48-sig-head"><h3>{signal.title}</h3><span className="v48-sig-cat">{cat.tag}</span></div>
+            <div className="v48-sig-head">
+              <span className="v48-sig-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span>
+              <span className="v48-sig-cat">{cat.tag}</span>
+            </div>
+            <h3>{signal.title}</h3>
             <p>{signal.summary || 'Détail en cours de consolidation.'}</p>
             <div className="v48-sig-foot">
               {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
@@ -671,9 +730,9 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
           </div>
         </article>
       })}
-      {!data.signals.length && <Empty title="Aucun signal détecté">Les signaux internes et externes apparaîtront après les prochaines synchronisations.</Empty>}
+      {!filtered.length && <Empty title="Aucun signal détecté">{categorized.length ? 'Aucun signal pour cette catégorie.' : 'Les signaux apparaîtront après les prochaines synchronisations.'}</Empty>}
     </div>
     {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
-    {expanded && data.signals.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
+    {expanded && filtered.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
   </section>
 }

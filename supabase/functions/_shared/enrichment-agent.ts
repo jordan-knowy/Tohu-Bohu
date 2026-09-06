@@ -42,6 +42,13 @@ export type EnrichmentInput = {
   /** Le nom actuel est un pseudo/local-part d'email (ex. "Fxravet81"), pas un vrai
    *  nom — priorité absolue à la recherche du vrai prénom/nom avant tout le reste. */
   nameLooksLikePlaceholder: boolean;
+  /** Récupère aussi l'historique complet (expériences passées + formation), pas
+   *  seulement le poste actuel — coûte une recherche supplémentaire, donc réservé
+   *  au premier enrichissement d'une personne (voir monitor-contacts : ne se
+   *  déclenche que si `person_career_entries` n'a encore aucune ligne
+   *  experience/education pour ce contact — jamais répété à chaque cycle, un
+   *  historique de carrière passé ne change pas). */
+  fetchFullCareerHistory?: boolean;
   /** Contexte de journalisation de l'usage IA (facultatif). */
   usageLog?: AgentUsageLog;
 };
@@ -68,6 +75,11 @@ export type EnrichmentProfile = {
   } | null;
   relatedPeople?: Array<{ name: string; role?: string | null; why?: string | null }>;
   talkingPoints?: string[];
+  /** Rempli uniquement si `fetchFullCareerHistory` était demandé. Postes précédents,
+   *  du plus récent au plus ancien — jamais le poste actuel (déjà dans currentRole). */
+  pastExperience?: Array<{ title: string; company: string; startDate?: string | null; endDate?: string | null }>;
+  /** Rempli uniquement si `fetchFullCareerHistory` était demandé. */
+  education?: Array<{ degree: string; school: string; startDate?: string | null; endDate?: string | null }>;
   sources?: string[];
   confidence?: number;
 };
@@ -80,6 +92,7 @@ BUDGET DE RECHERCHE (IMPÉRATIF — chaque appel à l'outil "web_search" a un co
 - Palier A (recherche complète) : 2 à 3 appels MAXIMUM. 1 sur la personne/LinkedIn, 1 optionnel sur son actualité récente, 1 optionnel sur l'entreprise UNIQUEMENT si aucun "CONTEXTE ENTREPRISE DÉJÀ CONNU" n'est fourni ci-dessus.
 - Palier B (vérification légère) : 1 SEUL appel maximum, ciblé sur "y a-t-il un changement de poste ou une actualité récente" — pas de recherche exhaustive.
 - Si un CONTEXTE ENTREPRISE DÉJÀ CONNU est fourni, N'INTERROGE PAS l'outil sur l'entreprise elle-même — réutilise ce contexte tel quel dans le champ "company".
+- Si "HISTORIQUE DE CARRIÈRE COMPLET DEMANDÉ" est signalé ci-dessous, ton 1er appel "web_search" doit explicitement demander le profil LinkedIn COMPLET (expériences passées + formation), pas seulement le poste actuel — cela reste DANS le même budget de 2-3 appels, pas un appel de plus.
 - N'effectue JAMAIS plus d'appels que ce budget. Si l'information n'est pas trouvée dans ce budget, renseigne "to_confirm" ou null plutôt que de continuer à chercher.
 
 RÉSOLUTION DU VRAI NOM (impératif quand le message signale "NOM ACTUEL PROBABLEMENT UN PSEUDO") : un nom dérivé d'un email (ex. "Fxravet81", "jdupont42") n'est PAS un vrai nom. Dans ce cas, ta priorité n°1 pour le premier appel "web_search" est de trouver le vrai prénom et nom de famille (LinkedIn en priorité, puis web). Renseigne le résultat dans "fullName" avec "fullNameConfidence" :
@@ -99,7 +112,8 @@ DOCTRINE ZÉRO-HALLUCINATION (impératif) :
 - Poste actuel affirmé (roleConfidence="confirmed") seulement si DEUX sources concordent, ou si le contexte entreprise déjà connu le confirme. Sinon "to_confirm".
 - Cite les URLs réelles dans "sources". Préfère sources primaires : LinkedIn, site officiel, presse éco, registres.
 
-SORTIE : appelle l'outil "emit_profile" une seule fois, avec TOUS LES TEXTES EN FRANÇAIS. talkingPoints = 2-4 angles concrets et personnalisés (en français) pour engager la relation maintenant. recentActivity = faits datés avec source (titres en français). relatedPeople = personnes pertinentes de l'entreprise, uniquement si palier A et pertinent, avec un 'why' actionnable en français.`;
+SORTIE : appelle l'outil "emit_profile" une seule fois, avec TOUS LES TEXTES EN FRANÇAIS. talkingPoints = 2-4 angles concrets et personnalisés (en français) pour engager la relation maintenant. recentActivity = faits datés avec source (titres en français). relatedPeople = personnes pertinentes de l'entreprise, uniquement si palier A et pertinent, avec un 'why' actionnable en français.
+Si "HISTORIQUE DE CARRIÈRE COMPLET DEMANDÉ" est signalé : remplis aussi "pastExperience" (postes précédents, du plus récent au plus ancien, JAMAIS le poste actuel déjà dans currentRole) et "education" (diplômes). Même doctrine zéro-hallucination : un poste ou diplôme non trouvé ne doit PAS être inventé — tableau vide plutôt qu'une entrée incertaine.`;
 
 function buildUserPrompt(input: EnrichmentInput): string {
   return `Type d'entité : ${input.entityType}
@@ -110,7 +124,7 @@ Domaine : ${input.domain}
 LinkedIn connu : ${input.knownLinkedinUrl || input.linkedinUrl}
 Palier de recherche : ${input.tier} (${input.tier === 'A' ? 'recherche complète' : 'vérification légère'})
 Type de domaine : ${input.domainType}
-${input.nameLooksLikePlaceholder ? '\n⚠️ NOM ACTUEL PROBABLEMENT UN PSEUDO (dérivé de l\'email, pas un vrai nom) — voir RÉSOLUTION DU VRAI NOM ci-dessus, priorité n°1.\n' : ''}
+${input.nameLooksLikePlaceholder ? '\n⚠️ NOM ACTUEL PROBABLEMENT UN PSEUDO (dérivé de l\'email, pas un vrai nom) — voir RÉSOLUTION DU VRAI NOM ci-dessus, priorité n°1.\n' : ''}${input.fetchFullCareerHistory ? '\n⚠️ HISTORIQUE DE CARRIÈRE COMPLET DEMANDÉ — remplis aussi pastExperience et education (voir consignes ci-dessus). Premier enrichissement de cette personne : l\'historique n\'a jamais été recherché.\n' : ''}
 === SOURCES PRIORITAIRES POUR CE DOMAINE ===
 ${input.sourceHints || 'Aucune source spécifique — recherche générale.'}
 
@@ -170,6 +184,31 @@ const EMIT_PROFILE_PARAMETERS = {
       },
     },
     talkingPoints: { type: 'array', items: { type: 'string' } },
+    pastExperience: {
+      type: 'array',
+      description: 'Uniquement si historique de carrière complet demandé. Postes précédents, jamais le poste actuel.',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' }, company: { type: 'string' },
+          startDate: { type: ['string', 'null'], description: 'AAAA-MM si connu' },
+          endDate: { type: ['string', 'null'], description: 'AAAA-MM si connu' },
+        },
+        required: ['title', 'company'],
+      },
+    },
+    education: {
+      type: 'array',
+      description: 'Uniquement si historique de carrière complet demandé.',
+      items: {
+        type: 'object',
+        properties: {
+          degree: { type: 'string' }, school: { type: 'string' },
+          startDate: { type: ['string', 'null'] }, endDate: { type: ['string', 'null'] },
+        },
+        required: ['degree', 'school'],
+      },
+    },
     sources: { type: 'array', items: { type: 'string' } },
     confidence: { type: 'number' },
   },

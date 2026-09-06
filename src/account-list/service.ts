@@ -176,35 +176,30 @@ export async function archiveAccounts(workspaceId: string, userId: string, compa
   void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
-/** Passation : réattribue l'owner des comptes sélectionnés et de leurs contacts,
- *  et historise chaque transfert de contact dans contact_transfers. */
-export async function reassignAccounts(workspaceId: string, accounts: AccountListRow[], toUserId: string, byUserId: string): Promise<{ transferred: number; logged: boolean }> {
+/** Partage groupé (additif) : chaque compte sélectionné, et tous ses contacts,
+ *  reçoivent une vue en plus pour le membre choisi. N'affecte jamais l'owner
+ *  ni la relation de l'expéditeur — même principe que shareAccount côté fiche
+ *  détail, juste appliqué à une sélection. */
+export async function shareAccounts(workspaceId: string, accounts: AccountListRow[], toUserId: string): Promise<{ accounts: number; contacts: number }> {
   const client = getSupabase()
-  let transferred = 0
-  let logged = true
+  let contacts = 0
   for (const account of accounts) {
-    await setListOwner(workspaceId, account.id, byUserId, toUserId)
+    const { error: companyError } = await client.rpc('share_fiche', {
+      p_organization_id: workspaceId, p_entity_type: 'company', p_entity_id: account.id, p_to_user_id: toUserId, p_note: null,
+    })
+    if (companyError) throw companyError
     const { data: linked, error: contactsError } = await client.from('contacts')
-      .select('id,owner_user_id').eq('organization_id', workspaceId).eq('company_id', account.id).is('merged_into_contact_id', null)
+      .select('id').eq('organization_id', workspaceId).eq('company_id', account.id).is('merged_into_contact_id', null)
     if (contactsError) throw contactsError
-    const toMove = rows(linked).filter((contact) => text(contact.owner_user_id) !== toUserId)
-    if (toMove.length) {
-      const { error: updateError } = await client.from('contacts').update({ owner_user_id: toUserId })
-        .eq('organization_id', workspaceId).eq('company_id', account.id)
-      if (updateError) throw updateError
-      const { error: logError } = await client.from('contact_transfers').insert(toMove.map((contact) => ({
-        organization_id: workspaceId,
-        contact_id: String(contact.id),
-        from_user_id: text(contact.owner_user_id),
-        to_user_id: toUserId,
-        kept_copy: false,
-        transferred_by: byUserId,
-      })))
-      if (logError) logged = false
-      transferred += toMove.length
+    for (const contact of rows(linked)) {
+      const { error } = await client.rpc('share_fiche', {
+        p_organization_id: workspaceId, p_entity_type: 'contact', p_entity_id: String(contact.id), p_to_user_id: toUserId, p_note: null,
+      })
+      if (error) throw error
+      contacts++
     }
   }
-  return { transferred, logged }
+  return { accounts: accounts.length, contacts }
 }
 
 export type AccountCandidate = {

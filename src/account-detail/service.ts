@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase'
+import { mapStrategicReading, type StrategicReading } from '../services/strategic-reading'
 import type {
   AccountDetailData,
   AccountFirmographicFact,
@@ -57,6 +58,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     accountResult, peopleResult, signalsResult, meetingsResult, settingsResult,
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
     memoryResult, factsResult, connectorsResult, feedbackResult, lockResult,
+    strategicReadingResult,
   ] = await Promise.all([
     client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
     client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
@@ -72,7 +74,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId),
-    client.from('resource_lock').select('locked_by').eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('lock_state', 'active').maybeSingle(),
+    client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('lock_state', 'active').maybeSingle(),
+    client.from('account_strategic_readings').select('content, confidence, source_counts, model, generated_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (accountResult.error) throw new Error(accountResult.error.message)
@@ -94,13 +97,18 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
   const connectorRows = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
   const feedbackRows = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
   const lockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const strategicReading = mapStrategicReading(optional(strategicReadingResult, 'Lecture stratégique', degradedReasons) as Row | null)
   const roleByContact = new Map(roleRows.map((row) => [String(row.contact_id), row]))
   const feedbackBySignal = new Map(feedbackRows.map((row) => [String(row.signal_id), text(row.verdict)]))
   const profileIds = new Set<string>()
   if (text(settings.primary_owner_user_id)) profileIds.add(String(settings.primary_owner_user_id))
+  if (text(lockRow.locked_by)) profileIds.add(String(lockRow.locked_by))
   roleRows.forEach((row) => { if (text(row.internal_owner_user_id)) profileIds.add(String(row.internal_owner_user_id)) })
+  rows(peopleResult.data).forEach((row) => { if (text(row.owner_user_id)) profileIds.add(String(row.owner_user_id)) })
   memoryRows.forEach((row) => { if (text(row.author_user_id)) profileIds.add(String(row.author_user_id)) })
-  recommendationRows.forEach((row) => { if (text(row.assigned_to)) profileIds.add(String(row.assigned_to)) })
+  recommendationRows.forEach((row) => {
+    if (text(row.assigned_to)) profileIds.add(String(row.assigned_to))
+  })
   const { data: profileData } = profileIds.size
     ? await client.from('profiles').select('id,full_name').in('id', [...profileIds])
     : { data: [] }
@@ -132,7 +140,13 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       confidence: number(cognitive.global_confidence) ?? number(role.confidence),
       lastInteractionAt: text(snapshot.last_contact_at),
       exchangeShare: number(role.exchange_share),
-      ownerName: profileNames.get(String(role.internal_owner_user_id)) ?? null,
+      // `account_contact_roles.internal_owner_user_id` reste vide tant que la
+      // qualification manuelle des rôles n'a pas été faite : le vrai owner
+      // opérationnel du contact vient directement de `contacts.owner_user_id`
+      // (toujours peuplé côté sync email/enrichissement), utilisé en priorité
+      // pour que « Couverture interne » reflète la réalité sans dépendre de
+      // cette qualification manuelle absente aujourd'hui.
+      ownerName: profileNames.get(String(row.owner_user_id)) ?? profileNames.get(String(role.internal_owner_user_id)) ?? null,
       provenance: Object.keys(role).length ? provenance(role) : null,
     }
   })
@@ -182,6 +196,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     dueAt: text(row.due_at),
     status: ['completed', 'dismissed', 'postponed'].includes(String(row.status)) ? row.status as AccountRecommendation['status'] : 'open',
     assignedTo: profileNames.get(String(row.assigned_to)) ?? null,
+    assignedToUserId: text(row.assigned_to),
+    assignedContactId: text(row.assigned_contact_id),
     provenance: provenance(row, {
       sourceType: 'recommendation',
       sourceLabel: text(row.source_label) ?? 'Moteur de recommandations Tohu',
@@ -234,6 +250,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       legalName: text(context.legal_name),
       logoUrl: text(context.logo_url),
       domain: text(account.domain),
+      siren: text(account.siren),
       websiteUrl: text(context.website_url),
       description: text(context.description),
       sector: text(account.industry),
@@ -250,8 +267,12 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       location: text(context.location),
       tags: Array.isArray(context.tags) ? context.tags.filter((item): item is string => typeof item === 'string') : [],
       primaryOwnerName: profileNames.get(String(settings.primary_owner_user_id)) ?? null,
+      primaryOwnerUserId: text(settings.primary_owner_user_id),
+      visibility: text(settings.visibility) === 'restricted' ? 'restricted' : 'workspace',
       locked: text(lockRow.locked_by) !== null,
       lockedByMe: text(lockRow.locked_by) === currentUserId,
+      lockedByName: text(lockRow.locked_by) ? profileNames.get(String(lockRow.locked_by)) ?? null : null,
+      lockedAt: text(lockRow.created_at),
     },
     relationship: {
       score: number(latestScore.score) ?? number(context.relationship_score),
@@ -277,7 +298,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
       const provider = text(row.provider) ?? 'source'
       return {
         provider,
-        label: ({ google: 'Google Workspace', microsoft: 'Microsoft 365', linkedin: 'LinkedIn' } as Record<string, string>)[provider] ?? provider,
+        label: ({ google: 'Gmail', microsoft: 'Microsoft 365', linkedin: 'LinkedIn' } as Record<string, string>)[provider] ?? provider,
         status: text(row.status) ?? 'disconnected',
         lastSyncedAt: text(row.last_synced_at),
         interactionCount: meetingProviders.get(provider) ?? null,
@@ -288,6 +309,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     signals: visibleSignals,
     memoryEntries,
     firmographics,
+    strategicReading,
   }
 }
 
@@ -308,6 +330,33 @@ export async function triggerAccountEnrichment(companyId: string): Promise<Accou
   if (error) throw await invokeError(error, 'Déclenchement de l’enrichissement impossible.')
   if (data?.error) throw new Error(String(data.error))
   return data as AccountEnrichmentResult
+}
+
+/** Génère (ou renvoie la version en cache, <7 jours) la lecture stratégique du
+ *  compte — voir supabase/functions/account-strategic-reading. `force` ignore
+ *  le cache serveur (bouton « Régénérer »). Lève avec un message utilisateur
+ *  explicite quand la matière est insuffisante (422 côté fonction). */
+export async function generateAccountStrategicReading(data: AccountDetailData, force = false): Promise<StrategicReading> {
+  const { data: response, error } = await getSupabase().functions.invoke('account-strategic-reading', {
+    body: { organizationId: data.account.workspaceId, companyId: data.account.id, force },
+  })
+  if (error) throw await invokeError(error, 'Génération de la lecture stratégique impossible.')
+  if (response?.error) throw new Error(String(response.error))
+  const reading = mapStrategicReading(response as Row)
+  if (!reading) throw new Error('Réponse de génération invalide.')
+  return reading
+}
+
+/** Identité légale du compte (SIREN saisi/confirmé par un humain) — voir
+ *  supabase/functions/enrich-account-registry. INSEE Sirene + INPI RNE, jamais de
+ *  matching automatique par nom : le SIREN reste la seule clé acceptée. */
+export async function enrichAccountRegistry(data: AccountDetailData, siren: string): Promise<{ factsWritten: number }> {
+  const { data: response, error } = await getSupabase().functions.invoke('enrich-account-registry', {
+    body: { organizationId: data.account.workspaceId, companyId: data.account.id, siren },
+  })
+  if (error) throw await invokeError(error, 'Identité légale indisponible.')
+  if (response?.error) throw new Error(String(response.error))
+  return response as { factsWritten: number }
 }
 
 export async function setAccountFavorite(data: AccountDetailData, userId: string, favorite: boolean): Promise<void> {
@@ -493,12 +542,80 @@ export async function setAccountLock(data: AccountDetailData, userId: string, lo
   if (error) throw error
 }
 
+/** Affectation de l'owner du compte — même principe que setPersonOwner côté
+ *  fiche personne (person_settings), persisté dans account_settings. */
+export async function setAccountOwner(data: AccountDetailData, userId: string, ownerUserId: string | null): Promise<void> {
+  const { error } = await getSupabase().from('account_settings').upsert({
+    organization_id: data.account.workspaceId,
+    company_id: data.account.id,
+    primary_owner_user_id: ownerUserId,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,company_id' })
+  if (error) throw error
+}
+
+export async function setAccountVisibility(data: AccountDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
+  const { error } = await getSupabase().from('account_settings').upsert({
+    organization_id: data.account.workspaceId,
+    company_id: data.account.id,
+    visibility,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,company_id' })
+  if (error) throw error
+}
+
+export async function listAccountAccessGrants(workspaceId: string, accountId: string): Promise<string[]> {
+  const { data, error } = await getSupabase().from('access_grant').select('grantee_user_id')
+    .eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('status', 'active')
+  if (error) throw error
+  return (data ?? []).map((row) => String(row.grantee_user_id))
+}
+
+export async function grantAccountAccess(data: AccountDetailData, userId: string, granteeUserId: string): Promise<void> {
+  const { error } = await getSupabase().from('access_grant').insert({
+    organization_id: data.account.workspaceId,
+    subject_type: 'company',
+    subject_id: data.account.id,
+    grantee_user_id: granteeUserId,
+    granted_by: userId,
+  })
+  if (error) throw error
+}
+
+export async function revokeAccountAccess(data: AccountDetailData, granteeUserId: string): Promise<void> {
+  const { error } = await getSupabase().from('access_grant')
+    .update({ status: 'revoked' })
+    .eq('organization_id', data.account.workspaceId)
+    .eq('subject_type', 'company')
+    .eq('subject_id', data.account.id)
+    .eq('grantee_user_id', granteeUserId)
+    .eq('status', 'active')
+  if (error) throw error
+}
+
 export async function updateRecommendationStatus(data: AccountDetailData, recommendationId: string, userId: string, status: 'completed' | 'dismissed' | 'postponed'): Promise<void> {
   const now = new Date().toISOString()
   const values: Row = { status, updated_by: userId, updated_at: now }
   if (status === 'completed') values.completed_at = now
   if (status === 'dismissed') values.dismissed_at = now
   const { error } = await getSupabase().from('account_recommendations').update(values).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
+  if (error) throw error
+}
+
+/** Réaffecte « qui porte » une action de Stratégie de compte : soit un membre
+ *  interne (assigned_to → profiles), soit un interlocuteur côté client
+ *  (assigned_contact_id → contacts) — un seul des deux à la fois, l'autre est
+ *  toujours remis à null. `null, null` remet l'action sur l'owner par défaut
+ *  de la fiche (aucune réaffectation explicite). */
+export async function setRecommendationAssignee(data: AccountDetailData, recommendationId: string, userId: string, assignee: { userId: string | null; contactId: string | null }): Promise<void> {
+  const { error } = await getSupabase().from('account_recommendations').update({
+    assigned_to: assignee.userId,
+    assigned_contact_id: assignee.contactId,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
   if (error) throw error
 }
 
