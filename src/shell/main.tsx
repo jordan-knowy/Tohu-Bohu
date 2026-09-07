@@ -10,6 +10,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
+import Intercom from '@intercom/messenger-js-sdk'
 import '../styles/fonts.css'
 import '../styles/tokens.css'
 import '../styles/app.css'
@@ -206,6 +207,20 @@ async function boot() {
     // Compatibilité pendant le déploiement progressif de la migration.
   }
   const workspaceId = await getOrganizationId()
+  // Le Messenger est chargé uniquement après authentification. Une panne du
+  // service de support ne doit jamais empêcher Tohu de démarrer.
+  try {
+    Intercom({
+      app_id: import.meta.env.VITE_INTERCOM_APP_ID?.trim() || 'odi2jdy9',
+      user_id: session.user.id,
+      name: displayName(session.user),
+      email: session.user.email,
+      created_at: session.user.created_at ? Math.floor(new Date(session.user.created_at).getTime() / 1000) : undefined,
+      company: { company_id: workspaceId },
+    })
+  } catch (error) {
+    console.warn('Intercom indisponible', error)
+  }
   const context = { session, workspaceId, joinedTeams }
   createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><Routes>
     <Route path="/super-admin" element={<SuperAdminPage />} />

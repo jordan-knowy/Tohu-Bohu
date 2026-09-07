@@ -248,6 +248,15 @@ export function buildTeamMembers(memberships: DbRow[], profiles: DbRow[], contac
   }).sort((a, b) => b.accounts - a.accounts || b.contacts - a.contacts || a.fullName.localeCompare(b.fullName))
 }
 
+/** Adapte les membres déjà autorisés par get_account_center au format du calcul Home. */
+export function teamProfilesFromAccountCenter(accountCenter: unknown): DbRow[] {
+  return rows(record(accountCenter).members).map((member) => ({
+    id: member.user_id,
+    full_name: member.full_name,
+    avatar_url: member.avatar_url,
+  }))
+}
+
 function mapCompanySignal(row: DbRow, feedback: Map<string, 'confirmed' | 'dismissed'>): HomeSignal {
   const company = record(row.companies)
   return {
@@ -432,10 +441,13 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const watchData = await safeQuery<DbRow[]>(client.from('account_watch_settings').select('company_id,enabled').eq('organization_id', organizationId), 'table account_watch_settings', degradedReasons)
   const veilleOffCompanyIds = new Set(rows(watchData).filter((row) => row.enabled === false).map((row) => String(row.company_id)))
   const memberIds = [...new Set(memberships.map((membership) => str(membership.user_id)).filter((value): value is string => value !== null))]
-  const memberProfilesData = memberIds.length
-    ? await safeQuery<DbRow[]>(client.rpc('get_team_vision_members', { p_organization_id: organizationId }), 'RPC get_team_vision_members (migration vision d’équipe)', degradedReasons)
-    : []
-  const memberProfiles = rows(memberProfilesData)
+  // `profiles` n'autorise volontairement que la lecture de son propre profil.
+  // La RPC sécurisée du centre de compte est, elle, accessible à chaque membre
+  // du workspace et renvoie déjà toute l'équipe après contrôle d'appartenance.
+  const accountCenterData = memberIds.length
+    ? await safeQuery<DbRow>(client.rpc('get_account_center', { p_organization_id: organizationId }), 'RPC get_account_center (membres de l’équipe)', degradedReasons)
+    : null
+  const memberProfiles = teamProfilesFromAccountCenter(accountCenterData)
   if (profileData && !memberProfiles.some((member) => String(member.id) === userId)) memberProfiles.push(record(profileData))
   const teamMembers = buildTeamMembers(memberships, memberProfiles, contacts, now)
   const trackingColumnAvailable = companies.length > 0 ? 'is_tracked' in (companies[0] ?? {}) : !degradedReasons.length

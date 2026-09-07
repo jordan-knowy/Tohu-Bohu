@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCoaching, buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus } from '../service'
+import { buildCoaching, buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus, teamProfilesFromAccountCenter } from '../service'
 import type { UserBehaviorProfile } from '../../services/data'
 
 const NOW = new Date('2026-07-15T12:00:00Z')
@@ -134,6 +134,16 @@ describe('isMissingRpcError — message de migration fiable', () => {
 })
 
 describe('buildTeamMembers — vision d’équipe réelle', () => {
+  it('utilise tous les membres renvoyés par le centre de compte', () => {
+    expect(teamProfilesFromAccountCenter({ members: [
+      { user_id: 'u1', full_name: 'Jordan Chekroun', avatar_url: 'jordan.png', email: 'jordan@example.com', role: 'owner' },
+      { user_id: 'u2', full_name: 'Maxime Weinstein', avatar_url: null, email: 'maxime@example.com', role: 'member' },
+    ] })).toEqual([
+      { id: 'u1', full_name: 'Jordan Chekroun', avatar_url: 'jordan.png' },
+      { id: 'u2', full_name: 'Maxime Weinstein', avatar_url: null },
+    ])
+  })
+
   it('agrège les comptes, contacts et derniers scores par responsable', () => {
     const members = buildTeamMembers(
       [{ user_id: 'u1' }, { user_id: 'u2' }],

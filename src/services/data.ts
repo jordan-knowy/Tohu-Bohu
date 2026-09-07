@@ -173,22 +173,58 @@ function sortEntities<T extends Account | Person>(rows: T[], sort: string): T[] 
 
 const contactSelect = '*,companies(name),relationship_snapshots(engagement_score,last_contact_at,phase,snapshot_date),cognitive_profiles(global_confidence,summary,executive_summary,engagement_score,updated_at)'
 
-/** Le workspace actif reste toujours l'organisation PROPRE de l'utilisateur
- *  (celle dont il est owner) — rejoindre l'équipe d'un autre membre (role
- *  'member'/'admin' ailleurs) ne doit jamais changer son expérience normale
- *  (Home, Personnes, Comptes…), seulement ajouter la possibilité de partager/
- *  recevoir des fiches avec ce membre (fiche_shares). Avant ce correctif, on
- *  prenait la dernière adhésion créée : rejoindre une équipe plus tard faisait
- *  basculer par erreur le workspace actif vers l'organisation de cette équipe. */
+type WorkspaceMembership = { organization_id?: unknown; role?: unknown; created_at?: unknown }
+
+/** Sélectionne le workspace commun le plus pertinent : choix mémorisé d'abord,
+ * puis organisation réunissant le plus de membres, puis ownership/ancienneté.
+ * Ainsi un invité ne reste pas bloqué dans le workspace personnel créé à son
+ * inscription alors que toute son équipe travaille dans le compte partagé. */
+export function chooseActiveOrganization(
+  ownMemberships: WorkspaceMembership[],
+  visibleMemberships: WorkspaceMembership[],
+  storedOrganizationId: string | null = null,
+): string | null {
+  const own = ownMemberships
+    .map((membership) => ({
+      organizationId: nullableString(membership.organization_id),
+      role: String(membership.role ?? 'member'),
+      createdAt: String(membership.created_at ?? ''),
+    }))
+    .filter((membership): membership is { organizationId: string; role: string; createdAt: string } => membership.organizationId !== null)
+  if (!own.length) return null
+  if (storedOrganizationId && own.some((membership) => membership.organizationId === storedOrganizationId)) return storedOrganizationId
+
+  const counts = new Map<string, number>()
+  for (const membership of visibleMemberships) {
+    const organizationId = nullableString(membership.organization_id)
+    if (organizationId) counts.set(organizationId, (counts.get(organizationId) ?? 0) + 1)
+  }
+  return [...own].sort((left, right) => {
+    const countDelta = (counts.get(right.organizationId) ?? 0) - (counts.get(left.organizationId) ?? 0)
+    if (countDelta) return countDelta
+    const roleDelta = Number(right.role === 'owner') - Number(left.role === 'owner')
+    if (roleDelta) return roleDelta
+    return left.createdAt.localeCompare(right.createdAt)
+  })[0]?.organizationId ?? null
+}
+
+/** Tous les écrans partagent le même workspace actif. Par défaut, on choisit le
+ * compte qui contient le plus de membres et on mémorise ce choix. */
 export async function getOrganizationId(): Promise<string> {
   const { data: userData, error: userError } = await getSupabase().auth.getUser()
   if (userError) throw userError
   if (!userData.user) throw new Error('Aucune session active.')
-  const { data, error } = await getSupabase().from('memberships').select('organization_id,role').eq('user_id', userData.user.id).order('created_at', { ascending: true })
+  const { data, error } = await getSupabase().from('memberships').select('organization_id,role,created_at').eq('user_id', userData.user.id).order('created_at', { ascending: true })
   if (error) throw error
-  const owned = data?.find((row) => row.role === 'owner')
-  const organizationId = owned?.organization_id ?? data?.[0]?.organization_id
+  const organizationIds = [...new Set((data ?? []).map((row) => row.organization_id).filter(Boolean))]
+  const { data: visibleMemberships, error: visibleError } = organizationIds.length
+    ? await getSupabase().from('memberships').select('organization_id,user_id').in('organization_id', organizationIds)
+    : { data: [], error: null }
+  if (visibleError) throw visibleError
+  const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('tohu-active-workspace') : null
+  const organizationId = chooseActiveOrganization(data ?? [], visibleMemberships ?? [], stored)
   if (!organizationId) throw new Error('Aucune organisation n’est associée à ce compte.')
+  if (typeof localStorage !== 'undefined') localStorage.setItem('tohu-active-workspace', organizationId)
   return organizationId
 }
 

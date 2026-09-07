@@ -27,6 +27,14 @@ export function initials(name: string): string {
 }
 
 export async function signOut(): Promise<void> {
+  // Efface la conversation et l'identité Intercom du navigateur avant de
+  // laisser un autre utilisateur ouvrir une session sur le même appareil.
+  try {
+    const { shutdown } = await import('@intercom/messenger-js-sdk')
+    shutdown()
+  } catch {
+    // La déconnexion Tohu reste prioritaire si Intercom est indisponible.
+  }
   await getSupabase().auth.signOut()
   window.location.replace(LOGIN_PATH)
 }
