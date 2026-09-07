@@ -207,16 +207,17 @@ async function boot() {
     // Compatibilité pendant le déploiement progressif de la migration.
   }
   const workspaceId = await getOrganizationId()
-  // Le Messenger est chargé uniquement après authentification. Une panne du
-  // service de support ne doit jamais empêcher Tohu de démarrer.
+  // L'identité Intercom est signée côté serveur. Aucun user_id ni secret de
+  // signature n'est confié directement au navigateur.
   try {
+    const { data: intercomIdentity, error: intercomError } = await getSupabase().functions.invoke('intercom-user-token')
+    if (intercomError || !intercomIdentity?.token) throw intercomError ?? new Error('Jeton Intercom absent')
     Intercom({
       app_id: import.meta.env.VITE_INTERCOM_APP_ID?.trim() || 'odi2jdy9',
-      user_id: session.user.id,
-      name: displayName(session.user),
-      email: session.user.email,
-      created_at: session.user.created_at ? Math.floor(new Date(session.user.created_at).getTime() / 1000) : undefined,
+      api_base: 'https://api-iam.intercom.io',
+      intercom_user_jwt: intercomIdentity.token,
       company: { company_id: workspaceId },
+      session_duration: 86_400_000,
     })
   } catch (error) {
     console.warn('Intercom indisponible', error)

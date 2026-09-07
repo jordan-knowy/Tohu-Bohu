@@ -73,3 +73,6 @@ verify_jwt = true
 # continue de valider explicitement le JWT dans la fonction.
 [functions.send-meeting-prep]
 verify_jwt = false
+
+[functions.intercom-user-token]
+verify_jwt = true
