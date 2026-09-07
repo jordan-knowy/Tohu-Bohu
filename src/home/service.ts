@@ -433,7 +433,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const veilleOffCompanyIds = new Set(rows(watchData).filter((row) => row.enabled === false).map((row) => String(row.company_id)))
   const memberIds = [...new Set(memberships.map((membership) => str(membership.user_id)).filter((value): value is string => value !== null))]
   const memberProfilesData = memberIds.length
-    ? await safeQuery<DbRow[]>(client.from('profiles').select('id,full_name,avatar_url').in('id', memberIds), 'lecture des profils d’équipe', degradedReasons)
+    ? await safeQuery<DbRow[]>(client.rpc('get_team_vision_members', { p_organization_id: organizationId }), 'RPC get_team_vision_members (migration vision d’équipe)', degradedReasons)
     : []
   const memberProfiles = rows(memberProfilesData)
   if (profileData && !memberProfiles.some((member) => String(member.id) === userId)) memberProfiles.push(record(profileData))

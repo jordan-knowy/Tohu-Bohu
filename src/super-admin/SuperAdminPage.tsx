@@ -11,7 +11,7 @@ type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | '
 
 const EMAIL_TYPES: Array<{ id: EmailDispatchType; label: string; desc: string }> = [
   { id: 'digest', label: 'Digest hebdo', desc: 'Lundi 8 h' },
-  { id: 'antiseche', label: 'Antisèche', desc: 'À chaque réunion (T−24 h)' },
+  { id: 'antiseche', label: 'Antisèche', desc: 'À chaque réunion (environ 2 h avant)' },
   { id: 'alerte', label: 'Alerte', desc: 'Signaux forts · max 3/sem' },
   { id: 'nurturing', label: 'Nurturing', desc: 'J+0/3/7/14/21' },
 ]

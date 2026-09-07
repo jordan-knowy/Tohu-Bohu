@@ -68,3 +68,8 @@ verify_jwt = true
 
 [functions.enrich-contact-avatars]
 verify_jwt = true
+
+# Le cron s'authentifie lui-même avec x-cron-secret. Le chemin de test utilisateur
+# continue de valider explicitement le JWT dans la fonction.
+[functions.send-meeting-prep]
+verify_jwt = false

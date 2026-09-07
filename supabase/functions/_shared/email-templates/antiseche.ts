@@ -1,4 +1,4 @@
-// Rendu de l'antisèche (prépa réunion T−24 h) sur le layout partagé.
+// Rendu de l'antisèche (prépa réunion envoyée environ 2 h avant) sur le layout partagé.
 import { EPI, MONO, C, esc, sectionLabel, rule, row, emailShell } from './layout.ts'
 
 export type AntEngagement = { icon: 'slipped' | 'inprogress' | 'validated'; title: string; sub: string; badge: string }
