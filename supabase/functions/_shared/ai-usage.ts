@@ -20,7 +20,7 @@ export function estimateCostUsd(model: string, promptTokens: number, completionT
   return (promptTokens / 1_000_000) * price.in + (completionTokens / 1_000_000) * price.out
 }
 
-type AnySupabase = { from: (table: string) => { insert: (rows: unknown) => Promise<{ error: unknown }> } }
+type AnySupabase = { from: (table: string) => { insert: (rows: Record<string, unknown>) => PromiseLike<{ error: unknown }> } }
 
 /** Best-effort : ne jette jamais (une erreur de log ne doit pas casser l'analyse). */
 export async function logAiUsage(client: AnySupabase, params: {

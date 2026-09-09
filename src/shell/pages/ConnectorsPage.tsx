@@ -31,6 +31,8 @@ export const connectorDefinitions: ConnectorDefinition[] = [
   { provider: 'google', label: 'Google Workspace', description: 'Gmail, Meet, Chat, contacts et calendrier Google.', icon: GOOGLE_ICON, iconUrl: GOOGLE_LOGO_URL, kind: 'supabase', auth: 'google' as Provider, scopes: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/contacts.readonly' },
   { provider: 'microsoft', label: 'Microsoft 365', description: 'Emails Outlook et calendrier Microsoft.', icon: MICROSOFT_ICON, kind: 'supabase', auth: 'azure' as Provider, scopes: 'email openid profile offline_access User.Read Mail.Read Calendars.Read' },
   { provider: 'linkedin', label: 'LinkedIn', description: 'Identité professionnelle et mouvements de poste.', icon: LINKEDIN_ICON, kind: 'supabase', auth: 'linkedin_oidc' as Provider, scopes: 'openid profile email' },
+  { provider: 'slack', label: 'Slack', description: 'Messages, conversations et fils de discussion Slack.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>', kind: 'edge', functionSlug: 'connect-slack' },
+  { provider: 'notion', label: 'Notion AI Meeting Notes', description: 'Notes, résumés, transcriptions et participants des réunions Notion accessibles à ton compte.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 17V7l2.5-.5 6 9V7M15 7h2"/></svg>', kind: 'edge', functionSlug: 'connect-notion' },
   { provider: 'hubspot', label: 'HubSpot', description: 'Contacts et entreprises synchronisés depuis HubSpot.', icon: HUBSPOT_ICON, kind: 'edge', functionSlug: 'connect-hubspot' },
   { provider: 'teams', label: 'Microsoft Teams', description: 'Réunions et transcripts Teams — nécessite qu’un admin Microsoft 365 de votre organisation clique ci-dessous et valide le consentement.', icon: TEAMS_ICON, kind: 'edge', functionSlug: 'connect-teams' },
   { provider: 'read_ai', label: 'Read AI', description: 'Transcripts et résumés de réunions Zoom, Teams et Meet. Read AI envoie chaque compte-rendu à Tohu via une URL webhook.', icon: READAI_ICON, kind: 'edge', functionSlug: 'connect-read-ai' },
@@ -63,6 +65,14 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   const [readAiInfo, setReadAiInfo] = useState<{ webhookUrl: string; hasSigningKey: boolean } | null>(null)
   const [signingKeyInput, setSigningKeyInput] = useState('')
   const reconciled = useRef(false)
+  const slackRunning = useRef(false)
+  const mounted = useRef(true)
+  const [slackBusy, setSlackBusy] = useState(false)
+  const [slackProgress, setSlackProgress] = useState(0)
+  const notionRunning = useRef(false)
+  const [notionBusy, setNotionBusy] = useState(false)
+  const [notionProgress, setNotionProgress] = useState(0)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; slackRunning.current = false; notionRunning.current = false } }, [])
   const organizationId = context.workspaceId
 
   const refresh = useCallback(async () => {
@@ -100,6 +110,44 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const avatarsNote = provider === 'google' ? ' · récupération des photos de contacts en arrière-plan (rafraîchis la page Personnes dans un instant)' : ''
     if (provider === 'google') void getSupabase().functions.invoke('enrich-contact-avatars', { body: { organizationId } }).catch(() => undefined)
     toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${photosSuffix}${avatarsNote}.`)
+  }, [organizationId, refresh, toast])
+
+  const syncSlack = useCallback(async () => {
+    if (slackRunning.current) return
+    slackRunning.current = true
+    setSlackBusy(true)
+    setSlackProgress(0)
+    try {
+      do {
+        const { data, error } = await getSupabase().functions.invoke('sync-slack', { body: { organizationId } })
+        if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation Slack impossible.')
+        if (!mounted.current) break
+        setSlackProgress(Math.max(0, Math.min(100, Number(data.progress ?? 0))))
+        if (!data.pending) { toast(`Slack : ${data.messages ?? 0} message(s) traités${data.skipped ? ` · ${data.skipped} élément(s) inaccessible(s)` : ''}.`); break }
+        // Sleep in small increments so leaving the page stops the continuation.
+        const until = Date.now() + Math.max(500, Number(data.retryAfter ?? 0) * 1000)
+        while (mounted.current && slackRunning.current && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 500))
+      } while (mounted.current && slackRunning.current)
+    } finally {
+      slackRunning.current = false
+      if (mounted.current) { setSlackBusy(false); setSlackProgress(0); await refresh() }
+    }
+  }, [organizationId, refresh, toast])
+
+  const syncNotion = useCallback(async () => {
+    if (notionRunning.current) return
+    notionRunning.current = true; setNotionBusy(true)
+    setNotionProgress(0)
+    try {
+      do {
+        const { data, error } = await getSupabase().functions.invoke('sync-notion', { body: { organizationId } })
+        if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation Notion impossible.')
+        setNotionProgress(Math.max(0, Math.min(100, Number(data.progress ?? 0))))
+        if (!data.pending) { toast(`Notion : ${data.meetings ?? 0} réunion(s) synchronisée(s) · ${data.profilesUpdated ?? 0} profil(s) mis à jour.`); break }
+        const until = Date.now() + Math.max(300, Number(data.retryAfter ?? 0) * 1000)
+        while (mounted.current && notionRunning.current && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 300))
+      } while (mounted.current && notionRunning.current)
+    } finally { notionRunning.current = false; if (mounted.current) { setNotionBusy(false); setNotionProgress(0); await refresh() } }
   }, [organizationId, refresh, toast])
 
   const syncHubspot = useCallback(async () => {
@@ -216,8 +264,9 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   }
 
   const disconnectProvider = async (provider: string) => {
-    if (provider === 'google' || provider === 'microsoft') {
-      const { data, error } = await getSupabase().functions.invoke('connect-email-provider', { body: { organizationId, provider, action: 'disconnect' } })
+    if (provider === 'google' || provider === 'microsoft' || provider === 'slack' || provider === 'notion') {
+      const slug = provider === 'slack' ? 'connect-slack' : provider === 'notion' ? 'connect-notion' : 'connect-email-provider'
+      const { data, error } = await getSupabase().functions.invoke(slug, { body: { organizationId, provider, action: 'disconnect' } })
       if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Déconnexion impossible.')
     } else {
       await setConnector(context.session.user.id, provider, 'disconnected')
@@ -245,23 +294,25 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
         const isConnected = row?.status === 'connected'
         const status = isConnected
           ? `● Connecté${row?.last_synced_at ? ` · synchro ${formatDate(row.last_synced_at)}` : ''}`
-          : row?.status === 'error' ? '● Erreur de connexion' : '○ Non connecté'
+          : row?.status === 'error' ? '● Erreur de connexion' : row?.status === 'needs_reauth' || row?.status === 'expired' || row?.status === 'revoked' ? '● Reconnexion nécessaire' : '○ Non connecté'
         return <article className="connector-card panel" key={definition.provider}>
           {definition.iconUrl
             ? <span className="connector-icon"><img src={definition.iconUrl} alt="" /></span>
             : <span className={`connector-icon${definition.provider === 'read_ai' ? ' connector-icon--brand' : ''}`} dangerouslySetInnerHTML={{ __html: definition.icon }} />}
           <div>
-            <h3>{definition.label}</h3>
+            <h3>{definition.label}{row?.account_name ? ` · ${row.account_name}` : ''}</h3>
             <p>{definition.description}</p>
             <span className={`connector-status ${isConnected ? '' : 'off'}`}>{status}</span>
             {row?.last_error && <p className="error-text">{row.last_error}</p>}
           </div>
           <div className="connector-actions">
+            {definition.provider === 'slack' && isConnected && <button type="button" className="btn-secondary" disabled={slackBusy} onClick={() => act(syncSlack)}>{slackBusy ? `Synchronisation ${slackProgress} %` : 'Synchroniser'}</button>}
+            {definition.provider === 'notion' && isConnected && <button type="button" className="btn-secondary" disabled={notionBusy} onClick={() => act(syncNotion)}>{notionBusy ? `Synchronisation ${notionProgress} %` : 'Synchroniser'}</button>}
             {isConnected && definition.kind === 'supabase' && definition.provider !== 'linkedin' && <button type="button" className="btn-secondary" onClick={() => act(() => syncEmailProvider(definition.provider))}>Synchroniser</button>}
             {isConnected && definition.kind === 'edge' && definition.provider === 'hubspot' && <button type="button" className="btn-secondary" onClick={() => act(syncHubspot)}>Synchroniser</button>}
             {isConnected && definition.kind === 'edge' && definition.provider === 'teams' && <button type="button" className="btn-secondary" onClick={() => act(syncTeams)}>Synchroniser</button>}
             {isConnected && definition.provider === 'read_ai' && <button type="button" className="btn-secondary" onClick={() => act(connectReadAi)}>Voir l’URL webhook</button>}
-            <button type="button" className={isConnected ? 'btn-danger' : 'btn-secondary'} onClick={() => act(() => isConnected ? disconnectProvider(definition.provider) : connectProvider(definition.provider))}>{isConnected ? 'Déconnecter' : 'Connecter'}</button>
+            <button type="button" disabled={(definition.provider === 'slack' && slackBusy) || (definition.provider === 'notion' && notionBusy)} className={isConnected ? 'btn-danger' : 'btn-secondary'} onClick={() => act(() => isConnected ? disconnectProvider(definition.provider) : connectProvider(definition.provider))}>{isConnected ? 'Déconnecter' : 'Connecter'}</button>
           </div>
           {definition.provider === 'read_ai' && readAiInfo && <div className="readai-hook">
             <div className="readai-hook-head"><span className="readai-hook-badge">Webhook</span><b>URL à coller dans Read AI</b></div>
