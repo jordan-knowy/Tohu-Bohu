@@ -1,0 +1,19 @@
+{
+  "enabledMcpjsonServers": [
+    "tohu-bohu"
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${CLAUDE_PROJECT_DIR:-/Users/maxime/Documents/Code Tohu/Tohu-Bohu-1}\"/.claude/hooks/chikens.py",
+            "timeout": 10,
+            "statusMessage": "Chikens verifie l'intention..."
+          }
+        ]
+      }
+    ]
+  }
+}
