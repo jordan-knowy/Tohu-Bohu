@@ -15,7 +15,7 @@ import {
   type PersonListRow, type TickerItem,
 } from './mapping'
 import {
-  archivePeople, detectPersonCandidates, getPeopleOverview, setPersonFavorite, setPersonOwner, sharePeople,
+  archivePeople, detectPersonCandidates, getPeopleOverview, handoverPeople, setPersonFavorite, setPersonOwner,
   setPersonWatch, trackPersonCandidate, type PeopleOverview, type PersonCandidate,
 } from './service'
 
@@ -207,9 +207,9 @@ function PageBody({ context }: { context: PageContext }) {
     setAssignAnchor(null)
     const people = overview.people.filter((row) => selection.has(row.id))
     void run('passation', async () => {
-      const result = await sharePeople(context.workspaceId, people, memberId)
+      const result = await handoverPeople(context.workspaceId, people, memberId)
       const memberName = overview.team.find((member) => member.id === memberId)?.name ?? 'ce membre'
-      toast(`Partage effectué : ${result.shared} personne${result.shared > 1 ? 's' : ''} partagée${result.shared > 1 ? 's' : ''} avec ${memberName}.`)
+      toast(`Passation effectuée : ${result.entities} personne${result.entities > 1 ? 's' : ''} transférée${result.entities > 1 ? 's' : ''} à ${memberName}. Ta vision est conservée.`)
       setPassation(false)
       setSelection(new Set())
       await refresh()
@@ -264,8 +264,8 @@ function PageBody({ context }: { context: PageContext }) {
       <div className="dxp-list">
         {!filtered.length && <div className="dxa-empty">{overview.people.length ? 'Aucune personne pour ce filtre.' : 'Aucune personne suivie — utilise « Intégrer des personnes » pour en ajouter une.'}</div>}
         {filtered.map((row) => <div key={row.id} role="button" tabIndex={0} className={`dxpp-row dxp-row ${selection.has(row.id) ? 'is-sel' : ''}`}
-          onClick={() => { if (passation) toggleSelect(row.id); else navigate(`/app/people/${row.id}`) }}
-          onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) toggleSelect(row.id); else navigate(`/app/people/${row.id}`) } }}>
+          onClick={() => { if (passation) { if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer cette fiche.', 'error'); else toggleSelect(row.id) } else navigate(`/app/people/${row.id}`) }}
+          onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) { if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer cette fiche.', 'error'); else toggleSelect(row.id) } else navigate(`/app/people/${row.id}`) } }}>
           <span className="dxp-band" style={{ background: TIER_COLORS[row.tier] }} />
           {passation ? <span className="psel" aria-hidden="true">{CheckIcon}</span> : <span />}
           <button type="button" className={`dxp-star ${row.favorite ? 'on' : ''}`} aria-pressed={row.favorite} aria-label={row.favorite ? `Retirer ${row.name} des favoris` : `Ajouter ${row.name} aux favoris`}
@@ -284,6 +284,7 @@ function PageBody({ context }: { context: PageContext }) {
           </span>
           <button type="button" className="dxa-own" title={row.ownerName ? `Owner : ${row.ownerName} — changer` : 'Attribuer un owner'}
             aria-label={row.ownerName ? `Owner : ${row.ownerName} — changer` : 'Attribuer un owner'}
+            disabled={Boolean(row.ownerId && row.ownerId !== context.userId)}
             onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setOwnerPopup({ personId: row.id, x: rect.left, y: rect.bottom }) }}>
             {row.ownerName ? initials(row.ownerName) : '+'}
           </button>
@@ -300,7 +301,7 @@ function PageBody({ context }: { context: PageContext }) {
     {(passation || passationClosing) && <div className="pa-bar-wrap"><div className={`pa-bar${passationClosing ? ' pa-bar-out' : ''}`} role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> personne{selection.size > 1 ? 's' : ''} sélectionnée{selection.size > 1 ? 's' : ''}</span>
       <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Partager
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Passer
       </button>
       <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer
@@ -309,7 +310,7 @@ function PageBody({ context }: { context: PageContext }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div></div>}
-    {assignAnchor && <MemberPicker overview={overview} anchor={assignAnchor} currentId={null} onPick={assignSelection} onClose={() => setAssignAnchor(null)} />}
+    {assignAnchor && <MemberPicker overview={overview} anchor={assignAnchor} currentId={context.userId} title="Passer à" onPick={assignSelection} onClose={() => setAssignAnchor(null)} />}
   </div>
 }
 

@@ -15,10 +15,18 @@ function optional(result: QueryResult, label: string, degraded: string[]): unkno
   throw new Error(result.error.message ?? `Impossible de charger ${label}.`)
 }
 
-export async function getPersonDetail(workspaceId: string, personId: string): Promise<PersonDetailData> {
+export async function getPersonDetail(workspaceId: string, personId: string, visionOwnerUserId?: string): Promise<PersonDetailData> {
   const client = getSupabase()
   const degradedReasons: string[] = []
   const userId = (await client.auth.getUser()).data.user?.id ?? ''
+  const visionOwnerId = visionOwnerUserId || userId
+  const { data: availableVisions, error: visionError } = await client.rpc('list_fiche_visions', {
+    p_organization_id: workspaceId,
+    p_contact_id: personId,
+  })
+  if (visionError) throw visionError
+  const activeVision = rows(availableVisions).find((vision) => String(vision.owner_user_id) === visionOwnerId)
+  if (!activeVision) throw new Error('PERSON_FORBIDDEN')
 
   const [
     contactResult, settingsResult, userSettingsResult, summaryResult, snapshotsResult,
@@ -34,7 +42,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('person_summaries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
     client.from('person_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('computed_at', { ascending: false }).limit(48),
     // Snapshots quotidiens produits par le cron backend : 36 mois ≈ 1100 lignes.
-    client.from('contact_score_history').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('snapshot_date', { ascending: false }).limit(1200),
+    client.from('contact_score_history').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('user_id', visionOwnerId).order('snapshot_date', { ascending: false }).limit(1200),
     client.from('contact_career_path').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('start_date', { ascending: false }).limit(40),
     client.from('relationship_snapshots').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('snapshot_date', { ascending: false }).limit(48),
     client.from('cognitive_profiles').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('updated_at', { ascending: false }).limit(1),
@@ -42,17 +50,17 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     client.from('person_recommendations').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('priority', { ascending: false }).limit(30),
     client.from('person_contact_details').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('created_at', { ascending: true }),
     client.from('person_career_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('started_at', { ascending: false }).limit(40),
-    client.from('person_memory_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('created_at', { ascending: false }).limit(40),
-    client.from('meeting_participants').select('meetings(id,title,starts_at,platform,meeting_type,company_id)').eq('contact_id', personId).limit(500),
-    client.from('communication_messages').select('id,sent_at,direction,subject,provider').eq('organization_id', workspaceId).eq('contact_id', personId).order('sent_at', { ascending: false }).limit(500),
-    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
+    client.from('person_memory_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(40),
+    client.from('meeting_participants').select('meetings(id,title,starts_at,platform,meeting_type,company_id,owner_user_id)').eq('contact_id', personId).limit(500),
+    client.from('communication_messages').select('id,sent_at,direction,subject,provider').eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).order('sent_at', { ascending: false }).limit(500),
+    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
     client.from('contact_name_suggestions').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     client.from('contact_merge_suggestions').select('*').eq('organization_id', workspaceId).eq('status', 'pending').or(`contact_a_id.eq.${personId},contact_b_id.eq.${personId}`),
     client.from('meeting_participants').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
-    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId),
-    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('direction', 'inbound'),
+    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId),
+    client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).eq('direction', 'inbound'),
     client.from('person_key_moments').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('occurred_at', { ascending: false }).limit(12),
   ])
 
@@ -64,7 +72,10 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   if (behavioralResult.error) throw new Error(behavioralResult.error.message)
 
   const contact = object(contactResult.data)
-  const settings = object(optional(settingsResult, 'Réglages Personne', degradedReasons))
+  const settings: Row = {
+    ...object(optional(settingsResult, 'Réglages Personne', degradedReasons)),
+    visibility: text(activeVision.visibility) ?? 'restricted',
+  }
   const userSettings = object(optional(userSettingsResult, 'Favori et veille Personne', degradedReasons))
   const summaryRow = object(optional(summaryResult, 'Synthèse Personne', degradedReasons))
   const scoreSnapshots = rows(optional(snapshotsResult, 'Snapshots du score Personne', degradedReasons))
@@ -81,14 +92,15 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const connectors = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
   const feedback = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
-  const lockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const legacyLockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const lockRow = String(legacyLockRow.locked_by ?? '') === visionOwnerId ? legacyLockRow : {}
   const nameSuggestionRow = object(optional(nameSuggestionResult, 'Suggestion de nom', degradedReasons))
   const mergeSuggestionRows = rows(optional(mergeSuggestionsResult, 'Suggestions de fusion', degradedReasons))
 
   const meetings = [...new Map(
     participants
       .map((row) => object(row.meetings))
-      .filter((row) => row.id)
+      .filter((row) => row.id && String(row.owner_user_id ?? '') === visionOwnerId)
       .map((meeting) => [String(meeting.id), meeting]),
   ).values()]
 
@@ -124,7 +136,7 @@ export async function getPersonDetail(workspaceId: string, personId: string): Pr
     keyMoments,
     meetings,
     messages,
-    meetingCount: participantCountResult.error ? meetings.length : (participantCountResult.count ?? meetings.length),
+    meetingCount: meetings.length,
     messageCount: messageCountResult.error ? messages.length : (messageCountResult.count ?? messages.length),
     authoredMessageCount: authoredMessageCountResult.error
       ? messages.filter((message) => message.direction === 'inbound').length
@@ -218,31 +230,34 @@ export async function setPersonLock(data: PersonDetailData, userId: string, lock
 /** Personnes explicitement invitées à franchir le verrou (SPEC-09) quand la fiche
  *  est restreinte — voir access_grant. Non transitif : une invitation par personne. */
 export async function listAccessGrants(workspaceId: string, personId: string): Promise<string[]> {
-  const { data, error } = await getSupabase().from('access_grant').select('grantee_user_id')
-    .eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('status', 'active')
+  const { data, error } = await getSupabase().rpc('list_fiche_vision_grants', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'contact',
+    p_entity_id: personId,
+  })
   if (error) throw error
-  return (data ?? []).map((row) => String(row.grantee_user_id))
+  return (data ?? []).map((row: Record<string, unknown>) => String(row.grantee_user_id))
 }
 
 export async function grantPersonAccess(data: PersonDetailData, userId: string, granteeUserId: string): Promise<void> {
-  const { error } = await getSupabase().from('access_grant').insert({
-    organization_id: data.person.workspaceId,
-    subject_type: 'contact',
-    subject_id: data.person.id,
-    grantee_user_id: granteeUserId,
-    granted_by: userId,
+  const { error } = await getSupabase().rpc('set_fiche_vision_grant', {
+    p_organization_id: data.person.workspaceId,
+    p_entity_type: 'contact',
+    p_entity_id: data.person.id,
+    p_grantee_user_id: granteeUserId,
+    p_allowed: true,
   })
   if (error) throw error
 }
 
 export async function revokePersonAccess(data: PersonDetailData, granteeUserId: string): Promise<void> {
-  const { error } = await getSupabase().from('access_grant')
-    .update({ status: 'revoked' })
-    .eq('organization_id', data.person.workspaceId)
-    .eq('subject_type', 'contact')
-    .eq('subject_id', data.person.id)
-    .eq('grantee_user_id', granteeUserId)
-    .eq('status', 'active')
+  const { error } = await getSupabase().rpc('set_fiche_vision_grant', {
+    p_organization_id: data.person.workspaceId,
+    p_entity_type: 'contact',
+    p_entity_id: data.person.id,
+    p_grantee_user_id: granteeUserId,
+    p_allowed: false,
+  })
   if (error) throw error
 }
 
@@ -284,6 +299,18 @@ export async function setPersonRoles(data: PersonDetailData, userId: string, val
 
 /** Affectation : assigner la fiche à un owner du workspace (ou la désaffecter). */
 export async function setPersonOwner(data: PersonDetailData, userId: string, ownerUserId: string | null): Promise<void> {
+  if (ownerUserId && ownerUserId !== userId) {
+    const { error } = await getSupabase().rpc('handover_fiches', {
+      p_organization_id: data.person.workspaceId,
+      p_entity_type: 'contact',
+      p_entity_ids: [data.person.id],
+      p_to_user_id: ownerUserId,
+      p_scope: 'entity_only',
+      p_note: null,
+    })
+    if (error) throw error
+    return
+  }
   const { error } = await getSupabase().from('person_settings').upsert({
     organization_id: data.person.workspaceId,
     contact_id: data.person.id,
@@ -343,6 +370,7 @@ export type FicheVision = {
   ownerUserId: string
   ownerName: string
   shareNote: string | null
+  relationshipState: 'active' | 'relationship_to_build'
 }
 
 /** Visions disponibles pour la fiche actuellement ouverte : la mienne si elle
@@ -360,6 +388,7 @@ export async function listFicheVisions(workspaceId: string, personId: string): P
     ownerUserId: String(row.owner_user_id),
     ownerName: String(row.owner_name ?? 'Membre'),
     shareNote: row.share_note ? String(row.share_note) : null,
+    relationshipState: row.relationship_state === 'relationship_to_build' ? 'relationship_to_build' : 'active',
   }))
 }
 
@@ -399,13 +428,12 @@ export async function listSharedWithMe(entityType: 'contact' | 'company' = 'cont
 
 /** Visibilité : « workspace » (toute l'organisation) ou « restricted » (équipe restreinte). */
 export async function setPersonVisibility(data: PersonDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
-  const { error } = await getSupabase().from('person_settings').upsert({
-    organization_id: data.person.workspaceId,
-    contact_id: data.person.id,
-    visibility,
-    updated_by: userId,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'organization_id,contact_id' })
+  const { error } = await getSupabase().rpc('set_fiche_vision_visibility', {
+    p_organization_id: data.person.workspaceId,
+    p_entity_type: 'contact',
+    p_entity_id: data.person.id,
+    p_visibility: visibility,
+  })
   if (error) throw error
 }
 
@@ -413,15 +441,11 @@ export type WorkspaceMember = { id: string; fullName: string; avatarUrl: string 
 
 /** Membres du workspace, pour le sélecteur d'owner. */
 export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-  const client = getSupabase()
-  const { data: memberships, error } = await client.from('memberships').select('user_id').eq('organization_id', workspaceId).limit(200)
+  const { data, error } = await getSupabase().rpc('get_team_vision_members', { p_organization_id: workspaceId })
   if (error) throw error
-  const ids = [...new Set((memberships ?? []).map((row) => String(row.user_id)).filter(Boolean))]
-  if (!ids.length) return []
-  const { data: profiles } = await client.from('profiles').select('id,full_name,avatar_url').in('id', ids)
-  return (profiles ?? [])
-    .map((row) => ({ id: String(row.id), fullName: String(row.full_name ?? 'Membre'), avatarUrl: typeof row.avatar_url === 'string' && row.avatar_url ? row.avatar_url : null }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+  return (data ?? [])
+    .map((row: Record<string, unknown>): WorkspaceMember => ({ id: String(row.id), fullName: String(row.full_name ?? 'Membre'), avatarUrl: typeof row.avatar_url === 'string' && row.avatar_url ? row.avatar_url : null }))
+    .sort((a: WorkspaceMember, b: WorkspaceMember) => a.fullName.localeCompare(b.fullName))
 }
 
 export type RelationshipNarrative = { narrative: string; generatedAt: string | null; cached: boolean }

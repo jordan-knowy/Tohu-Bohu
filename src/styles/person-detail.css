@@ -2720,3 +2720,5 @@
 .v48-affect-ini{width:24px;height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet);color:#fff;font-size:9px;font-weight:800}
 .pp .v48-affect-clear{color:var(--coral)!important}
 .pp .v48-affect-loading{padding:8px 9px;font-size:11px;color:var(--t3)}
+.vision-readonly{position:relative}
+.vision-readonly button,.vision-readonly input,.vision-readonly textarea,.vision-readonly select{pointer-events:none}

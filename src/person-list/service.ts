@@ -60,17 +60,16 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
 
   const [
     contactsResult, historyResult, settingsResult, userSettingsResult,
-    messagesResult, meetingsResult, signalsResult, membershipsResult, profilesResult,
+    messagesResult, meetingsResult, signalsResult, teamResult,
   ] = await Promise.all([
     client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name,domain),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('id', { ascending: true }).range(from, to)),
+    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
     client.from('person_settings').select('contact_id,relationship_type,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('person_user_settings').select('contact_id,favorite,watch_enabled').eq('organization_id', workspaceId).eq('user_id', userId),
-    client.from('communication_messages').select('contact_id,sent_at').eq('organization_id', workspaceId).limit(3000),
-    client.from('meetings').select('company_id,starts_at').eq('organization_id', workspaceId).limit(1000),
+    client.from('communication_messages').select('contact_id,sent_at').eq('organization_id', workspaceId).eq('metadata->>user_id', userId).limit(3000),
+    client.from('meetings').select('company_id,starts_at').eq('organization_id', workspaceId).eq('owner_user_id', userId).limit(1000),
     client.from('behavioral_signals').select('id,contact_id,signal_type,text,inference,source_type,observed_at,contacts(full_name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
-    client.from('memberships').select('user_id').eq('organization_id', workspaceId),
-    client.from('profiles').select('id,full_name,avatar_url'),
+    client.rpc('get_team_vision_members', { p_organization_id: workspaceId }),
   ])
 
   if (contactsResult.error) throw new Error(contactsResult.error.message)
@@ -82,13 +81,10 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const meetings = rows(optional(meetingsResult, 'Réunions', degradedReasons))
   const signals = rows(optional(signalsResult, 'Signaux comportementaux', degradedReasons))
-  const memberships = rows(optional(membershipsResult, 'Équipe', degradedReasons))
-  const profiles = rows(optional(profilesResult, 'Profils', degradedReasons))
+  const profiles = rows(optional(teamResult, 'Équipe', degradedReasons))
 
   const profileNames = new Map(profiles.map((profile) => [String(profile.id), text(profile.full_name) ?? 'Membre Tohu']))
-  const memberIds = new Set(memberships.map((membership) => String(membership.user_id)))
   const team: TeamMember[] = profiles
-    .filter((profile) => memberIds.has(String(profile.id)))
     .map((profile) => ({ id: String(profile.id), name: text(profile.full_name) ?? 'Membre Tohu', avatarUrl: text(profile.avatar_url) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -143,6 +139,21 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
   })
   if (error) throw error
   const userId = (await client.auth.getUser()).data.user?.id ?? ''
+  const { error: ownerError } = await client.from('person_settings').upsert({
+    organization_id: workspaceId,
+    contact_id: contactId,
+    primary_owner_user_id: userId,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'organization_id,contact_id' })
+  if (ownerError) throw ownerError
+  const { error: visionError } = await client.rpc('set_fiche_vision_visibility', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'contact',
+    p_entity_id: contactId,
+    p_visibility: 'workspace',
+  })
+  if (visionError) throw visionError
   const { data: connectors } = await client.from('connectors')
     .select('provider')
     .eq('organization_id', workspaceId)
@@ -183,9 +194,15 @@ export async function setPersonWatch(workspaceId: string, contactId: string, use
 }
 
 export async function setPersonOwner(workspaceId: string, contactId: string, userId: string, ownerId: string): Promise<void> {
-  const { error } = await getSupabase().from('person_settings').upsert({
-    organization_id: workspaceId, contact_id: contactId, primary_owner_user_id: ownerId, updated_by: userId, updated_at: new Date().toISOString(),
-  }, { onConflict: 'organization_id,contact_id' })
+  if (ownerId === userId) return
+  const { error } = await getSupabase().rpc('handover_fiches', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'contact',
+    p_entity_ids: [contactId],
+    p_to_user_id: ownerId,
+    p_scope: 'entity_only',
+    p_note: null,
+  })
   if (error) throw error
 }
 
@@ -216,17 +233,26 @@ export async function archivePeople(workspaceId: string, userId: string, contact
   void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
-/** Partage groupé (additif) : chaque personne sélectionnée reçoit une vue en
- *  plus pour le membre choisi. N'affecte jamais l'owner ni la relation de
- *  l'expéditeur — même principe que sharePerson côté fiche détail, juste
- *  appliqué à une sélection. */
-export async function sharePeople(workspaceId: string, people: PersonListRow[], toUserId: string): Promise<{ shared: number }> {
-  const client = getSupabase()
-  for (const person of people) {
-    const { error } = await client.rpc('share_fiche', {
-      p_organization_id: workspaceId, p_entity_type: 'contact', p_entity_id: person.id, p_to_user_id: toUserId, p_note: null,
-    })
-    if (error) throw error
+export type HandoverResult = { entities: number; people: number; skippedPeople: number }
+
+/** Passation groupée atomique : le destinataire devient owner officiel, sa
+ *  vision vide est créée et la vision de l'ancien owner lui reste accessible
+ *  en lecture seule. */
+export async function handoverPeople(workspaceId: string, people: PersonListRow[], toUserId: string): Promise<HandoverResult> {
+  if (!people.length) return { entities: 0, people: 0, skippedPeople: 0 }
+  const { data, error } = await getSupabase().rpc('handover_fiches', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'contact',
+    p_entity_ids: people.map((person) => person.id),
+    p_to_user_id: toUserId,
+    p_scope: 'entity_only',
+    p_note: null,
+  })
+  if (error) throw error
+  const result = object(data)
+  return {
+    entities: Number(result.entities ?? people.length),
+    people: Number(result.people ?? 0),
+    skippedPeople: Number(result.skipped_people ?? 0),
   }
-  return { shared: people.length }
 }

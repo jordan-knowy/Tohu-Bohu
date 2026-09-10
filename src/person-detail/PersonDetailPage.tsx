@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { AccountConnectorsPill } from '../account-detail/AccountRelationView'
-import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, grantPersonAccess, listAccessGrants, listFicheVisions, renamePerson, revokePersonAccess, setPersonFavorite, setPersonLock, setPersonOwner, setPersonRoles, setPersonVisibility, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
+import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, grantPersonAccess, listAccessGrants, listFicheVisions, renamePerson, revokePersonAccess, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
@@ -157,8 +157,6 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
   })
   const chooseVisibility = (visibility: 'workspace' | 'restricted') => void run('vis', async () => {
     await setPersonVisibility(data, userId, visibility)
-    if (visibility === 'restricted' && !person.locked) await setPersonLock(data, userId, true)
-    if (visibility === 'workspace' && person.locked && person.lockedByMe) await setPersonLock(data, userId, false)
     toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe invitée.')
     await refresh()
   })
@@ -172,7 +170,7 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
       setGrantedIds((ids) => [...(ids ?? []), member.id])
     }
   })
-  const filteredMembers = (members ?? []).filter((member) => member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
+  const filteredMembers = (members ?? []).filter((member) => member.id !== userId && member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
 
   return <div className="v48-owner-card v48-affect">
     <div className="v48-owner-row">
@@ -242,14 +240,14 @@ function OwnerAffectation({ data, userId, refresh }: { data: PersonDetailData; u
  *  que ce soit — chaque vision reste la fiche indépendante de son propriétaire.
  *  Toujours visible (contrairement aux actions d'édition), y compris en lecture
  *  seule, puisque c'est le seul moyen de revenir à « Moi ». */
-function VisionSwitcher({ visions, activeContactId, onSwitch }: { visions: FicheVision[]; activeContactId: string; onSwitch: (vision: FicheVision) => void }) {
+function VisionSwitcher({ visions, activeOwnerUserId, onSwitch }: { visions: FicheVision[]; activeOwnerUserId: string; onSwitch: (vision: FicheVision) => void }) {
   if (visions.length <= 1) return null
   return <div className="radar-src v48-vision-switcher" role="group" aria-label="Vision affichée">
     {visions.map((vision) => (
       <button
-        key={vision.contactId}
+        key={vision.ownerUserId}
         type="button"
-        className={vision.contactId === activeContactId ? 'on' : ''}
+        className={vision.ownerUserId === activeOwnerUserId ? 'on' : ''}
         title={vision.shareNote ?? undefined}
         onClick={() => onSwitch(vision)}
       >
@@ -646,9 +644,9 @@ function PersonContactDialog({ data, userId, refresh, onClose }: { data: PersonD
   )
 }
 
-function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, onSwitchVision }: {
+function PageBody({ data, userId, refresh, readOnly, visions, activeOwnerUserId, onSwitchVision }: {
   data: PersonDetailData; userId: string; refresh: () => Promise<void>; readOnly: boolean
-  visions: FicheVision[]; activeContactId: string; onSwitchVision: (vision: FicheVision) => void
+  visions: FicheVision[]; activeOwnerUserId: string; onSwitchVision: (vision: FicheVision) => void
 }) {
   const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
   const [contactOpen, setContactOpen] = useState(false)
@@ -657,7 +655,7 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, o
   // de régénérer et obtenir le « comment aborder » ancré sur les échanges.
   const profileNeedsRebuild = data.behavior.availableInteractions >= data.behavior.profileMinimumInteractions
   return <>
-    <VisionSwitcher visions={visions} activeContactId={activeContactId} onSwitch={onSwitchVision} />
+    <VisionSwitcher visions={visions} activeOwnerUserId={activeOwnerUserId} onSwitch={onSwitchVision} />
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche personne">
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
@@ -668,18 +666,19 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeContactId, o
       </button>}
       <AccountConnectorsPill sources={data.sources} />
     </nav>
-    {readOnly && <div className="pp-degraded">Vision de {visions.find((vision) => vision.contactId === activeContactId)?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
+    {readOnly && <div className="pp-degraded">Vision de {visions.find((vision) => vision.ownerUserId === activeOwnerUserId)?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
+    {!readOnly && visions.find((vision) => vision.ownerUserId === activeOwnerUserId)?.relationshipState === 'relationship_to_build' && <div className="pp-degraded"><strong>Relation à construire</strong> — aucun email, rendez-vous ou échange personnel pour le moment.</div>}
     {data.person.archivedAt && <div className="pp-degraded">Personne archivée le {formatDate(data.person.archivedAt)} — fiche en lecture seule recommandée.</div>}
     {data.degradedReasons.length > 0 && <div className="pp-degraded"><strong>Données partielles</strong> {data.degradedReasons.join(' · ')}</div>}
     <Hero data={data} userId={userId} refresh={refresh} readOnly={readOnly} />
-    {activeTab === 'profile' && <div className="v48-tab-panel" role="tabpanel"><V48PersonProfileView
+    {activeTab === 'profile' && <div className={`v48-tab-panel ${readOnly ? 'vision-readonly' : ''}`} role="tabpanel" inert={readOnly || undefined}><V48PersonProfileView
       data={data}
       userId={userId}
       refresh={refresh}
       manualSyncAction={profileNeedsRebuild && !readOnly ? <CognitiveSyncButton data={data} userId={userId} refresh={refresh} /> : undefined}
     /></div>}
-    {activeTab === 'relation' && <div className="v48-tab-panel" role="tabpanel"><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
-    {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel"><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
+    {activeTab === 'relation' && <div className={`v48-tab-panel ${readOnly ? 'vision-readonly' : ''}`} role="tabpanel" inert={readOnly || undefined}><V48PersonRelationView data={data} userId={userId} refresh={refresh} /></div>}
+    {activeTab === 'live' && <div className={`v48-tab-panel ${readOnly ? 'vision-readonly' : ''}`} role="tabpanel" inert={readOnly || undefined}><V48PersonLiveView data={data} userId={userId} refresh={refresh} /></div>}
     {contactOpen && <PersonContactDialog data={data} userId={userId} refresh={refresh} onClose={() => setContactOpen(false)} />}
   </>
 }
@@ -694,23 +693,23 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   // (fiche partagée par un membre d'une autre équipe) — d'où ce couple dédié plutôt
   // que de réutiliser context.workspaceId/personId directement. Un lien "Partagé avec
   // moi" précise l'org via ?org=, sinon on suppose le workspace actif (cas normal).
-  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId })
+  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId, ownerUserId: context.userId })
   useEffect(() => {
-    setView({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId })
-  }, [context.workspaceId, personId, searchParams])
+    setView({ organizationId: searchParams.get('org') || context.workspaceId, contactId: personId, ownerUserId: context.userId })
+  }, [context.userId, context.workspaceId, personId, searchParams])
   const refresh = useCallback(async () => {
     try {
       setError(null)
       const [detail, visionList] = await Promise.all([
-        getPersonDetail(view.organizationId, view.contactId),
-        listFicheVisions(view.organizationId, view.contactId).catch(() => []),
+        getPersonDetail(view.organizationId, view.contactId, view.ownerUserId),
+        listFicheVisions(view.organizationId, view.contactId),
       ])
       setData(detail)
       setVisions(visionList)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Erreur inattendue')
     }
-  }, [view.organizationId, view.contactId])
+  }, [view.organizationId, view.contactId, view.ownerUserId])
   useEffect(() => { setData(null); void refresh() }, [refresh])
   useEffect(() => {
     if (!data) return
@@ -723,7 +722,7 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
   if (error) return <div className="ra-state error"><h1>Impossible de charger la personne</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <FicheSkeleton label="Chargement de la fiche personne…" />
 
-  const activeVision = visions.find((vision) => vision.contactId === view.contactId)
+  const activeVision = visions.find((vision) => vision.ownerUserId === view.ownerUserId)
   const readOnly = activeVision ? !activeVision.isMine : false
 
   return <ToastProvider>
@@ -734,8 +733,8 @@ export default function PersonDetailPage({ context }: { context: PageContext }) 
         refresh={refresh}
         readOnly={readOnly}
         visions={visions}
-        activeContactId={view.contactId}
-        onSwitchVision={(vision) => setView({ organizationId: vision.organizationId, contactId: vision.contactId })}
+        activeOwnerUserId={view.ownerUserId}
+        onSwitchVision={(vision) => setView({ organizationId: vision.organizationId, contactId: vision.contactId, ownerUserId: vision.ownerUserId })}
       />
     </div>
   </ToastProvider>

@@ -11,7 +11,7 @@ import { ToastProvider, useBusy, useToast, formatMonth } from '../person-detail/
 import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, tickerDurationSeconds, type AccountListRow, type AccountTier, type PortfolioPoint, type TeamMember } from './mapping'
 import {
   archiveAccounts, detectAccountCandidates, getAccountsOverview, setListFavorite,
-  setListOwner, setListRelationType, setListWatch, shareAccounts, trackCandidates,
+  handoverAccounts, setListOwner, setListRelationType, setListWatch, trackCandidates,
   type AccountCandidate, type AccountsOverview,
 } from './service'
 
@@ -269,21 +269,66 @@ function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string
   />
 }
 
-export function MemberPicker({ overview, anchor, currentId, onPick, onClose }: { overview: { team: TeamMember[] }; anchor: { x: number; y: number }; currentId: string | null; onPick: (memberId: string) => void; onClose: () => void }) {
+export function MemberPicker({ overview, anchor, currentId, title = 'Réattribuer à', onPick, onClose }: { overview: { team: TeamMember[] }; anchor: { x: number; y: number }; currentId: string | null; title?: string; onPick: (memberId: string) => void; onClose: () => void }) {
   useEffect(() => {
     const close = () => onClose()
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [onClose])
   return <div className="pa-pop" role="menu" style={{ left: Math.max(12, Math.min(anchor.x - 40, window.innerWidth - 260)), top: anchor.y + 8 }} onClick={(event) => event.stopPropagation()}>
-    <div className="kp-head">Réattribuer à</div>
+    <div className="kp-head">{title}</div>
     {!overview.team.length && <div className="dxa-empty">Aucun membre d’équipe.</div>}
-    {overview.team.map((member) => <button key={member.id} type="button" className="kp-opt" role="menuitem" onClick={() => onPick(member.id)}>
+    {overview.team.map((member) => <button key={member.id} type="button" className="kp-opt" role="menuitem" disabled={member.id === currentId} onClick={() => onPick(member.id)}>
       <span className="kp-av">{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : initials(member.name)}</span>
       <span>{member.name}</span>
       {member.id === currentId && <span className="kp-cur">actuel</span>}
     </button>)}
   </div>
+}
+
+function HandoverDialog({ count, team, currentUserId, onConfirm, onClose }: {
+  count: number
+  team: TeamMember[]
+  currentUserId: string
+  onConfirm: (memberId: string, scope: 'entity_only' | 'account_and_people') => void
+  onClose: () => void
+}) {
+  const [scope, setScope] = useState<'entity_only' | 'account_and_people'>('entity_only')
+  const [memberId, setMemberId] = useState('')
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(<div className="handover-overlay" role="presentation" onMouseDown={onClose}>
+    <div className="handover-dialog" role="dialog" aria-modal="true" aria-labelledby="handover-title" onMouseDown={(event) => event.stopPropagation()}>
+      <button type="button" className="handover-close" aria-label="Fermer" onClick={onClose}>×</button>
+      <span className="handover-kicker">Passation</span>
+      <h2 id="handover-title">Transférer {count} compte{count > 1 ? 's' : ''}</h2>
+      <p>Le nouveau responsable devient l’owner officiel. Ta vision et tes échanges restent dans ton compte.</p>
+      <fieldset className="handover-scopes">
+        <legend>Périmètre de la passation</legend>
+        <label className={scope === 'entity_only' ? 'on' : ''}>
+          <input type="radio" name="handover-scope" checked={scope === 'entity_only'} onChange={() => setScope('entity_only')} />
+          <span><strong>Compte uniquement</strong><small>Les personnes associées conservent leur owner actuel.</small></span>
+        </label>
+        <label className={scope === 'account_and_people' ? 'on' : ''}>
+          <input type="radio" name="handover-scope" checked={scope === 'account_and_people'} onChange={() => setScope('account_and_people')} />
+          <span><strong>Compte et personnes associées</strong><small>Les personnes dont tu es owner sont également transférées.</small></span>
+        </label>
+      </fieldset>
+      <label className="handover-member-label" htmlFor="handover-member">Nouveau responsable</label>
+      <select id="handover-member" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
+        <option value="">Choisir un membre…</option>
+        {team.filter((member) => member.id !== currentUserId).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+      </select>
+      <div className="handover-note">Le destinataire verra ta vision en lecture seule, même si elle était restreinte, et disposera immédiatement de sa propre vision vide.</div>
+      <div className="handover-actions">
+        <button type="button" className="secondary" onClick={onClose}>Annuler</button>
+        <button type="button" className="primary" disabled={!memberId} onClick={() => onConfirm(memberId, scope)}>Confirmer la passation</button>
+      </div>
+    </div>
+  </div>, document.body)
 }
 
 /** Comptes partagés par d'autres membres de l'équipe : vivent dans leur
@@ -323,7 +368,7 @@ function PageBody({ context }: { context: PageContext }) {
   const [passation, setPassation] = useState(false)
   const [passationClosing, setPassationClosing] = useState(false)
   const [selection, setSelection] = useState<Set<string>>(new Set())
-  const [assignAnchor, setAssignAnchor] = useState<{ x: number; y: number } | null>(null)
+  const [handoverOpen, setHandoverOpen] = useState(false)
 
   useEffect(() => {
     setBohuBarShrunk(passation && !passationClosing)
@@ -393,13 +438,15 @@ function PageBody({ context }: { context: PageContext }) {
       await refresh()
     })
   }
-  const assignSelection = (memberId: string) => {
-    setAssignAnchor(null)
+  const assignSelection = (memberId: string, scope: 'entity_only' | 'account_and_people') => {
+    setHandoverOpen(false)
     const accounts = overview.accounts.filter((row) => selection.has(row.id))
     void run('passation', async () => {
-      const result = await shareAccounts(context.workspaceId, accounts, memberId)
+      const result = await handoverAccounts(context.workspaceId, accounts, memberId, scope)
       const memberName = overview.team.find((member) => member.id === memberId)?.name ?? 'ce membre'
-      toast(`Partage effectué : ${result.accounts} compte${result.accounts > 1 ? 's' : ''} (${result.contacts} contact${result.contacts > 1 ? 's' : ''}) partagé${result.accounts > 1 ? 's' : ''} avec ${memberName}.`)
+      const peopleText = scope === 'account_and_people' ? ` et ${result.people} personne${result.people > 1 ? 's' : ''}` : ''
+      const skippedText = result.skippedPeople ? ` ${result.skippedPeople} personne${result.skippedPeople > 1 ? 's' : ''} appartenant à un autre owner n’ont pas été déplacées.` : ''
+      toast(`Passation effectuée : ${result.accounts} compte${result.accounts > 1 ? 's' : ''}${peopleText} transféré${result.accounts > 1 ? 's' : ''} à ${memberName}. Ta vision est conservée.${skippedText}`)
       setPassation(false)
       setSelection(new Set())
       await refresh()
@@ -455,10 +502,13 @@ function PageBody({ context }: { context: PageContext }) {
         {!filtered.length && <div className="dxa-empty">{overview.accounts.length ? 'Aucun compte pour ce filtre.' : 'Aucun compte suivi — utilise « Intégrer des comptes » pour démarrer depuis tes échanges réels.'}</div>}
         {filtered.map((row) => <div key={row.id} role="button" tabIndex={0} className={`dxa-row dxp-row ${selection.has(row.id) ? 'is-sel' : ''}`}
           onClick={() => {
-            if (passation) setSelection((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next })
+            if (passation) {
+              if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer ce compte.', 'error')
+              else setSelection((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next })
+            }
             else navigate(`/app/accounts/${row.id}`)
           }}
-          onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) setSelection((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }); else navigate(`/app/accounts/${row.id}`) } }}>
+          onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) { if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer ce compte.', 'error'); else setSelection((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) } else navigate(`/app/accounts/${row.id}`) } }}>
           <span className="dxp-band" style={{ background: TIER_COLORS[row.tier] }} />
           {passation
             ? <span className="psel" aria-hidden="true">{CheckIcon}</span>
@@ -479,6 +529,7 @@ function PageBody({ context }: { context: PageContext }) {
           </span>
           <button type="button" className="dxa-own" title={row.ownerName ? `Owner : ${row.ownerName} — changer` : 'Attribuer un owner'}
             aria-label={row.ownerName ? `Owner : ${row.ownerName} — changer` : 'Attribuer un owner'}
+            disabled={Boolean(row.ownerId && row.ownerId !== context.userId)}
             onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setOwnerPopup({ accountId: row.id, x: rect.left, y: rect.bottom }) }}>
             {row.ownerName ? initials(row.ownerName) : '+'}
           </button>
@@ -494,8 +545,8 @@ function PageBody({ context }: { context: PageContext }) {
       onPick={pickOwner(ownerPopup.accountId)} onClose={() => setOwnerPopup(null)} />}
     {(passation || passationClosing) && <div className="pa-bar-wrap"><div className={`pa-bar${passationClosing ? ' pa-bar-out' : ''}`} role="toolbar" aria-label="Actions groupées">
       <span className="pb-n"><b>{selection.size}</b> compte{selection.size > 1 ? 's' : ''} sélectionné{selection.size > 1 ? 's' : ''}</span>
-      <button type="button" className="pb-assign" disabled={!selection.size} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setAssignAnchor({ x: rect.left, y: rect.top - 220 }) }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Partager
+      <button type="button" className="pb-assign" disabled={!selection.size} onClick={() => setHandoverOpen(true)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8" /></svg> Passer
       </button>
       <button type="button" className="pb-delete" disabled={!selection.size} onClick={deleteSelection}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg> Supprimer
@@ -504,7 +555,7 @@ function PageBody({ context }: { context: PageContext }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div></div>}
-    {assignAnchor && <MemberPicker overview={overview} anchor={assignAnchor} currentId={null} onPick={assignSelection} onClose={() => setAssignAnchor(null)} />}
+    {handoverOpen && <HandoverDialog count={selection.size} team={overview.team} currentUserId={context.userId} onConfirm={assignSelection} onClose={() => setHandoverOpen(false)} />}
   </div>
 }
 

@@ -18,7 +18,6 @@ import {
   listAccountVisions,
   revokeAccountAccess,
   setAccountFavorite,
-  setAccountLock,
   setAccountOwner,
   setAccountRelationType,
   setAccountVisibility,
@@ -536,8 +535,6 @@ function AccountOwnerAffectation({ data, userId, refresh }: { data: AccountDetai
   })
   const chooseVisibility = (visibility: 'workspace' | 'restricted') => void run('vis', async () => {
     await setAccountVisibility(data, userId, visibility)
-    if (visibility === 'restricted' && !account.locked) await setAccountLock(data, userId, true)
-    if (visibility === 'workspace' && account.locked && account.lockedByMe) await setAccountLock(data, userId, false)
     toast(visibility === 'workspace' ? 'Visible par toute l’organisation.' : 'Visibilité restreinte à l’équipe invitée.')
     await refresh()
   })
@@ -551,7 +548,7 @@ function AccountOwnerAffectation({ data, userId, refresh }: { data: AccountDetai
       setGrantedIds((ids) => [...(ids ?? []), member.id])
     }
   })
-  const filteredMembers = (members ?? []).filter((member) => member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
+  const filteredMembers = (members ?? []).filter((member) => member.id !== userId && member.fullName.toLowerCase().includes(memberQuery.trim().toLowerCase()))
 
   return <div className="v48-owner-card v48-affect">
     <div className="v48-owner-row">
@@ -647,14 +644,14 @@ function AccountHero({ data, userId, readOnly, toggleFavorite, openPeople, refre
  *  ma propre vision de ce compte et celles qui m'ont été partagées, sans
  *  fusionner ni recalculer quoi que ce soit. Toujours visible, y compris en
  *  lecture seule. */
-function VisionSwitcher({ visions, activeCompanyId, onSwitch }: { visions: AccountVision[]; activeCompanyId: string; onSwitch: (vision: AccountVision) => void }) {
+function VisionSwitcher({ visions, activeOwnerUserId, onSwitch }: { visions: AccountVision[]; activeOwnerUserId: string; onSwitch: (vision: AccountVision) => void }) {
   if (visions.length <= 1) return null
   return <div className="radar-src v48-vision-switcher" role="group" aria-label="Vision affichée">
     {visions.map((vision) => (
       <button
-        key={vision.companyId}
+        key={vision.ownerUserId}
         type="button"
-        className={vision.companyId === activeCompanyId ? 'on' : ''}
+        className={vision.ownerUserId === activeOwnerUserId ? 'on' : ''}
         title={vision.shareNote ?? undefined}
         onClick={() => onSwitch(vision)}
       >
@@ -677,21 +674,21 @@ export default function AccountDetailPage({ context }: { context: PageContext })
   // Même logique que côté fiche personne : la vision affichée peut vivre dans
   // une autre organisation que le workspace actif (compte partagé par un membre
   // d'une autre équipe).
-  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId })
+  const [view, setView] = useState({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId, ownerUserId: context.session.user.id })
   useEffect(() => {
-    setView({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId })
-  }, [context.workspaceId, accountId, searchParams])
+    setView({ organizationId: searchParams.get('org') || context.workspaceId, companyId: accountId, ownerUserId: context.session.user.id })
+  }, [context.session.user.id, context.workspaceId, accountId, searchParams])
   const refresh = useCallback(async () => {
     try {
       setError(null)
       const [detail, visionList] = await Promise.all([
-        getAccountDetail(view.organizationId, view.companyId),
-        listAccountVisions(view.organizationId, view.companyId).catch(() => []),
+        getAccountDetail(view.organizationId, view.companyId, view.ownerUserId),
+        listAccountVisions(view.organizationId, view.companyId),
       ])
       setData(detail)
       setVisions(visionList)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Erreur inattendue') }
-  }, [view.companyId, view.organizationId])
+  }, [view.companyId, view.organizationId, view.ownerUserId])
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
     if (!data) return
@@ -699,28 +696,30 @@ export default function AccountDetailPage({ context }: { context: PageContext })
     return () => setTopbarHeader(null)
   }, [data?.account.name])
   if (error === 'ACCOUNT_NOT_FOUND') return <div className="ra-state"><h1>Compte introuvable</h1><p>Ce compte n’existe pas ou n’est pas accessible dans ton workspace.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
+  if (error === 'ACCOUNT_FORBIDDEN') return <div className="ra-state error"><h1>Accès interdit</h1><p>Tu n’as pas accès à cette vision du compte.</p><Link to="/app/accounts">Retour aux comptes</Link></div>
   if (error) return <div className="ra-state error"><h1>Impossible de charger le compte</h1><p>{error}</p><button onClick={() => void refresh()}>Réessayer</button></div>
   if (!data) return <FicheSkeleton label="Chargement de la fiche compte…" />
   const account = data.account
-  const activeVision = visions.find((vision) => vision.companyId === view.companyId)
+  const activeVision = visions.find((vision) => vision.ownerUserId === view.ownerUserId)
   const readOnly = activeVision ? !activeVision.isMine : false
   const toggleFavorite = async () => { await setAccountFavorite(data, context.session.user.id, !account.favorite); await refresh() }
   const saveWatch = async (families: string[]) => { await setAccountWatch(data, context.session.user.id, true, families); setWatchOpen(false); await refresh() }
   return <ToastProvider><div className="pp account-pp">
-    <VisionSwitcher visions={visions} activeCompanyId={view.companyId} onSwitch={(vision) => setView({ organizationId: vision.organizationId, companyId: vision.companyId })} />
+    <VisionSwitcher visions={visions} activeOwnerUserId={view.ownerUserId} onSwitch={(vision) => setView({ organizationId: vision.organizationId, companyId: vision.companyId, ownerUserId: vision.ownerUserId })} />
     {readOnly && <div className="ra-degraded">Vision de {activeVision?.ownerName ?? 'un membre'} — lecture seule, reviens sur « Moi » pour éditer ta propre relation.</div>}
+    {!readOnly && activeVision?.relationshipState === 'relationship_to_build' && <div className="ra-degraded"><strong>Relation à construire</strong><span>Aucun email, rendez-vous ou échange personnel pour le moment.</span></div>}
     {data.degradedReasons.length > 0 && <div className="ra-degraded"><strong>Données partielles</strong><span>{data.degradedReasons.join(' · ')}</span></div>}
     <nav className="v48-tabs" role="tablist" aria-label="Sections de la fiche compte">
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Live &amp; Signaux</button>
-      <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setCoordsOpen(true)}>
+      {!readOnly && <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setCoordsOpen(true)}>
         <Icon name="building" /> Coordonnées
-      </button>
+      </button>}
       <AccountConnectorsPill sources={data.sources} />
     </nav>
     <AccountHero data={data} userId={context.session.user.id} readOnly={readOnly} toggleFavorite={toggleFavorite} openPeople={() => setActiveTab('live')} refresh={refresh} />
-    {activeTab === 'relation' && <main className="v48-tab-panel" role="tabpanel"><AccountRelationView data={data} userId={context.session.user.id} currentUserName={displayName(context.session.user)} refresh={refresh} navigate={navigate} /></main>}
-    {activeTab === 'live' && <div className="v48-tab-panel" role="tabpanel" id="account-details-panel"><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
+    {activeTab === 'relation' && <main className={`v48-tab-panel ${readOnly ? 'vision-readonly' : ''}`} role="tabpanel" inert={readOnly || undefined}><AccountRelationView data={data} userId={context.session.user.id} currentUserName={displayName(context.session.user)} refresh={refresh} navigate={navigate} /></main>}
+    {activeTab === 'live' && <div className={`v48-tab-panel ${readOnly ? 'vision-readonly' : ''}`} role="tabpanel" id="account-details-panel" inert={readOnly || undefined}><V48AccountLiveView data={data} userId={context.session.user.id} refresh={refresh} navigate={navigate} openWatch={() => setWatchOpen(true)} /></div>}
     <V48AccountSourceNote data={data} />
     {watchOpen && <WatchDialog selected={account.watchFamilies} onClose={() => setWatchOpen(false)} onSave={(families) => void saveWatch(families)} />}
     {coordsOpen && <AccountContactDialog data={data} navigate={navigate} refresh={refresh} onClose={() => setCoordsOpen(false)} />}

@@ -290,17 +290,36 @@ export async function createAccount(values: Partial<Account>): Promise<Account> 
   const resolvedCompany = record(resolved)
   if (!resolvedCompany.company_id) throw new Error('Compte non résolu.')
   const publicContext = { status: values.status ?? 'active', location: values.location ?? null, notes: values.notes ?? null }
+  const currentUserId = (await client.auth.getUser()).data.user?.id ?? null
   const companyUpdates: DbRow = {
     name: values.name,
     public_context: publicContext,
     is_tracked: true,
     tracked_at: new Date().toISOString(),
-    tracked_by: (await client.auth.getUser()).data.user?.id ?? null,
+    tracked_by: currentUserId,
   }
   if (values.domain?.trim()) companyUpdates.domain = values.domain.trim()
   if (values.industry?.trim()) companyUpdates.industry = values.industry.trim()
   const { data, error } = await client.from('companies').update(companyUpdates).eq('id', String(resolvedCompany.company_id)).select().single()
   if (error) throw error
+  if (currentUserId) {
+    const companyId = String(resolvedCompany.company_id)
+    const { error: ownerError } = await client.from('account_settings').upsert({
+      organization_id: organizationId,
+      company_id: companyId,
+      primary_owner_user_id: currentUserId,
+      updated_by: currentUserId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'organization_id,company_id' })
+    if (ownerError) throw ownerError
+    const { error: visionError } = await client.rpc('set_fiche_vision_visibility', {
+      p_organization_id: organizationId,
+      p_entity_type: 'company',
+      p_entity_id: companyId,
+      p_visibility: 'workspace',
+    })
+    if (visionError) throw visionError
+  }
   return mapAccount(data as DbRow)
 }
 
@@ -344,6 +363,24 @@ export async function createPerson(values: Partial<Person>): Promise<Person> {
   if (values.location?.trim()) contactUpdates.location = values.location.trim()
   const { data, error } = await client.from('contacts').update(contactUpdates).eq('id', String(resolvedContact.contact_id)).select(contactSelect).single()
   if (error) throw error
+  if (currentUserId) {
+    const contactId = String(resolvedContact.contact_id)
+    const { error: ownerError } = await client.from('person_settings').upsert({
+      organization_id: organizationId,
+      contact_id: contactId,
+      primary_owner_user_id: currentUserId,
+      updated_by: currentUserId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'organization_id,contact_id' })
+    if (ownerError) throw ownerError
+    const { error: visionError } = await client.rpc('set_fiche_vision_visibility', {
+      p_organization_id: organizationId,
+      p_entity_type: 'contact',
+      p_entity_id: contactId,
+      p_visibility: 'workspace',
+    })
+    if (visionError) throw visionError
+  }
   void triggerBehaviorSyncs(organizationId).catch(() => undefined)
   return mapPerson(data as DbRow)
 }

@@ -146,6 +146,24 @@ button.crm-mv-item{border:0;background:none;text-align:left;cursor:pointer;color
 .pa-pop .kp-cur{margin-left:auto;font-family:var(--mono);font-size:8px;font-weight:700;color:var(--sage);text-transform:uppercase;letter-spacing:.04em}
 
 /* ── Passation : sélection + barre d'action ── */
+.handover-overlay{position:fixed;inset:0;z-index:1300;display:grid;place-items:center;padding:24px;background:rgba(25,17,58,.42);backdrop-filter:blur(7px)}
+.handover-dialog{position:relative;width:min(560px,100%);padding:32px;border:1px solid #e7e0f5;border-radius:24px;background:#fff;box-shadow:0 28px 80px rgba(42,28,83,.24);color:#21164f}
+.handover-close{position:absolute;right:18px;top:14px;width:34px;height:34px;border:0;border-radius:50%;background:#f5f1fb;color:#65558f;font-size:24px;line-height:1;cursor:pointer}
+.handover-kicker{display:block;margin-bottom:7px;color:#7251cf;font:700 11px/1.2 monospace;letter-spacing:.14em;text-transform:uppercase}
+.handover-dialog h2{margin:0 40px 8px 0;font-size:25px;line-height:1.2}
+.handover-dialog>p{margin:0 0 24px;color:#71688c;font-size:14px;line-height:1.55}
+.handover-scopes{display:grid;gap:10px;margin:0 0 20px;padding:0;border:0}
+.handover-scopes legend,.handover-member-label{display:block;margin-bottom:9px;color:#5d537a;font-size:12px;font-weight:750}
+.handover-scopes label{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid #e5dff1;border-radius:14px;cursor:pointer;transition:.18s ease}
+.handover-scopes label.on{border-color:#7958d5;background:#f8f5ff;box-shadow:0 0 0 2px rgba(121,88,213,.08)}
+.handover-scopes input{margin-top:3px;accent-color:#7251cf}
+.handover-scopes span{display:grid;gap:3px}.handover-scopes strong{font-size:14px}.handover-scopes small{color:#817897;font-size:12px;line-height:1.4}
+.handover-dialog select{width:100%;height:46px;padding:0 13px;border:1px solid #ddd5ec;border-radius:12px;background:#fff;color:#2c2057;font:600 14px/1 inherit}
+.handover-note{margin-top:16px;padding:12px 14px;border-radius:12px;background:#f5f9f7;color:#4e7161;font-size:12px;line-height:1.5}
+.handover-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.handover-actions button{min-height:42px;padding:0 17px;border-radius:11px;font-weight:750;cursor:pointer}
+.handover-actions .secondary{border:1px solid #ddd5ec;background:#fff;color:#675d80}.handover-actions .primary{border:0;background:#7251cf;color:#fff}.handover-actions .primary:disabled{opacity:.45;cursor:not-allowed}
+.kp-opt:disabled{cursor:default;opacity:.52}
+@media(max-width:620px){.handover-overlay{padding:12px}.handover-dialog{padding:26px 20px;border-radius:19px}.handover-actions{flex-direction:column-reverse}.handover-actions button{width:100%}}
 .pa .psel{width:19px;height:19px;border-radius:6px;border:1.8px solid var(--violet-x);background:#fff;display:flex;align-items:center;justify-content:center;transition:background .14s,border-color .14s,transform .14s}
 .pa .psel svg{width:12px;height:12px;stroke:#fff;stroke-width:3;fill:none;opacity:0;transition:opacity .12s,transform .12s;transform:scale(.6)}
 /* Sélection (personne .dxpp-row ET compte .dxa-row partagent .dxp-row) */

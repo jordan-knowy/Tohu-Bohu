@@ -46,11 +46,19 @@ function optional(result: QueryResult, label: string, degraded: string[]): unkno
   throw new Error(result.error.message ?? `Impossible de charger ${label}.`)
 }
 
-export async function getAccountDetail(workspaceId: string, accountId: string): Promise<AccountDetailData> {
+export async function getAccountDetail(workspaceId: string, accountId: string, visionOwnerUserId?: string): Promise<AccountDetailData> {
   const client = getSupabase()
   const degradedReasons: string[] = []
   const currentUser = (await client.auth.getUser()).data.user
   const currentUserId = currentUser?.id ?? ''
+  const visionOwnerId = visionOwnerUserId || currentUserId
+  const { data: availableVisions, error: visionError } = await client.rpc('list_account_visions', {
+    p_organization_id: workspaceId,
+    p_company_id: accountId,
+  })
+  if (visionError) throw visionError
+  const activeVision = rows(availableVisions).find((vision) => String(vision.owner_user_id) === visionOwnerId)
+  if (!activeVision) throw new Error('ACCOUNT_FORBIDDEN')
   // Domaine interne de l'utilisateur (ex. optee.io) — sert à ne pas traiter sa
   // propre entreprise comme un compte à surveiller. (Retour testing P1.3.)
   const internalDomain = (currentUser?.email?.split('@')[1] ?? '').toLowerCase()
@@ -63,16 +71,16 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
     client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
     client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
     client.from('company_signals').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(30),
-    client.from('meetings').select('id,platform,starts_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('starts_at', { ascending: false }).limit(500),
+    client.from('meetings').select('id,platform,starts_at').eq('organization_id', workspaceId).eq('company_id', accountId).eq('owner_user_id', visionOwnerId).order('starts_at', { ascending: false }).limit(500),
     client.from('account_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
     client.from('account_user_preferences').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', currentUserId).maybeSingle(),
     client.from('account_watch_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
     client.from('account_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('computed_at', { ascending: false }).limit(36),
     client.from('account_contact_roles').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('active', true),
     client.from('account_recommendations').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('priority', { ascending: false }).limit(30),
-    client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('created_at', { ascending: false }).limit(30),
+    client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(30),
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
-    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId),
+    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId),
     client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('lock_state', 'active').maybeSingle(),
     client.from('account_strategic_readings').select('content, confidence, source_counts, model, generated_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -86,7 +94,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
 
   const account = object(accountResult.data)
   const context = object(account.public_context)
-  const settings = object(optional(settingsResult, 'Réglages Compte', degradedReasons))
+  const settings: Row = {
+    ...object(optional(settingsResult, 'Réglages Compte', degradedReasons)),
+    visibility: text(activeVision.visibility) ?? 'restricted',
+  }
   const preference = object(optional(preferenceResult, 'Favoris Compte', degradedReasons))
   const watch = object(optional(watchResult, 'Veille Compte', degradedReasons))
   const scoreRows = rows(optional(scoreResult, 'Snapshots du score Compte', degradedReasons))
@@ -96,7 +107,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string): 
   const factRows = rows(optional(factsResult, 'Firmographie sourcée', degradedReasons))
   const connectorRows = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
   const feedbackRows = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
-  const lockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const legacyLockRow = object(optional(lockResult, 'Verrou', degradedReasons))
+  const lockRow = String(legacyLockRow.locked_by ?? '') === visionOwnerId ? legacyLockRow : {}
   const strategicReading = mapStrategicReading(optional(strategicReadingResult, 'Lecture stratégique', degradedReasons) as Row | null)
   const roleByContact = new Map(roleRows.map((row) => [String(row.contact_id), row]))
   const feedbackBySignal = new Map(feedbackRows.map((row) => [String(row.signal_id), text(row.verdict)]))
@@ -466,6 +478,7 @@ export type AccountVision = {
   ownerUserId: string
   ownerName: string
   shareNote: string | null
+  relationshipState: 'active' | 'relationship_to_build'
 }
 
 /** Visions disponibles pour le compte actuellement ouvert : la mienne si elle
@@ -483,6 +496,7 @@ export async function listAccountVisions(workspaceId: string, accountId: string)
     ownerUserId: String(row.owner_user_id),
     ownerName: String(row.owner_name ?? 'Membre'),
     shareNote: row.share_note ? String(row.share_note) : null,
+    relationshipState: row.relationship_state === 'relationship_to_build' ? 'relationship_to_build' : 'active',
   }))
 }
 
@@ -545,6 +559,18 @@ export async function setAccountLock(data: AccountDetailData, userId: string, lo
 /** Affectation de l'owner du compte — même principe que setPersonOwner côté
  *  fiche personne (person_settings), persisté dans account_settings. */
 export async function setAccountOwner(data: AccountDetailData, userId: string, ownerUserId: string | null): Promise<void> {
+  if (ownerUserId && ownerUserId !== userId) {
+    const { error } = await getSupabase().rpc('handover_fiches', {
+      p_organization_id: data.account.workspaceId,
+      p_entity_type: 'company',
+      p_entity_ids: [data.account.id],
+      p_to_user_id: ownerUserId,
+      p_scope: 'entity_only',
+      p_note: null,
+    })
+    if (error) throw error
+    return
+  }
   const { error } = await getSupabase().from('account_settings').upsert({
     organization_id: data.account.workspaceId,
     company_id: data.account.id,
@@ -556,42 +582,44 @@ export async function setAccountOwner(data: AccountDetailData, userId: string, o
 }
 
 export async function setAccountVisibility(data: AccountDetailData, userId: string, visibility: 'workspace' | 'restricted'): Promise<void> {
-  const { error } = await getSupabase().from('account_settings').upsert({
-    organization_id: data.account.workspaceId,
-    company_id: data.account.id,
-    visibility,
-    updated_by: userId,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'organization_id,company_id' })
+  const { error } = await getSupabase().rpc('set_fiche_vision_visibility', {
+    p_organization_id: data.account.workspaceId,
+    p_entity_type: 'company',
+    p_entity_id: data.account.id,
+    p_visibility: visibility,
+  })
   if (error) throw error
 }
 
 export async function listAccountAccessGrants(workspaceId: string, accountId: string): Promise<string[]> {
-  const { data, error } = await getSupabase().from('access_grant').select('grantee_user_id')
-    .eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('status', 'active')
+  const { data, error } = await getSupabase().rpc('list_fiche_vision_grants', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'company',
+    p_entity_id: accountId,
+  })
   if (error) throw error
-  return (data ?? []).map((row) => String(row.grantee_user_id))
+  return (data ?? []).map((row: Record<string, unknown>) => String(row.grantee_user_id))
 }
 
 export async function grantAccountAccess(data: AccountDetailData, userId: string, granteeUserId: string): Promise<void> {
-  const { error } = await getSupabase().from('access_grant').insert({
-    organization_id: data.account.workspaceId,
-    subject_type: 'company',
-    subject_id: data.account.id,
-    grantee_user_id: granteeUserId,
-    granted_by: userId,
+  const { error } = await getSupabase().rpc('set_fiche_vision_grant', {
+    p_organization_id: data.account.workspaceId,
+    p_entity_type: 'company',
+    p_entity_id: data.account.id,
+    p_grantee_user_id: granteeUserId,
+    p_allowed: true,
   })
   if (error) throw error
 }
 
 export async function revokeAccountAccess(data: AccountDetailData, granteeUserId: string): Promise<void> {
-  const { error } = await getSupabase().from('access_grant')
-    .update({ status: 'revoked' })
-    .eq('organization_id', data.account.workspaceId)
-    .eq('subject_type', 'company')
-    .eq('subject_id', data.account.id)
-    .eq('grantee_user_id', granteeUserId)
-    .eq('status', 'active')
+  const { error } = await getSupabase().rpc('set_fiche_vision_grant', {
+    p_organization_id: data.account.workspaceId,
+    p_entity_type: 'company',
+    p_entity_id: data.account.id,
+    p_grantee_user_id: granteeUserId,
+    p_allowed: false,
+  })
   if (error) throw error
 }
 

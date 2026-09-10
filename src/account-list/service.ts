@@ -60,20 +60,19 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
 
   const [
     companiesResult, contactsResult, historyResult, settingsResult, prefsResult,
-    watchResult, meetingsResult, messagesResult, signalsResult, membershipsResult, profilesResult,
+    watchResult, meetingsResult, messagesResult, signalsResult, teamResult,
     accountScoresResult,
   ] = await Promise.all([
     client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
     client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).order('id', { ascending: true }).range(from, to)),
+    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
     client.from('account_settings').select('company_id,relationship_status,relationship_started_at,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('account_user_preferences').select('company_id,favorite').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('account_watch_settings').select('company_id,enabled').eq('organization_id', workspaceId),
-    client.from('meetings').select('company_id,platform,starts_at').eq('organization_id', workspaceId).limit(1000),
-    client.from('communication_messages').select('contact_id').eq('organization_id', workspaceId).limit(3000),
+    client.from('meetings').select('company_id,platform,starts_at').eq('organization_id', workspaceId).eq('owner_user_id', userId).limit(1000),
+    client.from('communication_messages').select('contact_id').eq('organization_id', workspaceId).eq('metadata->>user_id', userId).limit(3000),
     client.from('company_signals').select('id,company_id,family,title,summary,source,observed_at,companies(name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
-    client.from('memberships').select('user_id').eq('organization_id', workspaceId),
-    client.from('profiles').select('id,full_name,avatar_url'),
+    client.rpc('get_team_vision_members', { p_organization_id: workspaceId }),
     client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', workspaceId).order('computed_at', { ascending: false }).limit(2000),
   ])
 
@@ -89,8 +88,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const meetings = rows(optional(meetingsResult, 'Réunions', degradedReasons))
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const signals = rows(optional(signalsResult, 'Signaux comptes', degradedReasons))
-  const memberships = rows(optional(membershipsResult, 'Équipe', degradedReasons))
-  const profiles = rows(optional(profilesResult, 'Profils', degradedReasons))
+  const profiles = rows(optional(teamResult, 'Équipe', degradedReasons))
   const accountScoreRows = rows(optional(accountScoresResult, 'Snapshots du score Compte', degradedReasons))
   // Trié par computed_at desc : le premier snapshot rencontré par compte est le plus récent.
   const accountScores = new Map<string, number>()
@@ -102,9 +100,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   }
 
   const profileNames = new Map(profiles.map((profile) => [String(profile.id), text(profile.full_name) ?? 'Membre Tohu']))
-  const memberIds = new Set(memberships.map((membership) => String(membership.user_id)))
   const team: TeamMember[] = profiles
-    .filter((profile) => memberIds.has(String(profile.id)))
     .map((profile) => ({ id: String(profile.id), name: text(profile.full_name) ?? 'Membre Tohu', avatarUrl: text(profile.avatar_url) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -157,9 +153,15 @@ export async function setListRelationType(workspaceId: string, companyId: string
 }
 
 export async function setListOwner(workspaceId: string, companyId: string, userId: string, ownerId: string): Promise<void> {
-  const { error } = await getSupabase().from('account_settings').upsert({
-    organization_id: workspaceId, company_id: companyId, primary_owner_user_id: ownerId, updated_by: userId, updated_at: new Date().toISOString(),
-  }, { onConflict: 'organization_id,company_id' })
+  if (ownerId === userId) return
+  const { error } = await getSupabase().rpc('handover_fiches', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'company',
+    p_entity_ids: [companyId],
+    p_to_user_id: ownerId,
+    p_scope: 'entity_only',
+    p_note: null,
+  })
   if (error) throw error
 }
 
@@ -176,30 +178,29 @@ export async function archiveAccounts(workspaceId: string, userId: string, compa
   void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
-/** Partage groupé (additif) : chaque compte sélectionné, et tous ses contacts,
- *  reçoivent une vue en plus pour le membre choisi. N'affecte jamais l'owner
- *  ni la relation de l'expéditeur — même principe que shareAccount côté fiche
- *  détail, juste appliqué à une sélection. */
-export async function shareAccounts(workspaceId: string, accounts: AccountListRow[], toUserId: string): Promise<{ accounts: number; contacts: number }> {
-  const client = getSupabase()
-  let contacts = 0
-  for (const account of accounts) {
-    const { error: companyError } = await client.rpc('share_fiche', {
-      p_organization_id: workspaceId, p_entity_type: 'company', p_entity_id: account.id, p_to_user_id: toUserId, p_note: null,
-    })
-    if (companyError) throw companyError
-    const { data: linked, error: contactsError } = await client.from('contacts')
-      .select('id').eq('organization_id', workspaceId).eq('company_id', account.id).is('merged_into_contact_id', null)
-    if (contactsError) throw contactsError
-    for (const contact of rows(linked)) {
-      const { error } = await client.rpc('share_fiche', {
-        p_organization_id: workspaceId, p_entity_type: 'contact', p_entity_id: String(contact.id), p_to_user_id: toUserId, p_note: null,
-      })
-      if (error) throw error
-      contacts++
-    }
+export type AccountHandoverScope = 'entity_only' | 'account_and_people'
+export type AccountHandoverResult = { accounts: number; people: number; skippedPeople: number }
+
+/** Passation atomique d'un ou plusieurs comptes. Le périmètre est explicite :
+ *  comptes uniquement, ou comptes et personnes associées appartenant à
+ *  l'expéditeur. Les visions personnelles ne sont jamais fusionnées. */
+export async function handoverAccounts(workspaceId: string, accounts: AccountListRow[], toUserId: string, scope: AccountHandoverScope): Promise<AccountHandoverResult> {
+  if (!accounts.length) return { accounts: 0, people: 0, skippedPeople: 0 }
+  const { data, error } = await getSupabase().rpc('handover_fiches', {
+    p_organization_id: workspaceId,
+    p_entity_type: 'company',
+    p_entity_ids: accounts.map((account) => account.id),
+    p_to_user_id: toUserId,
+    p_scope: scope,
+    p_note: null,
+  })
+  if (error) throw error
+  const result = object(data)
+  return {
+    accounts: Number(result.entities ?? accounts.length),
+    people: Number(result.people ?? 0),
+    skippedPeople: Number(result.skipped_people ?? 0),
   }
-  return { accounts: accounts.length, contacts }
 }
 
 export type AccountCandidate = {
@@ -258,6 +259,8 @@ async function topUntrackedContacts(workspaceId: string, companyId: string): Pro
 
 export async function trackCandidates(workspaceId: string, selection: Array<{ companyId: string | null; name: string; domain: string | null }>): Promise<void> {
   const client = getSupabase()
+  const userId = (await client.auth.getUser()).data.user?.id
+  if (!userId) throw new Error('Aucune session active.')
   const trackedCompanyIds: string[] = []
   for (const item of selection) {
     const { data: companyId, error } = await client.rpc('add_tracked_company', {
@@ -267,7 +270,25 @@ export async function trackCandidates(workspaceId: string, selection: Array<{ co
       p_domain: item.domain,
     })
     if (error) throw error
-    if (companyId) trackedCompanyIds.push(String(companyId))
+    if (companyId) {
+      const trackedCompanyId = String(companyId)
+      trackedCompanyIds.push(trackedCompanyId)
+      const { error: ownerError } = await client.from('account_settings').upsert({
+        organization_id: workspaceId,
+        company_id: trackedCompanyId,
+        primary_owner_user_id: userId,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'organization_id,company_id' })
+      if (ownerError) throw ownerError
+      const { error: visionError } = await client.rpc('set_fiche_vision_visibility', {
+        p_organization_id: workspaceId,
+        p_entity_type: 'company',
+        p_entity_id: trackedCompanyId,
+        p_visibility: 'workspace',
+      })
+      if (visionError) throw visionError
+    }
   }
   void client.functions.invoke('monitor-company-news', {
     body: { organizationId: workspaceId, limit: Math.min(selection.length, 8) },
