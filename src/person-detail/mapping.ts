@@ -49,6 +49,7 @@ export const bool = (value: unknown): boolean => value === true
 const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value)
 const HOST_LABELS: Record<string, string> = {
   'linkedin.com': 'LinkedIn',
+  'app.slack.com': 'Slack',
   'pappers.fr': 'Pappers',
   'societe.com': 'Societe.com',
   'infogreffe.fr': 'Infogreffe',
@@ -59,7 +60,7 @@ const HOST_LABELS: Record<string, string> = {
 function hostLabel(url: string): string | null {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '')
-    return HOST_LABELS[host] ?? host
+    return host.endsWith('.slack.com') ? 'Slack' : HOST_LABELS[host] ?? host
   } catch {
     return null
   }
@@ -338,6 +339,7 @@ export function sourceTypeLabel(sourceType: string | null): string {
   if (!sourceType) return 'Donnée Tohu'
   if (/gmail|google/i.test(sourceType)) return 'Gmail'
   if (/outlook|microsoft/i.test(sourceType)) return 'Outlook'
+  if (/slack/i.test(sourceType)) return 'Slack'
   if (/linkedin/i.test(sourceType)) return 'LinkedIn'
   if (/transcript|meeting|read/i.test(sourceType)) return 'Transcription'
   if (/manual|note/i.test(sourceType)) return 'Note interne'
@@ -555,7 +557,7 @@ export function buildKeyMoments(momentRows: Row[]): PersonKeyMoment[] {
 }
 
 export function buildSources(connectorRows: Row[], counts: Map<string, number>): PersonSourceStatus[] {
-  const labels: Record<string, string> = { google: 'Gmail', microsoft: 'Outlook', linkedin: 'LinkedIn' }
+  const labels: Record<string, string> = { google: 'Gmail', microsoft: 'Outlook', linkedin: 'LinkedIn', slack: 'Slack', notion: 'Notion' }
   return connectorRows.map((row) => {
     const provider = text(row.provider) ?? 'source'
     return {
@@ -579,7 +581,7 @@ export function buildHistory(meetingRows: Row[], messageRows: Row[], signals: Pe
   for (const message of messageRows) {
     const date = text(message.sent_at)
     if (!date) continue
-    events.push({ id: `message-${String(message.id)}`, type: 'email', title: text(message.subject) ?? (message.direction === 'outbound' ? 'Email envoyé' : 'Email reçu'), description: message.direction === 'outbound' ? 'Email envoyé' : 'Email reçu', occurredAt: date, sourceLabel: sourceTypeLabel(text(message.provider)) })
+    events.push({ id: `message-${String(message.id)}`, type: 'email', title: text(message.subject) ?? (message.direction === 'outbound' ? 'Email envoyé' : 'Email reçu'), description: message.provider === 'slack' ? 'Message Slack' : message.direction === 'outbound' ? 'Email envoyé' : 'Email reçu', occurredAt: date, sourceLabel: sourceTypeLabel(text(message.provider)) })
   }
   for (const signal of signals) {
     if (!signal.provenance.observedAt) continue

@@ -1,0 +1,14 @@
+{
+  "display_information": {
+    "name": "Tohu",
+    "description": "Synchronisation des échanges Slack avec votre mémoire relationnelle Tohu",
+    "background_color": "#4a154b"
+  },
+  "oauth_config": {
+    "redirect_urls": ["https://bgmtzwfafcgjklgygvtx.supabase.co/functions/v1/connect-slack"],
+    "scopes": {
+      "user": ["users:read", "users:read.email", "channels:read", "channels:history", "groups:read", "groups:history", "im:read", "im:history", "mpim:read", "mpim:history"],
+      "user_optional": ["groups:read", "groups:history", "im:read", "im:history", "mpim:read", "mpim:history"]
+    }
+  }
+}

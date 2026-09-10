@@ -76,3 +76,15 @@ verify_jwt = false
 
 [functions.intercom-user-token]
 verify_jwt = true
+
+[functions.connect-slack]
+verify_jwt = false
+
+[functions.sync-slack]
+verify_jwt = false
+
+[functions.connect-notion]
+verify_jwt = false
+
+[functions.sync-notion]
+verify_jwt = false

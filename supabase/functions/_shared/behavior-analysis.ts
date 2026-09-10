@@ -54,7 +54,7 @@ const NULLABLE_NUMBER_SCHEMA = { type: ['number', 'null'] }
 export const NULLABLE_STRING_SCHEMA = { type: ['string', 'null'] }
 const SOURCE_TYPES_SCHEMA = {
   type: 'array',
-  items: { type: 'string', enum: ['email', 'meeting_transcript'] },
+  items: { type: 'string', enum: ['email', 'meeting_transcript', 'slack'] },
 }
 
 // Catégories inférables du contenu d'échanges B2B — distinctes des catégories
@@ -304,6 +304,7 @@ export async function analyze(
   previousProfile: Record<string, unknown> = {},
   interactionCount = excerpts.length,
   usageLog?: UsageLogContext,
+  signal?: AbortSignal,
 ): Promise<Analysis> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
@@ -316,7 +317,7 @@ export async function analyze(
   const compatiblePreviousProfile = Number(previousProfile.schema_version) === 3 ? previousProfile : {}
   const previous = Object.keys(compatiblePreviousProfile).length ? JSON.stringify(compatiblePreviousProfile).slice(0, 8000) : '{}'
   const prompt = `Tu construis le profil comportemental évolutif de ${name}, ${role === 'responsable' ? 'responsable de compte connecté' : 'personne suivie'}.
-Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les emails ou prononcé dans les passages de réunion explicitement attribués. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
+Tu disposes de ${interactionCount} interactions attribuées à cette personne. Analyse uniquement ce qu'elle a réellement rédigé dans les emails ou messages Slack, ou prononcé dans les passages de réunion explicitement attribués. Le profil précédent sert de mémoire statistique : conserve une tendance si les nouvelles preuves la confirment, nuance-la si elles la contredisent, et ne la remplace jamais sans preuves convergentes.
 
 Règles impératives :
 - aucune pathologie, donnée sensible ou personnalité essentialisée ;
@@ -328,7 +329,7 @@ Règles impératives :
 - pour interpersonal/posture (inchangés) : score et confidence entre 0 et 100, evolution vaut "rising"/"stable"/"declining"/"mixed"/null ; assertiveness conciliant(0)→assertif(100), warmth distant(0)→chaleureux(100) ;
 - pour chaque axe primaire (primary_axes) : "raw_score" est la position 0-100 sur l'axe du pôle gauche (0) vers le pôle droit (100) — rythme Posé(0)→Rapide(100), argumentation Récit(0)→Chiffré(100), engagement Implicite(0)→Explicite(100), registre Formel(0)→Direct(100), tonalité Sobre(0)→Chaleureux(100), espace_parole Écoute(0)→Occupe(100) ; "margin_pts" est TON incertitude estimée en points (peu de preuves → marge large, ex. 15-20 ; preuves nombreuses et convergentes → marge étroite, ex. 5-8) ; "trend_pts" est le delta signé de "raw_score" par rapport au profil précédent sur la période récente (null si aucun profil précédent ou axe alors insuffisant), "trend_label" vaut "rising"/"stable"/"declining" en cohérence avec le signe (stable si |trend_pts| <= 3) ; "evidence" contient 2 à 3 items COURTS mélangeant si possible un verbatim paraphrasé daté (jamais mot pour mot), une observation quantifiée (durée, fréquence), et un ratio/compte ;
 - pour chaque axe secondaire (secondary_axes) : "score" suit la même échelle 0-100 pôle gauche→droit (orientation Tâche(0)→Relation(100), certainty Prudent(0)→Affirmatif(100), novelty Éprouvé(0)→Exploratoire(100), initiative Suit(0)→Mène(100)) ; pas de champ "evidence" ici, seulement "observation" ;
-- evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email" et "meeting_transcript".
+- evidence_count compte les preuves distinctes ; source_types contient uniquement les valeurs réellement présentes parmi "email", "meeting_transcript" et "slack".
 - "trust" (Confiance, hors cognitive_profile_data) mesure la FIABILITÉ relationnelle, jamais le volume d'échanges : engagements tenus ou non tenus, réponses effectives aux demandes importantes, continuité, respect des échéances annoncées, stabilité du comportement, ruptures inexpliquées. "score" 0-100 où 100 = très fiable, 0 = peu fiable ; "status":"insufficient" si aucune preuve concrète d'engagement tenu/non tenu n'est disponible (ne jamais déduire la confiance du seul volume d'emails) ; "evidence" cite 1 à 3 faits datés précis (ex. "a confirmé le 12/06 un délai non tenu au 20/06" ou "répond systématiquement sous 24h aux demandes explicites").
 - "satisfaction" (hors cognitive_profile_data) mesure la QUALITÉ perçue des interactions, distincte de l'activité : retours positifs, remerciements, validations explicites, résolution d'objections d'un côté ; frustrations répétées, désaccords, demandes non satisfaites, objections récurrentes de l'autre. "score" 0-100 où 100 = très satisfaisant, 0 = insatisfaisant ; "status":"insufficient" si aucun signal de tonalité positive/négative explicite n'apparaît (jamais déduit du seul volume d'échanges — une personne très active peut être mécontente) ; "evidence" cite 1 à 3 faits datés précis.
 - "account_relation" (hors cognitive_profile_data) identifie la NATURE de la relation commerciale avec l'organisation externe de cette personne, à partir d'indices CONCRETS dans les échanges — jamais du volume ni d'une supposition générique. "category" vaut exactement l'une de "Prospect" (devis/offre envoyée par nous, pas encore de contrat signé, relance commerciale), "Client" (contrat/facture émise par nous, prestation en cours ou livrée), "Fournisseur / Prestataire" (devis/facture REÇUE, nous sommes l'acheteur), "Partenaire" (collaboration mutuelle, co-organisation, accord réciproque sans facturation dans un sens unique), "Investisseur" (financement, cap table, reporting actionnarial) — ou null si cette personne est le "responsable de compte connecté" (auto-profil interne, pas une relation à un compte externe unique) ou si aucun indice concret ne permet de trancher. "status":"insufficient" tant que "category" est null ; "evidence" cite 1 à 2 faits datés précis (ex. "devis envoyé le 03/04 pour la prestation X", "facture n°123 reçue le 12/05").
@@ -372,6 +373,7 @@ Profil précédent : ${previous}
 Nouveaux extraits :\n${corpus}`
   const requestAnalysis = async (retry: boolean): Promise<Analysis> => {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      signal,
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Email Behavior Analysis' },
       body: JSON.stringify({

@@ -40,6 +40,8 @@ export type Person = {
 }
 
 export type ConnectorRow = {
+  account_name?: string | null
+  share_public?: boolean
   provider: string
   status: 'not_connected' | 'connected' | 'expired' | 'error' | 'revoked' | 'needs_reauth' | 'disconnected'
   connected_at: string | null
@@ -392,7 +394,10 @@ export async function saveSignalFeedback(signalId: string, userId: string, verdi
 }
 
 export async function listConnectors(): Promise<ConnectorRow[]> {
-  const { data, error } = await getSupabase().from('connectors').select('*').order('provider')
+  const organizationId = await getOrganizationId()
+  const { data: { user } } = await getSupabase().auth.getUser()
+  if (!user) throw new Error('Session invalide')
+  const { data, error } = await getSupabase().from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', user.id).order('provider')
   if (error) throw error
   return (data ?? []).map((row) => ({
     provider: row.provider,
@@ -400,6 +405,8 @@ export async function listConnectors(): Promise<ConnectorRow[]> {
     connected_at: row.created_at,
     last_synced_at: row.last_synced_at,
     last_error: nullableString(record(row.metadata).last_error),
+    account_name: nullableString(record(row.metadata).team_name) ?? nullableString(record(row.metadata).workspace_name),
+    share_public: record(row.metadata).share_public === true,
   }))
 }
 
