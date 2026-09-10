@@ -177,10 +177,13 @@ const contactSelect = '*,companies(name),relationship_snapshots(engagement_score
 
 type WorkspaceMembership = { organization_id?: unknown; role?: unknown; created_at?: unknown }
 
-/** Sélectionne le workspace commun le plus pertinent : choix mémorisé d'abord,
- * puis organisation réunissant le plus de membres, puis ownership/ancienneté.
- * Ainsi un invité ne reste pas bloqué dans le workspace personnel créé à son
- * inscription alors que toute son équipe travaille dans le compte partagé. */
+/** Sélectionne le workspace actif par défaut : choix mémorisé d'abord, sinon
+ * le workspace « foyer » de l'utilisateur (celui dont il est owner — créé à
+ * son inscription, jamais un autre). Rejoindre l'équipe d'un client ou d'un
+ * partenaire ne doit jamais faire basculer silencieusement le contexte de
+ * travail vers l'organisation de ce tiers, même si elle compte plus de
+ * membres : chacun garde ses comptes par défaut, et ne change d'organisation
+ * que par un choix explicite (voir le sélecteur de workspace). */
 export function chooseActiveOrganization(
   ownMemberships: WorkspaceMembership[],
   visibleMemberships: WorkspaceMembership[],
@@ -196,6 +199,11 @@ export function chooseActiveOrganization(
   if (!own.length) return null
   if (storedOrganizationId && own.some((membership) => membership.organizationId === storedOrganizationId)) return storedOrganizationId
 
+  const owned = own.filter((membership) => membership.role === 'owner')
+  if (owned.length) return [...owned].sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0]!.organizationId
+
+  // Filet de sécurité : aucun workspace propriétaire (cas anormal). On retombe
+  // sur l'organisation la mieux peuplée parmi les siennes, à défaut de mieux.
   const counts = new Map<string, number>()
   for (const membership of visibleMemberships) {
     const organizationId = nullableString(membership.organization_id)
@@ -204,14 +212,13 @@ export function chooseActiveOrganization(
   return [...own].sort((left, right) => {
     const countDelta = (counts.get(right.organizationId) ?? 0) - (counts.get(left.organizationId) ?? 0)
     if (countDelta) return countDelta
-    const roleDelta = Number(right.role === 'owner') - Number(left.role === 'owner')
-    if (roleDelta) return roleDelta
     return left.createdAt.localeCompare(right.createdAt)
   })[0]?.organizationId ?? null
 }
 
-/** Tous les écrans partagent le même workspace actif. Par défaut, on choisit le
- * compte qui contient le plus de membres et on mémorise ce choix. */
+/** Tous les écrans partagent le même workspace actif. Par défaut, chacun reste
+ * dans son organisation propriétaire (voir chooseActiveOrganization) ; il ne
+ * la quitte que par un choix explicite via setActiveOrganization. */
 export async function getOrganizationId(): Promise<string> {
   const { data: userData, error: userError } = await getSupabase().auth.getUser()
   if (userError) throw userError
@@ -228,6 +235,35 @@ export async function getOrganizationId(): Promise<string> {
   if (!organizationId) throw new Error('Aucune organisation n’est associée à ce compte.')
   if (typeof localStorage !== 'undefined') localStorage.setItem('tohu-active-workspace', organizationId)
   return organizationId
+}
+
+export type OrganizationMembership = { organizationId: string; name: string; role: string }
+
+/** Toutes les organisations dont l'utilisateur est membre, pour le sélecteur
+ * de workspace — permet de rejoindre explicitement l'organisation d'un
+ * client/partenaire sans que ce choix ne devienne le défaut de tout le monde. */
+export async function listMyOrganizations(): Promise<OrganizationMembership[]> {
+  const { data: userData, error: userError } = await getSupabase().auth.getUser()
+  if (userError) throw userError
+  if (!userData.user) throw new Error('Aucune session active.')
+  const { data, error } = await getSupabase()
+    .from('memberships')
+    .select('organization_id,role,organizations(name)')
+    .eq('user_id', userData.user.id)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    organizationId: String(row.organization_id),
+    name: nullableString(firstRecord(row.organizations).name) ?? 'Organisation',
+    role: String(row.role ?? 'member'),
+  }))
+}
+
+/** Bascule explicitement le workspace actif et recharge l'app pour que tous
+ * les écrans (déjà bootés avec l'ancien workspaceId) repartent à jour. */
+export function setActiveOrganization(organizationId: string): void {
+  if (typeof localStorage !== 'undefined') localStorage.setItem('tohu-active-workspace', organizationId)
+  if (typeof window !== 'undefined') window.location.assign('/app/home')
 }
 
 export async function listAccounts(search = '', status = '', sort = 'updated_at.desc'): Promise<Account[]> {

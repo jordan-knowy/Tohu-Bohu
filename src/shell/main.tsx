@@ -34,6 +34,7 @@ import PersonListPage from '../person-list/PersonListPage'
 import PersonDetailPage from '../person-detail/PersonDetailPage'
 import GlobalSearch from './GlobalSearch'
 import NotificationBell from './NotificationBell'
+import WorkspaceSwitcher from './WorkspaceSwitcher'
 import { useTopbarHeader } from './topbarHeaderSignal'
 import AskPage from './pages/AskPage'
 import BohuBar from './BohuBar'
@@ -176,6 +177,7 @@ function AppShell({ context }: { context: AppContext }) {
             <h1 id="page-title">{topbarOverride.title}</h1>
           </div>
           : <div><h1 id="page-title">{page.title}</h1><p id="page-subtitle">{page.subtitle}</p></div>}
+        <WorkspaceSwitcher workspaceId={context.workspaceId} />
         <GlobalSearch />
         <NotificationBell userId={context.session.user.id} />
       </header>
