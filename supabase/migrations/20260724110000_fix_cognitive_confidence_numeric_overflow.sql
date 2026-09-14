@@ -1,1 +1,4 @@
-claude n
+-- Migration conservée pour maintenir l'ordre historique.
+-- La correction envisagée ici n'était finalement pas nécessaire : les
+-- colonnes de confiance concernées utilisent déjà des types sans précision
+-- restrictive et leurs contraintes acceptent les valeurs de 0 à 100.

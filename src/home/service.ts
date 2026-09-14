@@ -11,6 +11,7 @@
  */
 
 import { getSupabase } from '../lib/supabase'
+import { hasCalendarScope } from '../services/connector-calendar'
 import {
   aggregateGlobalScore,
   atRiskAccounts,
@@ -213,6 +214,27 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
   })
 }
 
+/**
+ * Relations actives (bloc 6) : nombre de PERSONNES (pas de comptes) ayant eu
+ * au moins une interaction humaine réelle — email ou réunion, cf.
+ * `last_contact_at` calculé par score-batch à partir de
+ * communication_messages/meetings, jamais une formule parallèle, jamais un
+ * repli sur last_monitored_at — au cours des 30 derniers jours. Interne ou
+ * externe indifféremment : un collègue avec une fiche Personne suivie compte
+ * autant qu'un contact externe dès lors que l'échange est réel (le filtre
+ * Tier 1/internalCompanyIds ne s'applique qu'à la veille externe, pas à cette
+ * métrique relationnelle). `contactSnapshots()` trie explicitement par
+ * snapshot_date avant de renvoyer le tableau : `[0]` ne dépend jamais de
+ * l'ordre implicite de retour de Postgres.
+ */
+export function countActiveRelationships(contacts: DbRow[], now: Date): number {
+  return contacts.filter((contact) => {
+    const lastContactAt = contactSnapshots(contact)[0]?.last_contact_at ?? null
+    const silence = daysSince(lastContactAt, now)
+    return silence !== null && silence <= 30
+  }).length
+}
+
 /** Vue d'équipe : agrège uniquement des membres, contacts et snapshots persistés. */
 export function buildTeamMembers(memberships: DbRow[], profiles: DbRow[], contacts: DbRow[], now: Date): HomeTeamMember[] {
   const profileById = new Map(profiles.map((profile) => [String(profile.id), profile]))
@@ -276,6 +298,7 @@ function mapCompanySignal(row: DbRow, feedback: Map<string, 'confirmed' | 'dismi
     confidence: num(row.confidence) !== null ? Math.round(num(row.confidence)! * 100) : null,
     inferenceLevel: str(row.inference_level),
     userVerdict: feedback.get(String(row.id)) ?? null,
+    sourceUrl: str(row.source_url),
   }
 }
 
@@ -297,6 +320,7 @@ function mapBehavioralSignal(row: DbRow, feedback: Map<string, 'confirmed' | 'di
     confidence: num(row.confidence),
     inferenceLevel: str(row.inference_level),
     userVerdict: feedback.get(String(row.id)) ?? null,
+    sourceUrl: str(row.source_ref),
   }
 }
 
@@ -321,7 +345,7 @@ export function buildSources(connectors: DbRow[]): HomeSourceStatus[] {
     const metadata = record(row.metadata)
     const scopes = Array.isArray(row.scopes) ? row.scopes.map(String) : []
     const base = status(row.status)
-    const hasCalendar = scopes.some((scope) => /calendar/i.test(scope))
+    const hasCalendar = hasCalendarScope(scopes)
     sources.push({
       provider: `${provider}:mail`,
       label: `Mail · ${PROVIDER_LABELS[provider]}`,
@@ -488,14 +512,27 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     if (verdict === 'confirmed' || verdict === 'dismissed') feedback.set(String(row.signal_id), verdict)
   }
   const companyNames = new Map(companies.map((company) => [String(company.id), String(company.name ?? 'Compte')]))
+  // « Veille » = uniquement des faits externes (ce qui se passe autour du
+  // compte/de la personne), jamais du style de communication interne. Sur les
+  // 8 signal_type de behavioral_signals, seuls mobility (changement de poste
+  // détecté) et recent_activity (activité publique/LinkedIn) via monitor-contacts
+  // sont externes — les 6 traits de style (rythme, argumentation, engagement,
+  // registre, tonalite, espace_parole) issus de l'analyse comportementale des
+  // échanges appartiennent au coaching relationnel, pas à la veille.
+  const EXTERNAL_BEHAVIORAL_TYPES = new Set(['mobility', 'recent_activity'])
   const signals: HomeSignal[] = [
     ...rows(companySignalsData)
       .filter((row) => { const id = str(row.company_id); return !(id !== null && (internalCompanyIds.has(id) || veilleOffCompanyIds.has(id))) })
       .map((row) => mapCompanySignal(row, feedback)),
     ...rows(behavioralSignalsData)
+      .filter((row) => EXTERNAL_BEHAVIORAL_TYPES.has(String(row.signal_type)))
       .filter((row) => { const id = str(record(row.contacts).company_id); return !(id !== null && internalCompanyIds.has(id)) })
       .map((row) => mapBehavioralSignal(row, feedback, companyNames)),
   ].sort((a, b) => b.observedAt.localeCompare(a.observedAt)).slice(0, 12)
+  // « presence » = faits généraux d'un compte (souvent sans date propre) — jamais
+  // une action prioritaire, même à confiance faible (cf. highlightsMarkup côté
+  // rendu). Reste visible tel quel dans le flux complet « Signaux · veille ».
+  const actionableSignals = signals.filter((signal) => signal.signalType !== 'presence')
 
   // Éléments en suspens issus des fiches (retour testing P2.4) : engagements pris
   // et non encore résolus, remontés sur les personnes du portefeuille. On exclut
@@ -503,9 +540,12 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const trackedContactIds = new Set(contacts.map((contact) => String(contact.id)))
   const commitmentsData = await safeQuery<DbRow[]>(
     client.from('person_memory_entries')
-      .select('id,contact_id,content,observed_at,source_label,confidence,contacts(id,full_name,company_id)')
+      .select('id,contact_id,content,observed_at,source_label,confidence,source_excerpt,source_occurred_at,source_direction,contacts(id,full_name,company_id)')
       .eq('organization_id', organizationId)
-      .in('entry_type', ['commitment', 'decision', 'engagement'])
+      // La contrainte CHECK de person_memory_entries.entry_type (migration
+      // 20260716193854) n'autorise pas 'engagement' — seuls commitment/decision
+      // peuvent matcher ici malgré le nom de l'action dérivée (« engagement »).
+      .in('entry_type', ['commitment', 'decision'])
       .is('resolved_at', null)
       .order('observed_at', { ascending: false, nullsFirst: false })
       .limit(80),
@@ -528,6 +568,9 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
       observedAt: str(row.observed_at),
       confidence: num(row.confidence),
       sourceLabel: str(row.source_label),
+      sourceExcerpt: str(row.source_excerpt),
+      sourceOccurredAt: str(row.source_occurred_at),
+      sourceDirection: row.source_direction === 'inbound' || row.source_direction === 'outbound' ? row.source_direction : null,
     }]
   })
 
@@ -535,7 +578,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const actionStates = new Map<string, DbRow>()
   for (const row of rows(actionStatesData)) actionStates.set(String(row.action_id), row)
   const allActions = [
-    ...deriveActions(scoredAccounts, signals, now),
+    ...deriveActions(scoredAccounts, actionableSignals, now),
     ...deriveEngagementActions(pendingCommitments, now),
   ].sort((a, b) => b.priority - a.priority || b.observedAt.localeCompare(a.observedAt))
   const priorityActions = allActions.filter((action) => {
@@ -627,10 +670,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
       accountsDelta30d: companies.filter((company) => createdWithin30d(company.created_at)).length || null,
       people: contacts.length,
       peopleDelta30d: contacts.filter((contact) => createdWithin30d(contact.created_at)).length || null,
-      activeRelationships: scoredAccounts.filter((account) => {
-        const silence = daysSince(account.lastInteractionAt, now)
-        return account.tracked && silence !== null && silence <= 30
-      }).length,
+      activeRelationships: countActiveRelationships(scorableContacts, now),
       decliningRelationships: scoredAccounts.filter((account) => account.tracked && ((account.delta30d !== null && account.delta30d <= -3) || (account.phase !== null && /declin|down|cool|froid/i.test(account.phase)))).length,
     },
     topAccounts: {

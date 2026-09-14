@@ -1,22 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { createPerson } from '../services/data'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
-import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { listSharedWithMe, type SharedWithMeEntry } from '../person-detail/service'
 import { ToastProvider, useBusy, useToast } from '../person-detail/ui'
 import { setBohuBarShrunk } from '../shell/bohuBarSignal'
+import { requestAddPanel } from '../shell/addPanelSignal'
 import {
-  CHANNEL_ICONS, CheckIcon, DocIcon, FilterChip, LinkIcon, MailIcon, MemberPicker, StarIcon,
+  CHANNEL_ICONS, CheckIcon, DocIcon, FilterChip, LinkIcon, MailIcon, MemberPicker, StarIcon, VisibilityBadge,
 } from '../account-list/AccountsListPage'
 import {
   durationLabel, lastContactLabel, logoColor, RELATION_COLORS, scoreColor, tickerDurationSeconds, TIER_COLORS,
   type PersonListRow, type TickerItem,
 } from './mapping'
 import {
-  archivePeople, detectPersonCandidates, getPeopleOverview, handoverPeople, setPersonFavorite, setPersonOwner,
-  setPersonWatch, trackPersonCandidate, type PeopleOverview, type PersonCandidate,
+  archivePeople, getPeopleOverview, handoverPeople, setPersonFavorite, setPersonOwner,
+  setPersonWatch, type PeopleOverview,
 } from './service'
 
 type PageContext = { workspaceId: string; userId: string }
@@ -40,52 +39,6 @@ function Ticker({ ticker }: { ticker: TickerItem[] }) {
     </div>
     <div className="crm-mvt-view"><div className="crm-mvt-track" style={{ '--mvt-duration': `${duration}s` } as React.CSSProperties}>{sequence}{sequence}</div></div>
   </div>
-}
-
-function CreatePersonModal({ workspaceId, onClose, refresh }: { workspaceId: string; onClose: () => void; refresh: () => Promise<void> }) {
-  const toast = useToast()
-  const [candidates, setCandidates] = useState<PersonCandidate[] | null>(null)
-  const [candidateError, setCandidateError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    let active = true
-    detectPersonCandidates(workspaceId)
-      .then((rows) => { if (active) setCandidates(rows) })
-      .catch((reason) => { if (active) setCandidateError(reason instanceof Error ? reason.message : 'Détection impossible') })
-    return () => { active = false }
-  }, [workspaceId])
-  const items: IntegrationItem[] | null = useMemo(() => candidates?.map((candidate) => ({
-    id: candidate.contactId,
-    name: candidate.fullName,
-    subtitle: [candidate.roleTitle, candidate.companyName].filter(Boolean).join(' · ') || candidate.email,
-    interactions: candidate.interactions,
-    lastInteractionAt: candidate.lastInteractionAt,
-    ageLabel: ageSince(candidate.firstInteractionAt),
-  })) ?? null, [candidates])
-  const total = candidates?.length ?? 0
-  const handleConfirm = async (ids: string[]) => {
-    setBusy(true)
-    try {
-      await Promise.all(ids.map((id) => trackPersonCandidate(workspaceId, id)))
-      toast(`${ids.length} personne${ids.length > 1 ? 's' : ''} intégrée${ids.length > 1 ? 's' : ''} et ajoutée${ids.length > 1 ? 's' : ''} à la veille.`)
-      await refresh()
-      onClose()
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
-      setBusy(false)
-    }
-  }
-  return <IntegrationModal
-    entity="personne"
-    title={`${total} personne${total > 1 ? 's' : ''} détectée${total > 1 ? 's' : ''} dans tes échanges`}
-    subtitle={<>Aucun score à ce stade — que du mesurable. <b>Échanges lus · lecture seule</b>. Les 10 plus actives sont pré-cochées : tu peux continuer sans rien décider.</>}
-    items={items}
-    loading={candidates === null && !candidateError}
-    error={candidateError}
-    busy={busy}
-    onConfirm={handleConfirm}
-    onClose={onClose}
-  />
 }
 
 /** Fiches partagées par d'autres membres de l'équipe : elles vivent dans leur
@@ -120,7 +73,6 @@ function PageBody({ context }: { context: PageContext }) {
   const [relationFilter, setRelationFilter] = useState<string[]>([])
   const [accountFilter, setAccountFilter] = useState<string[]>([])
   const [sort, setSort] = useState<{ key: SortKey; dir: number } | null>(null)
-  const [integrateOpen, setIntegrateOpen] = useState(false)
   const [ownerPopup, setOwnerPopup] = useState<{ personId: string; x: number; y: number } | null>(null)
   const [passation, setPassation] = useState(false)
   const [passationClosing, setPassationClosing] = useState(false)
@@ -240,9 +192,6 @@ function PageBody({ context }: { context: PageContext }) {
         <FilterChip label="Clients" options={accountOptions} selected={accountFilter} onToggle={toggleIn(setAccountFilter)} />
       </div>
       <div style={{ display: 'flex', gap: 9 }}>
-        <button type="button" className="dxp-integ" onClick={() => setIntegrateOpen(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg> Intégrer des personnes
-        </button>
         <button type="button" className={`kpass-btn ${passation ? 'on' : ''}`} aria-pressed={passation} onClick={() => { passation ? closePassation() : setPassation(true) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8M8 21l-4-4 4-4M4 17h12" /></svg> Sélectionner
         </button>
@@ -262,16 +211,16 @@ function PageBody({ context }: { context: PageContext }) {
         <span className="center">Veille</span>
       </div>
       <div className="dxp-list">
-        {!filtered.length && <div className="dxa-empty">{overview.people.length ? 'Aucune personne pour ce filtre.' : 'Aucune personne suivie — utilise « Intégrer des personnes » pour en ajouter une.'}</div>}
+        {!filtered.length && <div className="dxa-empty">{overview.people.length ? 'Aucune personne pour ce filtre.' : <>Aucune personne suivie — utilise <button type="button" className="dxa-empty-link" onClick={() => requestAddPanel({ tab: 'personne' })}>« Ajouter »</button> en haut de l'écran pour en ajouter une.</>}</div>}
         {filtered.map((row) => <div key={row.id} role="button" tabIndex={0} className={`dxpp-row dxp-row ${selection.has(row.id) ? 'is-sel' : ''}`}
           onClick={() => { if (passation) { if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer cette fiche.', 'error'); else toggleSelect(row.id) } else navigate(`/app/people/${row.id}`) }}
           onKeyDown={(event) => { if (event.key === 'Enter') { if (passation) { if (row.ownerId && row.ownerId !== context.userId) toast('Seul l’owner actuel peut passer cette fiche.', 'error'); else toggleSelect(row.id) } else navigate(`/app/people/${row.id}`) } }}>
           <span className="dxp-band" style={{ background: TIER_COLORS[row.tier] }} />
           {passation ? <span className="psel" aria-hidden="true">{CheckIcon}</span> : <span />}
+          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.avatarUrl} name={row.name} domain={row.companyDomain} /></span>
           <button type="button" className={`dxp-star ${row.favorite ? 'on' : ''}`} aria-pressed={row.favorite} aria-label={row.favorite ? `Retirer ${row.name} des favoris` : `Ajouter ${row.name} aux favoris`}
             onClick={(event) => { event.stopPropagation(); toggleFavorite(row) }}>{StarIcon}</button>
-          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.avatarUrl} name={row.name} domain={row.companyDomain} /></span>
-          <span className="dxp-nm">{row.name}</span>
+          <span className="dxa-nm-row"><span className="dxp-nm">{row.name}</span><VisibilityBadge visibility={row.visibility} /></span>
           <span className="dxpp-job">{row.jobTitle ?? '—'}</span>
           {row.companyId
             ? <button type="button" className="dxpp-acc" onClick={(event) => { event.stopPropagation(); navigate(`/app/accounts/${row.companyId}`) }}>{row.companyName ?? 'Compte'}</button>
@@ -294,7 +243,6 @@ function PageBody({ context }: { context: PageContext }) {
       </div>
     </div>
     <div className="pa-note">Scores agrégés depuis les snapshots persistés du moteur relationnel · actualisé {new Date(overview.generatedAt).toLocaleTimeString('fr-FR')}</div>
-    {integrateOpen && <CreatePersonModal workspaceId={context.workspaceId} onClose={() => setIntegrateOpen(false)} refresh={refresh} />}
     {ownerPopup && <MemberPicker overview={overview} anchor={ownerPopup}
       currentId={overview.people.find((row) => row.id === ownerPopup.personId)?.ownerId ?? null}
       onPick={pickOwner(ownerPopup.personId)} onClose={() => setOwnerPopup(null)} />}

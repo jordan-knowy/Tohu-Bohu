@@ -1,7 +1,7 @@
 import { getSupabase } from '../lib/supabase'
 import { trackPersonCandidate } from '../person-list/service'
 import {
-  buildAccountRows, buildPortfolioSeries, buildTickerItems, evolutionPercents,
+  buildAccountRows, buildAccountScoreSeries, buildTickerItems, evolutionPercents,
   object, rows, text, num,
   type AccountListRow, type PortfolioPoint, type Row, type TeamMember, type TickerItem,
 } from './mapping'
@@ -61,7 +61,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const [
     companiesResult, contactsResult, historyResult, settingsResult, prefsResult,
     watchResult, meetingsResult, messagesResult, signalsResult, teamResult,
-    accountScoresResult,
+    accountScoresResult, visionsResult,
   ] = await Promise.all([
     client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
     client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
@@ -73,7 +73,8 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     client.from('communication_messages').select('contact_id').eq('organization_id', workspaceId).eq('metadata->>user_id', userId).limit(3000),
     client.from('company_signals').select('id,company_id,family,title,summary,source,observed_at,companies(name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
     client.rpc('get_team_vision_members', { p_organization_id: workspaceId }),
-    client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', workspaceId).order('computed_at', { ascending: false }).limit(2000),
+    client.from('account_relationship_score_snapshots').select('company_id,score,snapshot_month,computed_at').eq('organization_id', workspaceId).order('computed_at', { ascending: false }).limit(2000),
+    client.from('fiche_visions').select('entity_id,owner_user_id,visibility').eq('organization_id', workspaceId).eq('entity_type', 'company'),
   ])
 
   if (companiesResult.error) throw new Error(companiesResult.error.message)
@@ -90,6 +91,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const signals = rows(optional(signalsResult, 'Signaux comptes', degradedReasons))
   const profiles = rows(optional(teamResult, 'Équipe', degradedReasons))
   const accountScoreRows = rows(optional(accountScoresResult, 'Snapshots du score Compte', degradedReasons))
+  const visions = rows(optional(visionsResult, 'Visibilité des fiches', degradedReasons))
   // Trié par computed_at desc : le premier snapshot rencontré par compte est le plus récent.
   const accountScores = new Map<string, number>()
   for (const row of accountScoreRows) {
@@ -107,16 +109,16 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const accounts = buildAccountRows({
     companies, contacts, scoreHistory, settings, preferences, watch, meetings,
     messageContactIds: new Set(messages.map((message) => String(message.contact_id))),
-    signals, profileNames, accountScores, now,
+    signals, profileNames, accountScores, visions, now,
   })
 
   const scored = accounts.filter((account) => account.score !== null)
-  // Un compte archivé n'apparaît plus dans `accounts` (buildAccountRows le
-  // filtre déjà) mais buildPortfolioSeries reçoit `contacts` brut : sans ce
-  // filtre, son historique restait mélangé dans le graphe de portefeuille.
-  const archivedCompanyIds = new Set(settings.filter((row) => row.archived_at).map((row) => text(row.company_id)))
-  const scorableContacts = contacts.filter((contact) => !archivedCompanyIds.has(text(contact.company_id)))
-  const series36 = buildPortfolioSeries(scoreHistory, scorableContacts, 36, now)
+  const companyNames = new Map(companies.map((company) => [String(company.id), text(company.name) ?? 'Compte']))
+  // Carte, tableau ET graphique partagent exactement le même périmètre de
+  // comptes (accounts, déjà expurgé des archivés par buildAccountRows) — sans
+  // ça, un filtre ou une exclusion pourrait un jour diverger entre les trois.
+  const activeCompanyIds = new Set(accounts.map((account) => account.id))
+  const series36 = buildAccountScoreSeries(accountScoreRows, companyNames, activeCompanyIds, 36, now)
   return {
     workspaceId,
     generatedAt: now.toISOString(),
@@ -126,7 +128,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     scoredCount: scored.length,
     evolutions: evolutionPercents(series36),
     series36,
-    ticker: buildTickerItems(signals, new Map(companies.map((company) => [String(company.id), text(company.name) ?? 'Compte']))),
+    ticker: buildTickerItems(signals, companyNames),
     team,
   }
 }
@@ -217,6 +219,17 @@ export type AccountCandidate = {
   alreadyTracked: boolean
 }
 
+/** Plafond de comptes suivis du forfait courant (subscription_plans.max_tracked_accounts).
+ *  `null` = illimité ou non configuré — ne bloque alors rien côté client, le serveur
+ *  (add_tracked_company) reste la vraie limite en dernier ressort. */
+export async function getAccountCapacity(workspaceId: string): Promise<number | null> {
+  const client = getSupabase()
+  const { data: subscription } = await client.from('subscriptions').select('plan_id').eq('organization_id', workspaceId).maybeSingle()
+  const planId = text(subscription?.plan_id) ?? 'free'
+  const { data: plan } = await client.from('subscription_plans').select('max_tracked_accounts').eq('id', planId).maybeSingle()
+  return plan && typeof plan.max_tracked_accounts === 'number' ? plan.max_tracked_accounts : null
+}
+
 export async function detectAccountCandidates(workspaceId: string): Promise<AccountCandidate[]> {
   const { data, error } = await getSupabase().rpc('detect_account_candidates', { p_organization_id: workspaceId })
   if (error) throw error
@@ -290,9 +303,9 @@ export async function trackCandidates(workspaceId: string, selection: Array<{ co
       if (visionError) throw visionError
     }
   }
-  void client.functions.invoke('monitor-company-news', {
-    body: { organizationId: workspaceId, limit: Math.min(selection.length, 8) },
-  })
+  // La veille (monitor-company-news, appel IA) n'est plus déclenchée par
+  // l'ajout d'un compte — elle reste une action explicite (bouton « Veille »
+  // de la liste Comptes), jamais un effet de bord automatique.
   // Score immédiat (pas seulement au prochain cron 6h) : même moteur, même
   // formule — reconstruit aussi l'historique réel des contacts déjà
   // synchronisés de ces comptes (deepBackfill), comme au suivi d'une personne.

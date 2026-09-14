@@ -138,9 +138,14 @@ Deno.serve(async (request) => {
       // une réunion créée tardivement ; `antiseche:{meetingId}` empêche tout doublon.
       const from = new Date(Date.now() + 5 * MINUTE).toISOString()
       const to = new Date(Date.now() + 2 * HOUR).toISOString()
+      // status='confirmed' : jamais de briefing pour une réunion annulée.
+      // meeting_scope='individual' : une réunion collective (standup, webinar) ne
+      // déclenche jamais de briefing relationnel individuel, même si un de ses
+      // participants est déjà une fiche suivie.
       const { data: meetings, error: meetingsError } = await supabase.from('meetings')
         .select('id,title,starts_at,platform,owner_user_id,organization_id')
         .gte('starts_at', from).lte('starts_at', to)
+        .eq('status', 'confirmed').eq('meeting_scope', 'individual')
         .order('starts_at', { ascending: true }).limit(200)
       if (meetingsError) throw meetingsError
       let sent = 0, skipped = 0
@@ -148,9 +153,13 @@ Deno.serve(async (request) => {
       for (const m of (meetings ?? [])) {
         try {
           if (!m.owner_user_id) { skipped++; continue }
+          // contacts!inner + is_tracked=true : seule une relation confirmée par
+          // l'utilisateur (pas un candidat tout juste détecté par la synchro
+          // calendrier) déclenche un briefing — exclut aussi naturellement les
+          // participants sans contact_id (teammate Tohu ou inconnu non rattaché).
           const { data: parts, error: partsError } = await supabase.from('meeting_participants')
-            .select('contact_id,display_name,email').eq('organization_id', m.organization_id).eq('meeting_id', m.id)
-            .eq('is_current_user', false).limit(4)
+            .select('contact_id,display_name,email,contacts!inner(is_tracked)').eq('organization_id', m.organization_id).eq('meeting_id', m.id)
+            .eq('is_current_user', false).eq('contacts.is_tracked', true).limit(4)
           if (partsError) throw partsError
           const contactIds = [...new Set((parts ?? []).filter((p: any) => p.contact_id).map((p: any) => String(p.contact_id)))]
           const fallbackNames = [...new Set((parts ?? []).map((p: any) => String(p.display_name ?? p.email?.split('@')[0] ?? '').trim()).filter(Boolean))]

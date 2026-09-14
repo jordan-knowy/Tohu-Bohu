@@ -29,6 +29,26 @@ const PHASE_DELTA = 8.0, PHASE_DECLINE_MAX = 70;
 const ACCOUNT_PHASE_DELTA = 8, ACCOUNT_PHASE_DECLINE_MAX = 70, ACCOUNT_RECENCY_HALFLIFE_DAYS = 90;
 const RECENT_WINDOW_MS = 14 * 86400000;
 const clamp = (v: number, min = 0, max = 1) => Math.max(min, Math.min(max, v));
+// "N mois calendaires avant `base`" — jamais une approximation en multiples de
+// 30 jours (dérive des vrais mois, deux `ma` différents pouvaient retomber
+// dans le même mois civil et produire deux snapshots contradictoires pour "le
+// même mois", ex. Limayrac mars 2026). Le jour du mois est borné à la
+// longueur réelle du mois cible (31 mars − 1 mois → 28/29 févr., jamais 2/3 mars).
+function monthsAgoInstant(base: number, ma: number): number {
+  if (ma === 0) return base;
+  const d = new Date(base);
+  const targetMonthIndex = d.getUTCMonth() - ma;
+  const daysInTargetMonth = new Date(Date.UTC(d.getUTCFullYear(), targetMonthIndex + 1, 0)).getUTCDate();
+  const day = Math.min(d.getUTCDate(), daysInTargetMonth);
+  return Date.UTC(d.getUTCFullYear(), targetMonthIndex, day, d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds());
+}
+// Premier jour (UTC) du mois civil représenté par `ma` mois avant `base` —
+// période explicite (snapshot_month), distincte de la date de calcul technique
+// (computed_at, toujours réelle désormais, jamais antidatée).
+function monthStartUTC(base: number, ma: number): string {
+  const d = new Date(base);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - ma, 1)).toISOString().slice(0, 10);
+}
 // Types de relation où une asymétrie d'initiative est structurellement normale
 // (ex. un prospect ne relance pas autant qu'un commercial) — atténue la
 // pénalité de réciprocité plutôt que de la supprimer (voir scoreReciprocite).
@@ -279,7 +299,7 @@ Deno.serve(async (req) => {
     const [existingHist, existingAccountHist] = await Promise.all([
       fetchAllPages<any>((from, to) => supabase.from('contact_score_history').select('contact_id, snapshot_date').in('contact_id', ids).order('id', { ascending: true }).range(from, to)),
       companyIds.length
-        ? fetchAllPages<any>((from, to) => supabase.from('account_relationship_score_snapshots').select('company_id, computed_at').in('company_id', companyIds).order('id', { ascending: true }).range(from, to))
+        ? fetchAllPages<any>((from, to) => supabase.from('account_relationship_score_snapshots').select('company_id, snapshot_month').in('company_id', companyIds).order('id', { ascending: true }).range(from, to))
         : Promise.resolve([] as any[]),
     ]);
     for (const row of (existingHist ?? []) as any[]) {
@@ -288,7 +308,9 @@ Deno.serve(async (req) => {
     }
     for (const row of (existingAccountHist ?? []) as any[]) {
       if (!existingMonthsByCompany.has(row.company_id)) existingMonthsByCompany.set(row.company_id, new Set());
-      existingMonthsByCompany.get(row.company_id)!.add(String(row.computed_at).slice(0, 7));
+      // snapshot_month : période explicite (voir migration 20260910220000), plus fiable
+      // que computed_at qui ne représente plus jamais une date simulée.
+      existingMonthsByCompany.get(row.company_id)!.add(String(row.snapshot_month).slice(0, 7));
     }
   }
 
@@ -465,7 +487,7 @@ Deno.serve(async (req) => {
     const coveredMonths = deepBackfill && !forceRecompute ? (existingMonthsByContact.get(c.id) ?? new Set<string>()) : null;
 
     for (const ma of contactMonths) {
-      const nowMs = ma === 0 ? now : now - ma * 30 * 86400000;
+      const nowMs = monthsAgoInstant(now, ma);
       const snapDate = new Date(nowMs).toISOString().slice(0, 10);
       // Un mois déjà réellement couvert (backfill rejoué) n'est jamais recalculé ;
       // le mois courant (ma===0), lui, doit toujours rester à jour.
@@ -558,8 +580,9 @@ Deno.serve(async (req) => {
   const accountMonths = Array.from(new Set([0, ...companyEngagedByMonth.keys()])).sort((a, b) => b - a);
   const lastAccountScore = new Map<string, number>();
   for (const ma of accountMonths) {
-    const nowMsForMonth = ma === 0 ? now : now - ma * 30 * 86400000;
+    const nowMsForMonth = monthsAgoInstant(now, ma);
     const accountNowIso = new Date(nowMsForMonth).toISOString();
+    const snapshotMonth = monthStartUTC(now, ma);
     const engagedThisMonth = companyEngagedByMonth.get(ma) ?? new Map<string, CompanyEngaged[]>();
     for (const companyId of trackedCompanySet) {
       const orgId = companyOrgId.get(companyId);
@@ -567,7 +590,7 @@ Deno.serve(async (req) => {
       if (!orgId || totalContacts === 0) continue;
       if (deepBackfill && !forceRecompute && ma !== 0) {
         const covered = existingMonthsByCompany.get(companyId);
-        if (covered?.has(accountNowIso.slice(0, 7))) continue;
+        if (covered?.has(snapshotMonth.slice(0, 7))) continue;
       }
       const engaged = engagedThisMonth.get(companyId) ?? [];
       if (ma !== 0 && engaged.length === 0) continue; // rien de nouveau à écrire pour ce mois-là
@@ -622,7 +645,13 @@ Deno.serve(async (req) => {
         // n'est pas un mauvais score, jamais fabriquée (voir §2.4 doc scoring).
         engagement_component: engaged.length > 0 ? Math.round(engagementComponent) : null,
         recency_component: engaged.length > 0 ? Math.round(recencyComponent) : null,
-        computed_at: accountNowIso, model_version: 'account-relationship-score-v1', source_type: 'computed',
+        // snapshot_month = période représentée (calendaire, explicite) ; computed_at =
+        // moment technique RÉEL de ce calcul, plus jamais antidaté — voir migration
+        // 20260910220000. accountNowIso reste utilisé pour last_interaction_at/
+        // observed_at ci-dessus, qui sont des faits datés dans le temps simulé, pas
+        // des métadonnées de calcul.
+        snapshot_month: snapshotMonth, computed_at: new Date().toISOString(),
+        model_version: 'account-relationship-score-v1', source_type: 'computed',
         source_label: 'Moteur relationnel Tohu', observed_at: lastInteractionAt, inference_level: 'inferred',
       });
 
@@ -682,28 +711,53 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Persistance du SCORING (pas les recommandations/suggestions, best-effort comme
+  // avant) : une erreur ici doit être visible — jamais avalée en silence. Chaque
+  // échec est logué (console.error, remonte dans les logs de la fonction) ET
+  // renvoyé dans la réponse JSON (persistence_errors), pour qu'un appelant ou un
+  // monitoring externe puisse le détecter sans avoir à fouiller les logs.
+  const persistenceErrors: Array<{ table: string; batch_from: number; batch_size: number; message: string }> = [];
+  async function persistBatch(table: string, rowsToWrite: any[], write: (batch: any[]) => Promise<{ error: { message?: string } | null }>, batchSize = 200) {
+    for (let i = 0; i < rowsToWrite.length; i += batchSize) {
+      const batch = rowsToWrite.slice(i, i + batchSize);
+      const { error } = await write(batch);
+      if (error) {
+        const message = error.message ?? String(error);
+        console.error(`[score-batch] échec persistance ${table} (lignes ${i}-${i + batch.length}) : ${message}`);
+        persistenceErrors.push({ table, batch_from: i, batch_size: batch.length, message });
+      }
+    }
+  }
+
   let scored = 0;
   for (let i = 0; i < profileRows.length; i += 100) {
-    const { error } = await supabase.from('cognitive_profiles').upsert(profileRows.slice(i, i + 100), { onConflict: 'organization_id,contact_id,profile_version' });
+    const batch = profileRows.slice(i, i + 100);
+    const { error } = await supabase.from('cognitive_profiles').upsert(batch, { onConflict: 'organization_id,contact_id,profile_version' });
     if (!error) scored += Math.min(100, profileRows.length - i);
+    else {
+      const message = error.message ?? String(error);
+      console.error(`[score-batch] échec persistance cognitive_profiles (lignes ${i}-${i + batch.length}) : ${message}`);
+      persistenceErrors.push({ table: 'cognitive_profiles', batch_from: i, batch_size: batch.length, message });
+    }
   }
-  for (let i = 0; i < histRows.length; i += 200) {
-    await supabase.from('contact_score_history').upsert(histRows.slice(i, i + 200), { onConflict: 'organization_id,contact_id,user_id,snapshot_date', ignoreDuplicates: false });
-  }
-  for (let i = 0; i < relationshipRows.length; i += 200) {
-    await supabase.from('relationship_snapshots').upsert(relationshipRows.slice(i, i + 200), { onConflict: 'organization_id,user_id,contact_id,snapshot_date', ignoreDuplicates: false });
-  }
+  await persistBatch('contact_score_history', histRows,
+    (batch) => supabase.from('contact_score_history').upsert(batch, { onConflict: 'organization_id,contact_id,user_id,snapshot_date', ignoreDuplicates: false }));
+  await persistBatch('relationship_snapshots', relationshipRows,
+    (batch) => supabase.from('relationship_snapshots').upsert(batch, { onConflict: 'organization_id,user_id,contact_id,snapshot_date', ignoreDuplicates: false }));
   const today = new Date().toISOString().slice(0, 10);
   const { data: existingToday } = await supabase.from('person_relationship_score_snapshots')
     .select('contact_id').in('contact_id', ids).gte('computed_at', `${today}T00:00:00.000Z`);
   const alreadySnapshotted = new Set((existingToday ?? []).map((row: any) => row.contact_id));
   const newPersonSnapshots = personSnapshotRows.filter((row) => !alreadySnapshotted.has(row.contact_id));
-  for (let i = 0; i < newPersonSnapshots.length; i += 200) {
-    await supabase.from('person_relationship_score_snapshots').insert(newPersonSnapshots.slice(i, i + 200));
-  }
-  for (let i = 0; i < accountScoreRows.length; i += 200) {
-    await supabase.from('account_relationship_score_snapshots').insert(accountScoreRows.slice(i, i + 200));
-  }
+  await persistBatch('person_relationship_score_snapshots', newPersonSnapshots,
+    (batch) => supabase.from('person_relationship_score_snapshots').insert(batch));
+  // Upsert (pas insert) : un seul snapshot de référence par compte+mois+version de
+  // formule (contrainte account_relationship_score_snapshots_period_uidx, migration
+  // 20260910220000) — le cron 6h met à jour le mois courant au lieu d'empiler des
+  // doublons intrajournaliers, et un deepBackfill/forceRecompute remplace proprement
+  // un mois déjà écrit au lieu d'entrer en collision avec lui.
+  await persistBatch('account_relationship_score_snapshots', accountScoreRows,
+    (batch) => supabase.from('account_relationship_score_snapshots').upsert(batch, { onConflict: 'organization_id,company_id,snapshot_month,model_version' }));
   for (let i = 0; i < accountRecRows.length; i += 200) {
     await supabase.from('account_recommendations').insert(accountRecRows.slice(i, i + 200));
   }
@@ -714,11 +768,14 @@ Deno.serve(async (req) => {
     await supabase.from('person_recommendations').insert(personRecRows.slice(i, i + 200));
   }
 
+  if (persistenceErrors.length) console.error(`[score-batch] ${persistenceErrors.length} échec(s) de persistance du scoring sur ce run.`, JSON.stringify(persistenceErrors));
+
   return jsonResponse({
     success: true, scored, history_points: histRows.length, relationship_snapshots: relationshipRows.length,
     person_snapshots: newPersonSnapshots.length,
     account_snapshots: accountScoreRows.length, account_recommendations: accountRecRows.length, person_recommendations: personRecRows.length,
     account_relation_suggestions: accountRelationSuggestionRows.length,
     mode: isCron ? 'cron' : 'user',
+    persistence_errors: persistenceErrors,
   });
 });

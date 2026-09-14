@@ -3,6 +3,7 @@ import type { Provider, Session } from '@supabase/supabase-js'
 import { absoluteUrl, getSupabase } from '../../lib/supabase'
 import { listConnectors, setConnector, type ConnectorRow } from '../../services/data'
 import { useToast } from '../../person-detail/ui'
+import { TohuSpinner } from '../../components/TohuSpinner'
 import TranscriptImport from './TranscriptImport'
 
 // Logos officiels (Simple Icons, MIT) — monochrome, colorés via currentColor comme les autres icônes de l'app.
@@ -96,12 +97,17 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     const photosSync = provider === 'google'
       ? getSupabase().functions.invoke('sync-google-photos', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
       : Promise.resolve({ data: null, error: null })
-    const [{ data, error }, { data: meetData }, { data: chatData }, { data: photosData }] = await Promise.all([emailSync, meetSync, chatSync, photosSync])
+    // Calendrier prospectif (Google Calendar / Outlook) : alimente le bloc "Prochain
+    // rendez-vous" des fiches Personnes — indépendant de sync-google-meet, qui ne voit
+    // que les appels déjà démarrés. Un échec ne doit pas faire échouer la synchro email.
+    const calendarSync = getSupabase().functions.invoke(provider === 'google' ? 'sync-google-calendar' : 'sync-microsoft-calendar', { body: { organizationId } }).catch(() => ({ data: null, error: null }))
+    const [{ data, error }, { data: meetData }, { data: chatData }, { data: photosData }, { data: calendarData }] = await Promise.all([emailSync, meetSync, chatSync, photosSync, calendarSync])
     if (error || data?.error) throw data?.error ? new Error(data.error) : await invokeError(error, 'Synchronisation impossible.')
     await refresh()
     const meetSuffix = meetData && !meetData.error && meetData.meetings > 0 ? ` · ${meetData.meetings} réunion(s) Google Meet` : ''
     const chatSuffix = chatData && !chatData.error && chatData.messages > 0 ? ` · ${chatData.messages} message(s) Google Chat` : ''
     const photosSuffix = photosData && !photosData.error && photosData.photos > 0 ? ` · ${photosData.photos} photo(s) de contact` : ''
+    const calendarSuffix = calendarData && !calendarData.error && calendarData.meetings > 0 ? ` · ${calendarData.meetings} rendez-vous d'agenda` : ''
     const pendingProfiles = Number(data.profilesPending ?? 0)
     const pendingSuffix = pendingProfiles > 0 ? ` · ${pendingProfiles} profil(s) V3 restant(s), repris automatiquement` : ''
     // Photos des fiches Personne : Gravatar → logo d'entreprise → initiales.
@@ -109,7 +115,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
     // Google Photos, pour ne pas bloquer le retour de synchro.
     const avatarsNote = provider === 'google' ? ' · récupération des photos de contacts en arrière-plan (rafraîchis la page Personnes dans un instant)' : ''
     if (provider === 'google') void getSupabase().functions.invoke('enrich-contact-avatars', { body: { organizationId } }).catch(() => undefined)
-    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${photosSuffix}${avatarsNote}.`)
+    toast(`${data.messages ?? 0} emails synchronisés · ${data.peopleAnalyzed ?? 0} profil(s) personne mis à jour${pendingSuffix}${meetSuffix}${chatSuffix}${calendarSuffix}${photosSuffix}${avatarsNote}.`)
   }, [organizationId, refresh, toast])
 
   const syncSlack = useCallback(async () => {
@@ -278,7 +284,7 @@ export default function ConnectorsPage({ context }: { context: PageContext }) {
   const act = (action: () => Promise<void>) => { void action().catch((reason) => toast(reason instanceof Error ? reason.message : 'Action impossible.', 'error')) }
 
   if (error) return <div className="inline-error">{error}</div>
-  if (!rows) return <div className="loading-state"><span className="spinner" /></div>
+  if (!rows) return <div className="loading-state"><TohuSpinner size={28} /></div>
 
   const states = new Map(rows.map((row) => [row.provider, row]))
   const connected = connectorDefinitions.filter((definition) => states.get(definition.provider)?.status === 'connected').length

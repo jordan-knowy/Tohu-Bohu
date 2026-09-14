@@ -195,6 +195,10 @@ export function deriveActions(accounts: ScoredAccount[], signals: HomeSignal[], 
         confidence: 90,
         sourceSignalId: null,
         recommended: 'Reprendre contact cette semaine',
+        sourceUrl: null,
+        sourceExcerpt: null,
+        sourceOccurredAt: null,
+        sourceDirection: null,
       })
     }
     if (account.contactCount === 1 && account.score !== null && account.score >= 50) {
@@ -213,6 +217,10 @@ export function deriveActions(accounts: ScoredAccount[], signals: HomeSignal[], 
         confidence: 85,
         sourceSignalId: null,
         recommended: 'Identifier un second contact',
+        sourceUrl: null,
+        sourceExcerpt: null,
+        sourceOccurredAt: null,
+        sourceDirection: null,
       })
     }
     const risk = riskScore(account, now)
@@ -232,11 +240,19 @@ export function deriveActions(accounts: ScoredAccount[], signals: HomeSignal[], 
         confidence: account.confidence,
         sourceSignalId: null,
         recommended: 'Ouvrir le compte et planifier une reprise',
+        sourceUrl: null,
+        sourceExcerpt: null,
+        sourceOccurredAt: null,
+        sourceDirection: null,
       })
     }
   }
 
   for (const signal of signals) {
+    // Un signal déjà écarté par l'utilisateur (signal_feedback) ne doit plus
+    // ressusciter sous une autre forme d'action (mouvement/opportunité) —
+    // avant ce correctif, seule la branche « validation » respectait ce verdict.
+    if (signal.userVerdict === 'dismissed') continue
     const age = daysSince(signal.observedAt, now)
     if (age !== null && age > 21) continue
     const base = {
@@ -248,6 +264,10 @@ export function deriveActions(accounts: ScoredAccount[], signals: HomeSignal[], 
       observedAt: signal.observedAt,
       confidence: signal.confidence,
       sourceSignalId: signal.id,
+      sourceUrl: signal.sourceUrl,
+      sourceExcerpt: null,
+      sourceOccurredAt: null,
+      sourceDirection: null,
     }
     if (MOVEMENT_PATTERN.test(`${signal.signalType} ${signal.title}`)) {
       actions.push({
@@ -316,6 +336,11 @@ export type PendingCommitment = {
   observedAt: string | null
   confidence: number | null
   sourceLabel: string | null
+  /** Citation exacte capturée à l'analyse (≤240 car., vérifiée anti-hallucination),
+   *  NULL si le contenu source n'a pas été conservé — voir sync-email-analysis. */
+  sourceExcerpt: string | null
+  sourceOccurredAt: string | null
+  sourceDirection: 'inbound' | 'outbound' | null
 }
 
 /**
@@ -348,6 +373,10 @@ export function deriveEngagementActions(commitments: PendingCommitment[], now: D
       confidence: commitment.confidence,
       sourceSignalId: null,
       recommended: overdue ? 'Traiter ou clôturer cet engagement' : 'Faire avancer cet engagement',
+      sourceUrl: null,
+      sourceExcerpt: commitment.sourceExcerpt,
+      sourceOccurredAt: commitment.sourceOccurredAt,
+      sourceDirection: commitment.sourceDirection,
     }
   })
 }

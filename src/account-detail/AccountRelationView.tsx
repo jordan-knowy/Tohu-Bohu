@@ -60,13 +60,16 @@ type MonthBar = { label: string; score: number | null }
 
 /** Une barre par MOIS sur la fenêtre choisie (6/12/36) — score = moyenne des
  *  snapshots du mois, `null` = mois sans donnée (barre grise). C'est ce qui rend
- *  le toggle 6/12/36 réellement fonctionnel et différent d'un compte à l'autre. */
-function buildMonthlyBars(history: Array<{ score: number; computedAt: string }>, windowMonths: number): MonthBar[] {
+ *  le toggle 6/12/36 réellement fonctionnel et différent d'un compte à l'autre.
+ *  Regroupe par snapshotMonth (période explicite), jamais par computedAt — depuis
+ *  la migration 20260910220000, computedAt est toujours la date technique réelle
+ *  du calcul, plus un repère de période simulé. */
+function buildMonthlyBars(history: Array<{ score: number; snapshotMonth: string }>, windowMonths: number): MonthBar[] {
   const byMonth = new Map<number, { sum: number; n: number }>()
   for (const h of history) {
-    const d = new Date(h.computedAt)
-    if (!Number.isFinite(d.getTime())) continue
-    const key = d.getUTCFullYear() * 12 + d.getUTCMonth()
+    const [year, month] = h.snapshotMonth.split('-').map(Number)
+    if (!year || !month) continue
+    const key = year * 12 + (month - 1)
     const e = byMonth.get(key) ?? { sum: 0, n: 0 }
     e.sum += h.score; e.n++; byMonth.set(key, e)
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCoaching, buildScoredAccounts, buildSources, buildTeamMembers, isMissingRpcError, normalizeSyncJobStatus, teamProfilesFromAccountCenter } from '../service'
+import { buildCoaching, buildScoredAccounts, buildSources, buildTeamMembers, countActiveRelationships, isMissingRpcError, normalizeSyncJobStatus, teamProfilesFromAccountCenter } from '../service'
 import type { UserBehaviorProfile } from '../../services/data'
 
 const NOW = new Date('2026-07-15T12:00:00Z')
@@ -68,6 +68,65 @@ describe('buildScoredAccounts — consommation des scores persistés (pas de for
   it('considère tout le portefeuille comme suivi en mode dégradé (colonne absente)', () => {
     const rows = buildScoredAccounts([{ id: 'a', name: 'A', public_context: {} }], [], false, NOW)
     expect(rows[0]?.tracked).toBe(true)
+  })
+})
+
+describe('countActiveRelationships — relations actives = personnes, pas comptes (audit Home 2026-09-11)', () => {
+  function contact(overrides: Partial<{ id: string; company_id: string | null; last_contact_at: string | null }>) {
+    return {
+      id: 'c1',
+      company_id: null,
+      relationship_snapshots: overrides.last_contact_at !== undefined
+        ? [{ engagement_score: null, phase: null, snapshot_date: '2026-07-10', last_contact_at: overrides.last_contact_at }]
+        : [],
+      ...overrides,
+    }
+  }
+
+  it('compte une personne par silence <= 30 j, jamais le nombre de comptes suivis', () => {
+    const contacts = [
+      contact({ id: 'c1', last_contact_at: '2026-07-01T00:00:00Z' }), // 14 j
+      contact({ id: 'c2', last_contact_at: '2026-05-01T00:00:00Z' }), // > 30 j
+      contact({ id: 'c3', last_contact_at: null }), // jamais contacté
+    ]
+    expect(countActiveRelationships(contacts, NOW)).toBe(1)
+  })
+
+  it('ne compte jamais une personne deux fois même avec plusieurs interactions passées', () => {
+    const contacts = [{
+      id: 'c1',
+      company_id: null,
+      relationship_snapshots: [
+        { engagement_score: null, phase: null, snapshot_date: '2026-07-14', last_contact_at: '2026-07-14T00:00:00Z' },
+        { engagement_score: null, phase: null, snapshot_date: '2026-07-01', last_contact_at: '2026-07-01T00:00:00Z' },
+      ],
+    }]
+    expect(countActiveRelationships(contacts, NOW)).toBe(1)
+  })
+
+  it('compte un collègue de domaine interne dès lors que l’échange est réel — pas d’exclusion Tier 1 ici', () => {
+    const contacts = [contact({ id: 'c1', company_id: 'internal-co', last_contact_at: '2026-07-14T00:00:00Z' })]
+    expect(countActiveRelationships(contacts, NOW)).toBe(1)
+  })
+
+  it("prend le snapshot le plus récent par date explicite, pas par ordre d'arrivée du tableau", () => {
+    const contacts = [{
+      id: 'c1',
+      company_id: null,
+      // Le plus ancien arrive en premier dans le tableau : si [0] dépendait de
+      // l'ordre implicite plutôt que du tri explicite de contactSnapshots(),
+      // ce test échouerait (silence de 4 mois au lieu de 14 j).
+      relationship_snapshots: [
+        { engagement_score: null, phase: null, snapshot_date: '2026-03-01', last_contact_at: '2026-03-01T00:00:00Z' },
+        { engagement_score: null, phase: null, snapshot_date: '2026-07-14', last_contact_at: '2026-07-01T00:00:00Z' },
+      ],
+    }]
+    expect(countActiveRelationships(contacts, NOW)).toBe(1)
+  })
+
+  it('retombe sur cognitive_profiles quand relationship_snapshots est vide, sans jamais inventer une date', () => {
+    const contacts = [{ id: 'c1', company_id: null, relationship_snapshots: [], cognitive_profiles: [] }]
+    expect(countActiveRelationships(contacts, NOW)).toBe(0)
   })
 })
 

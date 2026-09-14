@@ -132,7 +132,10 @@ export interface AccountDetailData {
     // les snapshots antérieurs, jamais recalculées côté front.
     engagementComponent: number | null
     recencyComponent: number | null
-    history: Array<{ score: number; computedAt: string }>
+    // snapshotMonth (YYYY-MM-DD, 1er du mois) = période représentée, distincte de
+    // computedAt qui est désormais toujours la date technique réelle du calcul —
+    // c'est snapshotMonth qu'il faut grouper pour reconstruire des barres mensuelles.
+    history: Array<{ score: number; computedAt: string; snapshotMonth: string }>
     // Santé mensuelle reconstruite (RPC account_health_monthly) : une entrée par
     // mois calendaire, `score`=null pour un mois sans donnée. Couvre toute la vie
     // de la relation, contrairement à `history` (snapshots account récents seuls).

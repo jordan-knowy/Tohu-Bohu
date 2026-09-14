@@ -13,11 +13,11 @@ function outbound(...recipients: string[]) {
 
 describe('email relationship eligibility', () => {
   it('exclut une adresse uniquement entrante', () => {
-    expect([...reciprocalExternalEmails([inbound('prospect@example.com')], ownEmail)]).toEqual([])
+    expect([...reciprocalExternalEmails([inbound('prospect@example.com')], new Set([ownEmail]))]).toEqual([])
   })
 
   it('exclut une adresse uniquement sortante', () => {
-    expect([...reciprocalExternalEmails([outbound('prospect@example.com')], ownEmail)]).toEqual([])
+    expect([...reciprocalExternalEmails([outbound('prospect@example.com')], new Set([ownEmail]))]).toEqual([])
   })
 
   it('conserve seulement les adresses avec au moins un message dans chaque sens', () => {
@@ -25,7 +25,7 @@ describe('email relationship eligibility', () => {
       inbound('relation@example.com'),
       outbound('relation@example.com', 'sans-reponse@example.com'),
       inbound('entrant-seul@example.com'),
-    ], ownEmail)
+    ], new Set([ownEmail]))
 
     expect([...result]).toEqual(['relation@example.com'])
   })
@@ -34,8 +34,20 @@ describe('email relationship eligibility', () => {
     const evidence = relationshipEvidenceByEmail([
       inbound(' Relation@Example.com '),
       outbound('relation@example.com', 'RELATION@example.com'),
-    ], ' USER@TOHU.TEST ')
+    ], new Set([' USER@TOHU.TEST ']))
 
     expect(evidence.get('relation@example.com')).toEqual({ inbound: 1, outbound: 1 })
+  })
+
+  it('reconnaît un alias déclaré comme une identité "nous", pas un tiers externe', () => {
+    const alias = 'alias@tohu.test'
+    const ownEmails = new Set([ownEmail, alias])
+    const result = reciprocalExternalEmails([
+      inbound('relation@example.com'),
+      { direction: 'outbound' as const, from: { email: alias }, to: [{ email: 'relation@example.com' }] },
+    ], ownEmails)
+    expect([...result]).toEqual(['relation@example.com'])
+    // L'alias lui-même ne doit jamais apparaître comme un correspondant externe.
+    expect(relationshipEvidenceByEmail([inbound(alias)], ownEmails).has(alias)).toBe(false)
   })
 })

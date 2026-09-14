@@ -4,9 +4,11 @@ import type { DataSourceReference } from './types'
 
 /** Icônes V48 partagées entre les vues Profil/Relation/Live (person) — un seul jeu
  *  de traits pour toute la fiche personne, évite la divergence visuelle entre fichiers. */
-export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' | 'briefcase' | 'globe' }) {
+export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' | 'briefcase' | 'globe' | 'video' | 'external-link' }) {
   const paths: Record<typeof name, ReactNode> = {
     calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M4 10h16M8 3.5v4M16 3.5v4" /></>,
+    video: <><rect x="3" y="6.5" width="13" height="11" rx="2" /><path d="m16 10.5 5-3v9l-5-3Z" /></>,
+    'external-link': <><path d="M9 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /><path d="M14 4h6v6" /><path d="M20 4 10 14" /></>,
     profile: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" /><circle cx="12" cy="12" r="2.5" /></>,
     pulse: <path d="M3 12h4l2-5 4 10 2-5h6" />,
     commitment: <><path d="M4.5 5.5h5a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H4.5Z" /><path d="M19.5 5.5h-5A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h5.5Z" /></>,

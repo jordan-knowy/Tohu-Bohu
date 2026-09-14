@@ -10,7 +10,19 @@
   </head>
   <body class="onboarding-page">
     <header class="onboarding-nav"><div id="brand"></div><button id="logout" class="text-link">Se déconnecter</button></header>
-    <div class="onboarding-loading" id="onboarding-loading"><span class="spinner"></span></div>
+    <div class="onboarding-loading" id="onboarding-loading">
+      <svg class="tohu-spin" viewBox="0 0 100 100" width="22" height="22" role="status" aria-label="Chargement…">
+        <line class="tohu-spin-branch b1" x1="50" y1="50" x2="80" y2="24" />
+        <line class="tohu-spin-branch b2" x1="50" y1="50" x2="88" y2="60" />
+        <line class="tohu-spin-branch b3" x1="50" y1="50" x2="66" y2="86" />
+        <line class="tohu-spin-branch b4" x1="50" y1="50" x2="26" y2="34" />
+        <circle class="tohu-spin-node n1" cx="80" cy="24" r="7" />
+        <circle class="tohu-spin-node n2" cx="88" cy="60" r="6" />
+        <circle class="tohu-spin-node n3" cx="66" cy="86" r="6" />
+        <circle class="tohu-spin-node n4" cx="26" cy="34" r="5.5" />
+        <circle class="tohu-spin-hub" cx="50" cy="50" r="11" />
+      </svg>
+    </div>
     <main class="onboarding-main" id="onboarding-main" hidden>
       <div class="onboarding-progress" aria-label="Progression"><i class="active"></i><i></i></div>
       <section class="onboarding-card panel" id="step-identity">

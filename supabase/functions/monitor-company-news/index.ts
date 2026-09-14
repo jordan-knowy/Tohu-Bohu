@@ -22,25 +22,64 @@ function priorityFor(family: string): string {
   return 'medium';
 }
 
-function classifyFamily(typeOrText: string): string {
-  const s = (typeOrText || '').toLowerCase();
-  if (/churn|faillite|liquidation|cessation|redressement/.test(s)) return 'churn';
-  if (/risque|litige|proc[eè]s|sanction|alerte|d[ée]part/.test(s)) return 'risque';
+// Mapping principal type→family (taxonomie affichée, colonnes/CSS existants —
+// on étend le vocabulaire `type` sans toucher aux 7 valeurs de `family`).
+const TYPE_FAMILY: Record<string, string> = {
+  levee_fonds: 'croissance',
+  acquisition: 'marche',
+  dirigeant: 'mobilite',
+  recrutement: 'croissance',
+  produit: 'levier',
+  partenariat: 'levier',
+  implantation: 'croissance',
+  activite_publique: 'levier',
+  positionnement: 'levier',
+  resultats: 'croissance',
+  marche: 'marche',
+  risque: 'risque',
+};
+
+function classifyFamily(type: string, text: string): string {
+  const s = (text || '').toLowerCase();
+  // Un mot-clé de difficulté prime sur le type déclaré (ex. "resultats" avec
+  // un déficit dedans doit remonter en risque, pas en croissance).
+  if (/faillite|liquidation|cessation|redressement judiciaire/.test(s)) return 'churn';
+  if (/licenciement|plan social|fermeture (de|d')|d[ée]ficit|perte nette|difficult[ée]s? financi[eè]res?|litige|proc[eè]s|sanction/.test(s)) return 'risque';
+  const mapped = TYPE_FAMILY[(type || '').toLowerCase()];
+  if (mapped) return mapped;
+  // Repli pour un ancien `type` ou "autre" : ne classer en presence (jamais
+  // prioritaire) que si aucun mot-clé fort n'indique un fait significatif.
+  if (/churn/.test(s)) return 'churn';
+  if (/risque|alerte|d[ée]part/.test(s)) return 'risque';
   if (/lev[ée]e|fund|financement|croissance|recrut|expansion|embauche|hiring/.test(s)) return 'croissance';
   if (/rachat|acquisition|fusion|m&a|cession|prise de participation|controle/.test(s)) return 'marche';
   if (/nomination|promotion|nouveau (dg|ceo|directeur)|arriv[ée]e|mobilit/.test(s)) return 'mobilite';
-  if (/partenariat|contrat|lancement|produit|opportunit|appel d'offres/.test(s)) return 'levier';
+  if (/partenariat|contrat|lancement|produit|opportunit|appel d'offres|linkedin|positionnement/.test(s)) return 'levier';
   return 'presence';
 }
 
 async function newsForCompany(key: string, name: string, domain: string | null): Promise<any[]> {
-  const prompt = `Recherche les ACTUALITÉS PUBLIQUES récentes (12 derniers mois) sur l'entreprise "${name}"${domain ? ` (site ${domain})` : ''}.
-Sources : presse, LinkedIn (page entreprise), communiqués, registres (BODACC/Pappers).
-Cherche : levée de fonds / financement, rachat / fusion / M&A, changement de dirigeant ou nomination, recrutement / croissance / expansion, lancement produit, partenariat, litige / risque, procédure.
+  const prompt = `Recherche les ÉVÉNEMENTS PUBLICS récents (12 derniers mois) sur l'entreprise "${name}"${domain ? ` (site ${domain})` : ''} susceptibles d'avoir un impact réel sur une relation commerciale avec elle.
+Sources : presse, LinkedIn (page entreprise et prises de parole publiques de ses dirigeants), communiqués, registres (BODACC/Pappers), site web de l'entreprise.
+Cherche, par ordre d'intérêt :
+- levée de fonds / financement ;
+- acquisition, fusion, changement d'actionnariat ;
+- arrivée ou départ d'un décideur, nomination ;
+- recrutement important ou vague de recrutements ;
+- lancement d'un produit, service ou nouvelle offre ;
+- partenariat annoncé ;
+- ouverture / fermeture de bureaux ou nouvelle implantation géographique ;
+- activité LinkedIn ou prise de parole publique RÉELLEMENT significative (pas une publication routinière) ;
+- évolution notable du site web ou du positionnement ;
+- résultats financiers ou signaux de croissance/difficulté rendus publics ;
+- mouvement concurrentiel ou de marché susceptible d'impacter cette entreprise ;
+- litige, procédure, risque (défaillance, plan social, fermeture).
 
-Réponds UNIQUEMENT par un tableau JSON (max 4 items, les plus récents/pertinents), sans texte autour :
-[{"type":"levee_fonds|rachat|dirigeant|recrutement|produit|partenariat|risque|autre","title":"titre court factuel","summary":"1-2 phrases factuelles","source":"Presse|LinkedIn|Registres|Web","source_url":"url si dispo sinon null","date":"AAAA-MM ou AAAA-MM-JJ si connu sinon null"}]
-Règle stricte : n'invente RIEN. Si aucune actualité fiable trouvée, renvoie [].`;
+Ne retiens QUE les événements qui pourraient créer une opportunité commerciale, un risque relationnel, ou une raison légitime de reprendre contact — écarte toute actualité neutre, anecdotique ou sans impact business identifiable. Mieux vaut renvoyer moins d'items que du bruit.
+
+Réponds UNIQUEMENT par un tableau JSON (max 4 items, les plus significatifs/récents), sans texte autour :
+[{"type":"levee_fonds|acquisition|dirigeant|recrutement|produit|partenariat|implantation|activite_publique|positionnement|resultats|marche|risque|autre","title":"titre court factuel","summary":"1-2 phrases factuelles, en quoi c'est pertinent pour la relation commerciale","source":"Presse|LinkedIn|Registres|Web","source_url":"url si dispo sinon null","date":"AAAA-MM ou AAAA-MM-JJ si connu sinon null"}]
+Règle stricte : n'invente RIEN. Si aucun événement significatif et fiable trouvé, renvoie [].`;
   try {
     const res = await fetch(PERPLEXITY_API, {
       method: 'POST',
@@ -80,7 +119,7 @@ async function processCompany(supabase: any, key: string, c: Company): Promise<{
     rows.push({
       organization_id: c.organization_id,
       company_id: c.id,
-      family: classifyFamily(`${it.type} ${it.title}`),
+      family: classifyFamily(it.type, `${it.type} ${it.title} ${it.summary ?? ''}`),
       title: String(it.title).slice(0, 300),
       summary: it.summary ? String(it.summary).slice(0, 800) : null,
       source: it.source ?? 'Web',

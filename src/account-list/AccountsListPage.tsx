@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IntegrationModal, ageSince, type IntegrationItem } from '../components/IntegrationModal'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
-import { createAccount } from '../services/data'
 import { initials } from '../lib/auth'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { listSharedAccountsWithMe, type SharedAccountEntry } from '../account-detail/service'
 import { setBohuBarShrunk } from '../shell/bohuBarSignal'
+import { requestAddPanel } from '../shell/addPanelSignal'
 import { ToastProvider, useBusy, useToast, formatMonth } from '../person-detail/ui'
 import { RELATION_COLORS, TIER_COLORS, durationLabel, scoreColor, logoColor, tickerDurationSeconds, type AccountListRow, type AccountTier, type PortfolioPoint, type TeamMember } from './mapping'
 import {
-  archiveAccounts, detectAccountCandidates, getAccountsOverview, setListFavorite,
-  handoverAccounts, setListOwner, setListRelationType, setListWatch, trackCandidates,
-  type AccountCandidate, type AccountsOverview,
+  archiveAccounts, getAccountsOverview, setListFavorite,
+  handoverAccounts, setListOwner, setListRelationType, setListWatch,
+  type AccountsOverview,
 } from './service'
 
 type PageContext = { workspaceId: string; userId: string }
@@ -25,6 +24,14 @@ export const LinkIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 
 export const MailIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.2z" /></svg>
 export const StarIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 5.9 6.5.6-4.9 4.3 1.45 6.35L12 17.7 6.1 19.75 7.55 13.4 2.65 9.1l6.5-.6z" /></svg>
 export const CheckIcon = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7" /></svg>
+/** Visibilité de la fiche : partagée avec l'organisation (workspace) vs restreinte au owner. */
+export const ShareIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="2.3" /><circle cx="6" cy="12" r="2.3" /><circle cx="18" cy="19" r="2.3" /><path d="M8.1 10.7l7.7-4.3M8.1 13.3l7.7 4.3" /></svg>
+export const LockIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+export function VisibilityBadge({ visibility }: { visibility: 'workspace' | 'restricted' | null }) {
+  if (!visibility) return null
+  const shared = visibility === 'workspace'
+  return <span className={`dxa-vis ${shared ? 'shared' : 'restricted'}`} title={shared ? 'Partagé avec l’organisation' : 'Visibilité restreinte'} aria-label={shared ? 'Partagé avec l’organisation' : 'Visibilité restreinte'}>{shared ? ShareIcon : LockIcon}</span>
+}
 
 export const CHANNEL_ICONS = {
   email: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M4 7l8 6 8-6" /></svg>,
@@ -54,10 +61,6 @@ function Ticker({ overview }: { overview: AccountsOverview }) {
 function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview; range: number; setRange: (value: number) => void }) {
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null)
   const series = useMemo(() => overview.series36.slice(-range), [overview.series36, range])
-  const risky = useMemo(() => overview.accounts
-    .filter((account) => account.score !== null && account.score < 60)
-    .slice(0, 3)
-    .map((account) => ({ name: account.name, reason: account.score! < 50 ? `détracteur · score ${account.score}` : `sous tension · score ${account.score}` })), [overview.accounts])
   const evolution = (value: number | null) => value === null
     ? <span className="dxa-evo-v na">à venir</span>
     : <span className={`dxa-evo-v ${value >= 0 ? 'up' : 'dn'}`}>{value >= 0 ? '+' : '−'}{Math.abs(value)}%</span>
@@ -85,7 +88,7 @@ function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview;
         <span className="dxp-g-t">Évolution du scoring relationnel</span>
         <span className="dxp-info" tabIndex={0}>i<span className="dxp-info-t">
           <b>Scoring relationnel (0–100)</b><br />
-          Santé agrégée du portefeuille dans le temps : moyenne par compte des scores contacts persistés par le moteur backend, mois par mois. Aucune donnée de CA n’entre dans le calcul, et aucun mois n’est interpolé.
+          Même métrique que la carte et le tableau : moyenne des scores relationnels de <b>compte</b> persistés par le moteur backend (account_relationship_score_snapshots), un point par mois civil réellement enregistré. Un compte sans snapshot ce mois-là est absent du point, jamais reconstitué à partir de son score actuel.
         </span></span>
         <span className="dxp-g-s">santé agrégée des comptes · {range} mois</span>
         <div className="dxa-range" role="tablist" aria-label="Période du graphique">
@@ -112,14 +115,21 @@ function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview;
           {series.map((point, index) => (series.length <= 12 || index % Math.ceil(series.length / 12) === 0) && <text key={`label-${point.monthKey}`} x={x(index)} y={H - 8} textAnchor="middle" fontSize="7" fill="#A8A2C0" fontFamily="monospace">{formatMonth(point.monthKey).split(' ')[0]}</text>)}
         </svg>}
       {hover && series[hover.index] && series[hover.index]!.score !== null && (() => {
+        // Snapshot temporel réel du mois survolé — jamais l'état actuel du portefeuille
+        // (overview.accounts) : chaque compte listé ici a un score account_relationship_score_snapshots
+        // réellement enregistré pour CE mois, pas une valeur reportée ou live.
         const point = series[hover.index]!
-        const previous = series.slice(0, hover.index).reverse().find((item) => item.score !== null)
-        const variation = previous?.score ? Math.round((point.score! - previous.score) / previous.score * 100) : null
+        // Comparaison au mois civil immédiatement précédent uniquement (jamais un mois
+        // antérieur au hasard en cas de trou) — s'il est vide, pas de variation affichée.
+        const previous = hover.index > 0 ? series[hover.index - 1] : null
+        const variation = previous && previous.score !== null ? point.score! - previous.score : null
+        const previousLabel = previous ? formatMonth(previous.monthKey).split(' ')[0] : null
+        const fragile = point.accounts.filter((account) => account.score < 60).slice(0, 3)
         return <div className="pa-bartip" style={{ display: 'block', left: Math.min(hover.x + 14, window.innerWidth - 254), top: hover.y + 14 }}>
-          <div className="dxa-bt-h"><span className="dxa-bt-m">{formatMonth(point.monthKey)}</span><span className="dxa-bt-sc" style={{ color: point.score! >= 60 ? '#5FD79E' : point.score! >= 50 ? '#F0B04A' : '#F2879A' }}>{point.score}</span></div>
-          {variation === null ? <div className="dxa-bt-var">—</div> : <div className={`dxa-bt-var ${variation >= 0 ? 'up' : 'dn'}`}>{variation >= 0 ? '+' : '−'}{Math.abs(variation)}% vs mois précédent</div>}
-          {risky.length > 0 && <><div className="dxa-bt-rk">{risky.length} compte{risky.length > 1 ? 's' : ''} à risque actuellement</div>
-            {risky.map((item) => <div className="dxa-bt-r" key={item.name}><i /><span className="dxa-bt-rn">{item.name}</span><span className="dxa-bt-rr">{item.reason}</span></div>)}</>}
+          <div className="dxa-bt-h"><span className="dxa-bt-m">{formatMonth(point.monthKey)}</span><span className="dxa-bt-sc" style={{ color: point.score! >= 60 ? '#5FD79E' : point.score! >= 50 ? '#F0B04A' : '#F2879A' }}>{point.score}/100</span></div>
+          {variation === null ? <div className="dxa-bt-var">—</div> : <div className={`dxa-bt-var ${variation >= 0 ? 'up' : 'dn'}`}>{variation >= 0 ? '+' : '−'}{Math.abs(variation)} pt{Math.abs(variation) > 1 ? 's' : ''}{previousLabel ? ` vs ${previousLabel}` : ''}</div>}
+          {fragile.length > 0 && <><div className="dxa-bt-rk">{fragile.length} compte{fragile.length > 1 ? 's' : ''} fragile{fragile.length > 1 ? 's' : ''} à cette date</div>
+            {fragile.map((account) => <div className="dxa-bt-r" key={account.companyId}><i /><span className="dxa-bt-rn">{account.name}</span><span className="dxa-bt-rr">{account.score}/100</span></div>)}</>}
         </div>
       })()}
     </div>
@@ -218,57 +228,6 @@ function RelationCell({ row, workspaceId, userId, refresh }: { row: AccountListR
   </span>
 }
 
-function IntegrateModal({ workspaceId, onClose, refresh }: { workspaceId: string; onClose: () => void; refresh: () => Promise<void> }) {
-  const toast = useToast()
-  const [candidates, setCandidates] = useState<AccountCandidate[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    detectAccountCandidates(workspaceId).then(setCandidates).catch((reason) => setError(reason instanceof Error ? reason.message : 'Détection impossible'))
-  }, [workspaceId])
-  const byId = useMemo(() => {
-    const map = new Map<string, AccountCandidate>()
-    for (const candidate of candidates ?? []) map.set(candidate.companyId ?? candidate.name, candidate)
-    return map
-  }, [candidates])
-  const items: IntegrationItem[] | null = useMemo(() => candidates?.map((candidate) => ({
-    id: candidate.companyId ?? candidate.name,
-    name: candidate.name,
-    subtitle: candidate.domain ?? candidate.industry,
-    interactions: candidate.interactions,
-    lastInteractionAt: candidate.lastInteractionAt,
-    alreadyTracked: candidate.alreadyTracked,
-    interlocutors: candidate.interlocutors.map((name) => initials(name)),
-    interlocutorCount: candidate.interlocutorCount,
-    ageLabel: ageSince(candidate.firstInteractionAt),
-  })) ?? null, [candidates])
-  const total = candidates?.length ?? 0
-  const handleConfirm = async (ids: string[]) => {
-    setBusy(true)
-    try {
-      const chosen = ids.map((id) => byId.get(id)).filter((candidate): candidate is AccountCandidate => candidate !== undefined && !candidate.alreadyTracked)
-      if (chosen.length) await trackCandidates(workspaceId, chosen.map((candidate) => ({ companyId: candidate.companyId, name: candidate.name, domain: candidate.domain })))
-      toast(`${chosen.length} compte${chosen.length > 1 ? 's' : ''} intégré${chosen.length > 1 ? 's' : ''} au portefeuille — analyse de la relation en cours à partir des échanges.`)
-      await refresh()
-      onClose()
-    } catch (reason) {
-      toast(reason instanceof Error ? reason.message : 'Intégration impossible', 'error')
-      setBusy(false)
-    }
-  }
-  return <IntegrationModal
-    entity="compte"
-    title={`${total} compte${total > 1 ? 's' : ''} détecté${total > 1 ? 's' : ''} dans tes échanges`}
-    subtitle={<>Aucun score à ce stade — que du mesurable. <b>Échanges lus · lecture seule</b>. Les 10 plus actifs sont pré-cochés : tu peux continuer sans rien décider.</>}
-    items={items}
-    loading={candidates === null && !error}
-    error={error}
-    busy={busy}
-    onConfirm={handleConfirm}
-    onClose={onClose}
-  />
-}
-
 export function MemberPicker({ overview, anchor, currentId, title = 'Réattribuer à', onPick, onClose }: { overview: { team: TeamMember[] }; anchor: { x: number; y: number }; currentId: string | null; title?: string; onPick: (memberId: string) => void; onClose: () => void }) {
   useEffect(() => {
     const close = () => onClose()
@@ -363,7 +322,6 @@ function PageBody({ context }: { context: PageContext }) {
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [ownerFilter, setOwnerFilter] = useState<string[]>([])
   const [sort, setSort] = useState<{ key: 'nm' | 'dur' | 'nps' | 'ct'; dir: number } | null>(null)
-  const [integrateOpen, setIntegrateOpen] = useState(false)
   const [ownerPopup, setOwnerPopup] = useState<{ accountId: string; x: number; y: number } | null>(null)
   const [passation, setPassation] = useState(false)
   const [passationClosing, setPassationClosing] = useState(false)
@@ -478,9 +436,6 @@ function PageBody({ context }: { context: PageContext }) {
         <FilterChip label="Owner" options={[...overview.team.map((member) => ({ value: member.name })), { value: 'Sans owner' }]} selected={ownerFilter} onToggle={toggleIn(setOwnerFilter)} />
       </div>
       <div style={{ display: 'flex', gap: 9 }}>
-        <button type="button" className="dxp-integ" onClick={() => setIntegrateOpen(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg> Intégrer des comptes
-        </button>
         <button type="button" className={`kpass-btn ${passation ? 'on' : ''}`} aria-pressed={passation} onClick={() => { passation ? closePassation() : setPassation(true) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H8M8 21l-4-4 4-4M4 17h12" /></svg> Sélectionner
         </button>
@@ -499,7 +454,7 @@ function PageBody({ context }: { context: PageContext }) {
         <span className="center">Veille</span>
       </div>
       <div className="dxp-list dxa-list">
-        {!filtered.length && <div className="dxa-empty">{overview.accounts.length ? 'Aucun compte pour ce filtre.' : 'Aucun compte suivi — utilise « Intégrer des comptes » pour démarrer depuis tes échanges réels.'}</div>}
+        {!filtered.length && <div className="dxa-empty">{overview.accounts.length ? 'Aucun compte pour ce filtre.' : <>Aucun compte suivi — utilise <button type="button" className="dxa-empty-link" onClick={() => requestAddPanel({ tab: 'compte' })}>« Ajouter »</button> en haut de l'écran pour démarrer depuis tes échanges réels.</>}</div>}
         {filtered.map((row) => <div key={row.id} role="button" tabIndex={0} className={`dxa-row dxp-row ${selection.has(row.id) ? 'is-sel' : ''}`}
           onClick={() => {
             if (passation) {
@@ -513,11 +468,11 @@ function PageBody({ context }: { context: PageContext }) {
           {passation
             ? <span className="psel" aria-hidden="true">{CheckIcon}</span>
             : <span />}
+          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.logoUrl} name={row.name} domain={row.domain} /></span>
           <button type="button" className={`dxp-star ${row.favorite ? 'on' : ''}`} aria-pressed={row.favorite} aria-label={row.favorite ? `Retirer ${row.name} des favoris` : `Ajouter ${row.name} aux favoris`}
             onClick={(event) => { event.stopPropagation(); toggleFavorite(row) }}>{StarIcon}</button>
-          <span className="dxa-logo" style={{ background: logoColor(row.name) }} aria-hidden="true"><ContactAvatar src={row.logoUrl} name={row.name} domain={row.domain} /></span>
           <span style={{ minWidth: 0 }}>
-            <span className="dxp-nm">{row.name}</span>
+            <span className="dxa-nm-row"><span className="dxp-nm">{row.name}</span><VisibilityBadge visibility={row.visibility} /></span>
             {row.meta && <span className="dxa-meta">{row.meta}</span>}
           </span>
           <span onClick={(event) => event.stopPropagation()}><RelationCell row={row} workspaceId={context.workspaceId} userId={context.userId} refresh={refresh} /></span>
@@ -539,7 +494,6 @@ function PageBody({ context }: { context: PageContext }) {
       </div>
     </div>
     <div className="pa-note">Scores agrégés depuis les snapshots persistés du moteur relationnel · actualisé {new Date(overview.generatedAt).toLocaleTimeString('fr-FR')}</div>
-    {integrateOpen && <IntegrateModal workspaceId={context.workspaceId} onClose={() => setIntegrateOpen(false)} refresh={refresh} />}
     {ownerPopup && <MemberPicker overview={overview} anchor={ownerPopup}
       currentId={overview.accounts.find((row) => row.id === ownerPopup.accountId)?.ownerId ?? null}
       onPick={pickOwner(ownerPopup.accountId)} onClose={() => setOwnerPopup(null)} />}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import { getSupabase } from '../../lib/supabase'
 import { getProfile } from '../../services/data'
+import { parseBohuAnswer, parseInline, type AskSection } from '../askFormat'
 
 type ShellContext = { session: { user: { id: string } }; workspaceId: string }
 type Message = { role: 'user' | 'assistant'; content: string; pending?: boolean }
@@ -18,7 +19,15 @@ const ROTATION = [
   { c: 'CSM', col: '#2EA86A', ex: 'Mes 3 plus grandes alertes de santé relationnelle ?' },
   { c: 'Operations', col: '#C97A20', ex: 'Quelles relations partent si un collègue quitte la boîte ?' },
 ]
+// Suggestions cliquables de l'état vide — même esprit que ROTATION mais actionnables.
+const SUGGESTIONS = [
+  'Où concentrer mes efforts relationnels cette semaine ?',
+  'Quels comptes sont les plus fragiles ?',
+  'Résume les signaux importants des 7 derniers jours.',
+  'Qui dois-je relancer en priorité ?',
+]
 const RECENT_KEY = 'tohu-ask-recent'
+const COMPOSER_MAX_HEIGHT = 150
 
 /** Marque Bohu — logo réseau Tohu (blanc), repris à l'identique de la maquette. */
 const BohuMark = (
@@ -63,7 +72,40 @@ const Constellation = (
   </svg>
 )
 
-/** Ask Bohu — refonte V57 : reprise fidèle de la maquette (logo Tohu, hero, composer épuré). */
+/** Segment de texte avec gras ciblé (`**mot**` → `<strong>`) — jamais de HTML brut. */
+function Inline({ text }: { text: string }) {
+  return <>{parseInline(text).map((token, i) => token.bold ? <strong key={i}>{token.text}</strong> : token.text)}</>
+}
+
+/** Rendu d'une réponse Bohu déjà découpée en sections (résumé / points clés /
+ *  pourquoi / recommandations / sources) — cf. askFormat.ts. Une réponse sans
+ *  titre reconnu retombe sur un simple paragraphe, comportement inchangé. */
+function BohuAnswer({ content }: { content: string }) {
+  return <div className="message assistant">
+    {parseBohuAnswer(content).map((section: AskSection, index) => {
+      const facts = section.facts.length > 0 && <div className="bohu-facts">
+        {section.facts.map((fact, i) => <div className="fact" key={i}><span>{fact.label}</span><b><Inline text={fact.value} /></b></div>)}
+      </div>
+      const paragraphs = section.paragraphs.map((paragraph, i) => <p className="bohu-lead" key={i}><Inline text={paragraph} /></p>)
+      if (section.kind === 'sources') {
+        return <div className="bohu-sources" key={index}>
+          <p className="bohu-sources-h">{section.heading ?? 'Sources'}</p>
+          {paragraphs}
+          {section.items.length > 0 && <ul>{section.items.map((item, i) => <li key={i}><Inline text={item} /></li>)}</ul>}
+        </div>
+      }
+      const isRecommend = section.kind === 'recommend'
+      return <div className="bohu-section" key={index}>
+        {section.heading && <p className={`sread-h${isRecommend ? ' next' : ''}`}>{section.heading}</p>}
+        {facts}
+        {paragraphs}
+        {section.items.length > 0 && <ul className={`sread-list${isRecommend ? ' next' : ' neutral'}`}>{section.items.map((item, i) => <li key={i}><Inline text={item} /></li>)}</ul>}
+      </div>
+    })}
+  </div>
+}
+
+/** Ask Bohu — mode conversation refondu : fil pleine hauteur, réponses structurées, composer ancré. */
 export default function AskPage() {
   const location = useLocation()
   const { session } = useOutletContext<ShellContext>()
@@ -78,8 +120,9 @@ export default function AskPage() {
     try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as string[] } catch { return [] }
   })
   const [showRecent, setShowRecent] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  const sending = messages.some((item) => item.pending)
 
   useEffect(() => {
     getProfile(session.user.id)
@@ -118,6 +161,14 @@ export default function AskPage() {
     return () => clearInterval(id)
   }, [focused, draft])
 
+  // Composer auto-grandissant (multi-ligne), plafonné par COMPOSER_MAX_HEIGHT (cf. CSS .ask-inwrap textarea).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
+  }, [draft])
+
   const pushRecent = (question: string) => {
     setRecent((current) => {
       const next = [question, ...current.filter((item) => item !== question)].slice(0, 8)
@@ -127,6 +178,7 @@ export default function AskPage() {
   }
 
   const ask = (message: string) => {
+    if (sending) return
     const trimmed = message.trim()
     if (!trimmed) return
     setDraft('')
@@ -159,11 +211,13 @@ export default function AskPage() {
       })
   }
 
+  const submitDraft = () => ask(draft)
+
   const empty = messages.length === 0
   const rot = ROTATION[rotIndex]!
   const scopeLabel = SCOPES[scopeIndex]?.label ?? 'Mon organisation'
 
-  return <div className={`ask-layout${empty ? ' is-empty' : ''}`}>
+  return <div className={`ask-layout${empty ? ' is-empty' : ' is-thread'}`}>
     {empty && Constellation}
 
     <div className="ask-top">
@@ -171,10 +225,13 @@ export default function AskPage() {
       <div className="ask-top-actions">
         <div className="ask-recent-wrap">
           <button type="button" className="ask-chip" onClick={() => setShowRecent((value) => !value)} disabled={!recent.length} aria-expanded={showRecent}>
-            <span aria-hidden="true">🕘</span> Récent
+            <span aria-hidden="true">🕘</span> Historique
           </button>
-          {showRecent && recent.length > 0 && <div className="ask-recent-menu" role="menu">
-            {recent.map((question) => <button type="button" key={question} role="menuitem" onClick={() => ask(question)}>{question}</button>)}
+          {showRecent && <div className="ask-recent-menu" role="menu">
+            <div className="ask-recent-menu-h">Questions récentes</div>
+            {recent.length
+              ? recent.map((question) => <button type="button" key={question} role="menuitem" onClick={() => ask(question)}>{question}</button>)
+              : <div className="ask-recent-empty">Aucune question posée pour l’instant.</div>}
           </div>}
         </div>
         <button type="button" className="ask-chip primary" onClick={() => { setMessages([]); setDraft(''); setShowRecent(false); inputRef.current?.focus() }}>
@@ -189,20 +246,32 @@ export default function AskPage() {
           <p className="ask-kicker">Bohu · Cerveau relationnel</p>
           <h2>Que veux-tu comprendre{firstName ? `, ${firstName}` : ''} ?</h2>
           <p className="ask-sub">Pose une question sur tes comptes, tes contacts et ta team — Bohu répond avec ce qu’il a observé, daté et sourcé.</p>
+          <div className="ask-suggestions">
+            {SUGGESTIONS.map((suggestion) => <button type="button" key={suggestion} onClick={() => ask(suggestion)}>{suggestion}</button>)}
+          </div>
         </div>
       : <div className="ask-thread" ref={threadRef} aria-live="polite">
-          {messages.map((message, index) => message.pending
-            ? <div className="message assistant pending" key={index}><span className="ask-dots" role="status" aria-label="Bohu écrit…"><i /><i /><i /></span></div>
-            : <div className={`message ${message.role}`} key={index}>{message.content}</div>)}
+          {messages.map((message, index) => {
+            if (message.role === 'user') return <div className="bohu-row user" key={index}><div className="message user">{message.content}</div></div>
+            if (message.pending) return <div className="bohu-row assistant" key={index}>
+              <span className="bohu-avatar">{BohuMark}</span>
+              <div className="bohu-body"><span className="ask-dots" role="status" aria-label="Bohu écrit…"><i /><i /><i /></span></div>
+            </div>
+            return <div className="bohu-row assistant" key={index}>
+              <span className="bohu-avatar">{BohuMark}</span>
+              <div className="bohu-body"><BohuAnswer content={message.content} /></div>
+            </div>
+          })}
         </div>}
 
-    <form className="ask-composer" onSubmit={(event) => { event.preventDefault(); ask(draft) }}>
+    <form className={`ask-composer${empty ? '' : ' is-dock'}`} onSubmit={(event) => { event.preventDefault(); submitDraft() }}>
       <button type="button" className="ask-scope" onClick={() => setScopeIndex((index) => (index + 1) % SCOPES.length)} aria-label={`Périmètre : ${scopeLabel}. Cliquer pour changer.`}>
         <span className="ask-scope-dot" aria-hidden="true" />{scopeLabel}<span className="ask-scope-caret" aria-hidden="true">▾</span>
       </button>
       <span className="ask-inwrap">
-        <input ref={inputRef} type="text" value={draft} aria-label="Poser une question à Bohu"
+        <textarea ref={inputRef} rows={1} value={draft} aria-label="Poser une question à Bohu" disabled={sending}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitDraft() } }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)} />
         <span className={`ask-ghost${draft ? ' is-hidden' : ''}${rotFade ? ' is-fading' : ''}`} aria-hidden="true">
@@ -214,7 +283,7 @@ export default function AskPage() {
               </>}
         </span>
       </span>
-      <button type="submit" className="ask-send" aria-label="Envoyer">{SendArrow}</button>
+      <button type="submit" className="ask-send" aria-label="Envoyer" disabled={sending || !draft.trim()}>{SendArrow}</button>
     </form>
     <p className="ask-disclaimer">Tohu peut se tromper. Les réponses sensibles doivent être vérifiées.</p>
   </div>

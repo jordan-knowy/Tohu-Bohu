@@ -60,7 +60,7 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
 
   const [
     contactsResult, historyResult, settingsResult, userSettingsResult,
-    messagesResult, meetingsResult, signalsResult, teamResult,
+    messagesResult, meetingsResult, signalsResult, teamResult, visionsResult,
   ] = await Promise.all([
     client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name,domain),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
     fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
@@ -70,6 +70,7 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
     client.from('meetings').select('company_id,starts_at').eq('organization_id', workspaceId).eq('owner_user_id', userId).limit(1000),
     client.from('behavioral_signals').select('id,contact_id,signal_type,text,inference,source_type,observed_at,contacts(full_name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
     client.rpc('get_team_vision_members', { p_organization_id: workspaceId }),
+    client.from('fiche_visions').select('entity_id,owner_user_id,visibility').eq('organization_id', workspaceId).eq('entity_type', 'contact'),
   ])
 
   if (contactsResult.error) throw new Error(contactsResult.error.message)
@@ -82,13 +83,14 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
   const meetings = rows(optional(meetingsResult, 'Réunions', degradedReasons))
   const signals = rows(optional(signalsResult, 'Signaux comportementaux', degradedReasons))
   const profiles = rows(optional(teamResult, 'Équipe', degradedReasons))
+  const visions = rows(optional(visionsResult, 'Visibilité des fiches', degradedReasons))
 
   const profileNames = new Map(profiles.map((profile) => [String(profile.id), text(profile.full_name) ?? 'Membre Tohu']))
   const team: TeamMember[] = profiles
     .map((profile) => ({ id: String(profile.id), name: text(profile.full_name) ?? 'Membre Tohu', avatarUrl: text(profile.avatar_url) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  const people = buildPersonListRows({ contacts, scoreHistory, settings, userSettings, messages, meetings, profileNames, now })
+  const people = buildPersonListRows({ contacts, scoreHistory, settings, userSettings, messages, meetings, profileNames, visions, now })
 
   return {
     workspaceId,
@@ -105,6 +107,7 @@ export type PersonCandidate = {
   fullName: string
   email: string | null
   roleTitle: string | null
+  companyId: string | null
   companyName: string | null
   interactions: number
   lastInteractionAt: string | null
@@ -123,6 +126,7 @@ export async function detectPersonCandidates(workspaceId: string): Promise<Perso
     fullName: formatPersonName(text(candidate.full_name)) ?? 'Personne détectée',
     email: text(candidate.email),
     roleTitle: text(candidate.role_title),
+    companyId: text(candidate.company_id),
     companyName: text(candidate.company_name),
     interactions: Number(candidate.interactions ?? 0),
     lastInteractionAt: text(candidate.last_interaction_at),
@@ -166,7 +170,9 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
     // et présent à partir de ses échanges déjà synchronisés (même formule),
     // pas seulement le score du jour.
     client.functions.invoke('score-batch', { body: { organizationId: workspaceId, contactId, deepBackfill: true } }),
-    client.functions.invoke('monitor-contacts', { body: { organizationId: workspaceId } }),
+    // La veille (monitor-contacts, appel IA) n'est plus déclenchée par l'ajout
+    // d'une personne — elle reste une action explicite (bouton « Veille » des
+    // listes Comptes/Personnes), jamais un effet de bord automatique.
     triggerBehaviorSyncs(workspaceId),
     // Relecture ciblée sans limite de temps (au-delà des 2 ans de la découverte
     // générale) : va chercher tous les échanges réels avec ce contact dans la

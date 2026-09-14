@@ -49,6 +49,7 @@ function signal(overrides: Partial<HomeSignal>): HomeSignal {
     confidence: 60,
     inferenceLevel: null,
     userVerdict: null,
+    sourceUrl: null,
     ...overrides,
   }
 }
@@ -173,6 +174,10 @@ describe('deriveActions — actions dérivées de faits persistés (scénario 17
     const actions = deriveActions([], [signal({ signalType: 'job_change', observedAt: '2026-05-01T00:00:00Z' })], NOW)
     expect(actions).toHaveLength(0)
   })
+  it('exclut un signal déjà écarté (dismissed) de toutes les branches, pas seulement validation', () => {
+    const actions = deriveActions([], [signal({ signalType: 'job_change', title: 'Nouveau rôle détecté', userVerdict: 'dismissed' })], NOW)
+    expect(actions).toHaveLength(0)
+  })
   it('trie par priorité décroissante et dédoublonne par actionId', () => {
     const accounts = [
       account({ id: 'a', name: 'A', score: 60, lastInteractionAt: '2026-07-01T00:00:00Z', contactCount: 1 }),
@@ -218,6 +223,9 @@ function commitment(overrides: Partial<PendingCommitment>): PendingCommitment {
     observedAt: '2026-07-10T00:00:00Z',
     confidence: 80,
     sourceLabel: 'Tohu · engagement détecté',
+    sourceExcerpt: null,
+    sourceOccurredAt: null,
+    sourceDirection: null,
     ...overrides,
   }
 }

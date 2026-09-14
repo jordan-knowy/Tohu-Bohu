@@ -233,6 +233,12 @@ export type PersonHistoryEvent = {
   description: string | null
   occurredAt: string
   sourceLabel: string
+  // Uniquement pour type === 'meeting' : réunion individuelle (1:1 ou petit
+  // meeting externe) vs collective (standup, webinar) — une collective ne compte
+  // jamais comme "prochain rendez-vous" avec une personne précise, même fichée.
+  meetingScope?: 'individual' | 'collective'
+  meetingUrl?: string | null
+  calendarLink?: string | null
 }
 
 export type PersonNameSuggestion = {
@@ -356,6 +362,10 @@ export interface PersonDetailData {
   }
 
   sources: PersonSourceStatus[]
+  // Un agenda (Google ou Microsoft) est connecté avec le scope calendrier pour le
+  // propriétaire de cette vision — distingue "agenda non connecté" de "connecté
+  // mais rien à venir" dans le bloc Prochain rendez-vous.
+  calendarConnected: boolean
   recommendations: PersonRecommendation[]
   signals: PersonSignal[]
   contactDetails: PersonContactDetail[]

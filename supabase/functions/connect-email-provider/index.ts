@@ -59,7 +59,7 @@ Deno.serve(async (request) => {
       scopes: Array.isArray(scopes) ? scopes : [],
       metadata: action === 'disconnect' ? {} : { connected_at: new Date().toISOString() },
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'organization_id,user_id,provider' }).select('id').single()
+    }, { onConflict: 'user_id,provider' }).select('id').single()
     if (connectorError || !connector) throw connectorError ?? new Error('Connecteur introuvable')
 
     if (action === 'disconnect') {

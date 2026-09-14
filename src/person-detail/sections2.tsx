@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { saveSignalFeedback } from '../services/data'
 import { isBehavioralSignal } from '../services/signal-labels'
 import { initials } from '../lib/auth'
+import { TohuSpinner } from '../components/TohuSpinner'
 import {
   addPersonContactDetail, addPersonFile, addPersonNote, addPersonVoiceNote,
   archivePersonContactDetail, clearPersonContactDetail, setCareerVerification, setPersonWatch, setPrimaryContactDetail,
@@ -297,7 +298,7 @@ export function MemoryCard({ data, userId, refresh, embedded = false }: SectionP
     </div>
     {transcript && <div className="feed-transcript" onClick={(event) => event.stopPropagation()}>
       {transcriptStep
-        ? <div className="feed-transcript-run"><span className="spinner" />{transcriptStep}</div>
+        ? <div className="feed-transcript-run"><TohuSpinner size={16} />{transcriptStep}</div>
         : <>
           <div className="feed-transcript-h"><b>Transcript détecté</b> — « {transcript.name} » sera <b>analysé</b> (profil, engagements, dates), pas seulement stocké.</div>
           <label className="feed-transcript-date"><span>Date de la réunion <em>(optionnel)</em></span>

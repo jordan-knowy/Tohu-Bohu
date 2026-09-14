@@ -2,6 +2,7 @@
 // Aucune requête ici : tout est testable sans réseau.
 
 import { formatPersonName } from '../lib/names'
+import { isCalendarConnected } from '../services/connector-calendar'
 import { signalTitle } from '../services/signal-labels'
 import {
   MIN_COGNITIVE_PROFILE_INTERACTIONS,
@@ -576,7 +577,13 @@ export function buildHistory(meetingRows: Row[], messageRows: Row[], signals: Pe
   for (const meeting of meetingRows) {
     const date = text(meeting.starts_at)
     if (!date) continue
-    events.push({ id: `meeting-${String(meeting.id)}`, type: 'meeting', title: text(meeting.title) ?? 'Réunion', description: text(meeting.meeting_type), occurredAt: date, sourceLabel: text(meeting.platform) ?? 'Agenda' })
+    if (text(meeting.status) === 'cancelled') continue
+    events.push({
+      id: `meeting-${String(meeting.id)}`, type: 'meeting', title: text(meeting.title) ?? 'Réunion', description: text(meeting.meeting_type), occurredAt: date, sourceLabel: text(meeting.platform) ?? 'Agenda',
+      meetingScope: text(meeting.meeting_scope) === 'collective' ? 'collective' : 'individual',
+      meetingUrl: text(meeting.meeting_url),
+      calendarLink: text(meeting.calendar_html_link),
+    })
   }
   for (const message of messageRows) {
     const date = text(message.sent_at)
@@ -796,6 +803,11 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       updatedAt: text(cognitiveProfile.updated_at),
     },
     sources: buildSources(raw.connectors, providerCounts),
+    calendarConnected: isCalendarConnected(raw.connectors.map((row) => ({
+      provider: text(row.provider) ?? '',
+      status: text(row.status) ?? '',
+      scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : null,
+    }))),
     recommendations: buildRecommendations(raw.recommendations),
     signals,
     contactDetails,

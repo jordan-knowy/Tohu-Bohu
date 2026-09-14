@@ -31,9 +31,11 @@ export type AccountListRow = {
   ownerName: string | null
   tier: AccountTier
   tracked: boolean
+  /** null = aucune vision persistée (compte tout juste ajouté) — jamais affiché comme restreint par défaut. */
+  visibility: 'workspace' | 'restricted' | null
 }
 
-export type PortfolioPoint = { monthKey: string; score: number | null }
+export type PortfolioPoint = { monthKey: string; score: number | null; accounts: PortfolioAccountSnapshot[] }
 
 export type TickerItem = { src: 'ext' | 'int'; tag: string; account: string; summary: string }
 
@@ -115,6 +117,7 @@ export type AccountListRaw = {
   signals: Row[]
   profileNames: Map<string, string>
   accountScores: Map<string, number>
+  visions: Row[]
   now: Date
 }
 
@@ -135,6 +138,12 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
   const settingsByCompany = new Map(raw.settings.map((row) => [String(row.company_id), row]))
   const prefsByCompany = new Map(raw.preferences.map((row) => [String(row.company_id), row]))
   const watchByCompany = new Map(raw.watch.map((row) => [String(row.company_id), row]))
+  const visionsByCompany = new Map<string, Row[]>()
+  for (const vision of raw.visions) {
+    const companyId = text(vision.entity_id)
+    if (!companyId) continue
+    visionsByCompany.set(companyId, [...(visionsByCompany.get(companyId) ?? []), vision])
+  }
   const meetingsByCompany = new Map<string, Row[]>()
   for (const meeting of raw.meetings) {
     const companyId = text(meeting.company_id)
@@ -171,6 +180,9 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
 
     const ownerId = text(settings.primary_owner_user_id) ?? mostCommonOwner(linked)
     const emailChannel = linked.some((contact) => raw.messageContactIds.has(String(contact.id)))
+    const companyVisions = visionsByCompany.get(id) ?? []
+    const companyVision = companyVisions.find((vision) => text(vision.owner_user_id) === ownerId) ?? companyVisions[0]
+    const visibility = companyVision ? (text(companyVision.visibility) as AccountListRow['visibility']) : null
     return [{
       id,
       name: text(company.name) ?? 'Compte',
@@ -194,6 +206,7 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
       ownerName: ownerId ? raw.profileNames.get(ownerId) ?? null : null,
       tier: accountTier(score),
       tracked: company.is_tracked !== false,
+      visibility,
     }]
   }).sort((a, b) => (a.score ?? 101) - (b.score ?? 101) || a.name.localeCompare(b.name))
 }
@@ -207,57 +220,65 @@ function mostCommonOwner(contacts: Row[]): string | null {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 }
 
-/** Série mensuelle du portefeuille : pour chaque mois, le score de chaque
- *  contact est celui reporté (dernier score connu à cette date, « as-of »),
- *  pas seulement celui daté ce mois précis — même logique de reconstruction
- *  que la santé du compte (RPC account_health_monthly) et le profil personne :
- *  un mois sans nouvelle mesure n'efface pas la relation, il la prolonge. */
-export function buildPortfolioSeries(scoreHistory: Row[], contacts: Row[], months: number, now: Date): PortfolioPoint[] {
-  const contactCompany = new Map(contacts.map((contact) => [String(contact.id), text(contact.company_id)]))
-  // contact -> historique trié croissant [{date, score}]
-  const byContact = new Map<string, Array<{ date: string; score: number }>>()
-  for (const row of scoreHistory) {
-    const date = text(row.snapshot_date)
+/** Un compte réellement scoré à un mois donné — jamais reconstitué. */
+export type PortfolioAccountSnapshot = { companyId: string; name: string; score: number }
+
+/** Série mensuelle du portefeuille — SEULE source : account_relationship_score_snapshots
+ *  (mêmes lignes, même formule que la carte « Score relationnel global » et la colonne
+ *  Score du tableau — voir getAccountsOverview). Aucune dépendance à contact_score_history :
+ *  ce n'est pas la même métrique (score contact ≠ score compte pondéré coverage/récence),
+ *  la présenter comme « l'évolution du score relationnel » induisait en erreur.
+ *
+ *  Un mois = le score moyen des SEULS comptes ayant un snapshot.snapshot_month réellement
+ *  enregistré pour ce mois civil exact. Pas de report du dernier score connu (carry-forward)
+ *  ni du score actuel : un compte sans snapshot ce mois-là est absent de ce point, jamais
+ *  substitué — qu'il n'existait pas encore ou qu'un mois soit resté silencieux (aucune
+ *  interaction), c'est une donnée manquante, pas une valeur à inventer. */
+export function buildAccountScoreSeries(
+  snapshotRows: Row[],
+  companyNames: Map<string, string>,
+  activeCompanyIds: Set<string>,
+  months: number,
+  now: Date,
+): PortfolioPoint[] {
+  // Un seul score par (compte, mois) : la contrainte unique en base (migration
+  // 20260910220000) garantit qu'il n'existe plus qu'une ligne, mais on se protège
+  // quand même ici (défense en profondeur) — les lignes arrivent triées
+  // computed_at desc depuis service.ts, donc la première rencontrée par
+  // (mois, compte) est la plus récente ; on ignore toute suivante en doublon.
+  const seenPerMonth = new Map<string, Set<string>>()
+  const byMonth = new Map<string, PortfolioAccountSnapshot[]>()
+  for (const row of snapshotRows) {
+    const companyId = text(row.company_id)
+    const monthKey = text(row.snapshot_month)?.slice(0, 7) ?? null
     const score = num(row.score)
-    const contactId = String(row.contact_id)
-    if (!date || score === null || !contactCompany.get(contactId)) continue
-    const list = byContact.get(contactId) ?? []
-    list.push({ date, score })
-    byContact.set(contactId, list)
+    if (!companyId || !monthKey || score === null || !activeCompanyIds.has(companyId)) continue
+    const seen = seenPerMonth.get(monthKey) ?? new Set<string>()
+    if (seen.has(companyId)) continue
+    seen.add(companyId)
+    seenPerMonth.set(monthKey, seen)
+    const list = byMonth.get(monthKey) ?? []
+    list.push({ companyId, name: companyNames.get(companyId) ?? 'Compte', score })
+    byMonth.set(monthKey, list)
   }
-  for (const list of byContact.values()) list.sort((a, b) => a.date.localeCompare(b.date))
-  // Pointeur par contact : avance au fil des mois (croissant), jamais reculé.
-  const pointer = new Map<string, number>()
 
   const result: PortfolioPoint[] = []
   for (let index = months - 1; index >= 0; index--) {
     const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1))
     const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`
-    const cutoff = index === 0 ? now.toISOString().slice(0, 10)
-      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index + 1, 1) - 1).toISOString().slice(0, 10)
-
-    const companyScores = new Map<string, number[]>()
-    for (const [contactId, list] of byContact) {
-      let i = pointer.get(contactId) ?? 0
-      while (i + 1 < list.length && list[i + 1]!.date <= cutoff) i++
-      pointer.set(contactId, i)
-      if (list[i] === undefined || list[i]!.date > cutoff) continue
-      const companyId = contactCompany.get(contactId)!
-      const scores = companyScores.get(companyId) ?? []
-      scores.push(list[i]!.score)
-      companyScores.set(companyId, scores)
-    }
-    if (!companyScores.size) { result.push({ monthKey, score: null }); continue }
-    const accountScores = [...companyScores.values()].map((values) => values.reduce((sum, value) => sum + value, 0) / values.length)
-    result.push({ monthKey, score: Math.round(accountScores.reduce((sum, value) => sum + value, 0) / accountScores.length) })
+    const accounts = (byMonth.get(monthKey) ?? []).sort((a, b) => a.score - b.score)
+    const score = accounts.length ? Math.round(accounts.reduce((sum, account) => sum + account.score, 0) / accounts.length) : null
+    result.push({ monthKey, score, accounts })
   }
   return result
 }
 
-/** Évolutions % sur 1 mois / trimestre / année, à partir de points persistés uniquement. */
+/** Évolutions % sur 1 mois / trimestre / année — ancrées sur le DERNIER point exact de la
+ *  série (le mois courant, pas « le dernier mois qui avait des données ») pour rester
+ *  mathématiquement raccord avec la carte : si ce point est renseigné, il est calculé sur
+ *  les mêmes lignes account_relationship_score_snapshots que le score actuel affiché. */
 export function evolutionPercents(series: PortfolioPoint[]): { m1: number | null; m3: number | null; m12: number | null } {
-  const scored = series.filter((point) => point.score !== null)
-  const last = scored.at(-1)?.score ?? null
+  const last = series.at(-1)?.score ?? null
   const at = (offset: number): number | null => {
     if (last === null) return null
     const target = series.length - 1 - offset

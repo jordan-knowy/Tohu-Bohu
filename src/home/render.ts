@@ -30,6 +30,9 @@ import {
 import { saveSignalFeedback, type ProfileRow } from '../services/data'
 import { scoreFreshness } from '../services/surface-state'
 import { tickerDurationSeconds } from '../account-list/mapping'
+import { requestAddPanel } from '../shell/addPanelSignal'
+import { suggestedActionFor, weightOf } from './factCard'
+import { tohuSpinner } from '../components/logo'
 import { relationLevel } from './types'
 import type {
   HomeAccountCandidate,
@@ -570,6 +573,9 @@ function renderCockpit(ctx: HomeContext, data: HomeDashboardData): void {
 }
 
 function highlightsMarkup(data: HomeDashboardData): string {
+  // Même poids visuel que le panneau « Éléments en suspens » (weightOf sur le
+  // même barème 0-100) : un fait critique doit se reconnaître au même coup
+  // d'œil ici et dans la carte détaillée juste en dessous, pas seulement au clic.
   const fromActions = data.priorityActions.slice(0, 12).map((action) => ({
     label: ACTION_LABELS[action.type] ?? action.type,
     src: action.type === 'risque' ? 'ext' : 'int',
@@ -577,6 +583,7 @@ function highlightsMarkup(data: HomeDashboardData): string {
     title: action.title,
     accountId: action.accountId,
     personId: action.personId,
+    weight: weightOf(action.priority),
   }))
   const items = fromActions.length ? fromActions : data.latestSignals
     // "presence" = faits généraux d'un compte (souvent sans date propre, ex. au
@@ -590,10 +597,13 @@ function highlightsMarkup(data: HomeDashboardData): string {
       title: signal.title,
       accountId: signal.accountId,
       personId: signal.personId,
+      // Un signal brut (hors liste priorisée) n'a pas de score comparable —
+      // poids neutre plutôt que de laisser supposer une urgence non établie.
+      weight: 'low' as const,
     }))
   if (!items.length) return ''
   const duration = tickerDurationSeconds(items.length)
-  const rowMarkup = items.map((item) => `<button class="crm-mv-item ${esc(item.src)}" ${item.accountId ? `data-open-account="${esc(item.accountId)}"` : item.personId ? `data-open-person="${esc(item.personId)}"` : ''}>
+  const rowMarkup = items.map((item) => `<button class="crm-mv-item ${esc(item.src)} w-${item.weight}" ${item.accountId ? `data-open-account="${esc(item.accountId)}"` : item.personId ? `data-open-person="${esc(item.personId)}"` : ''}>
     <span class="crm-mv-ic">${item.src === 'ext' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>'}</span>
     <span class="crm-mv-src">${item.src === 'ext' ? 'Risque' : 'Signal'}</span>
     <span class="crm-mv-t">${esc(item.label)}</span>
@@ -696,7 +706,7 @@ function scoreRowMarkup(data: HomeDashboardData): string {
     <button class="cockpit-kpi number-kpi" data-home="go-people" aria-label="Ouvrir les personnes suivies">
       <span class="cockpit-kpi-label">Relations actives</span>
       <strong>${data.counters.activeRelationships}</strong>
-      <small>${data.counters.people} personne${data.counters.people > 1 ? 's' : ''} dans la mémoire</small>
+      <small>sur ${data.counters.people} personne${data.counters.people > 1 ? 's' : ''} · 30 derniers jours</small>
     </button>
   </div>`
 }
@@ -755,12 +765,31 @@ function topMarkup(data: HomeDashboardData): string {
   </section>`
 }
 
+/**
+ * Panneau preuve (« D'où vient ce constat ? ») : SOURCE BRUTE → repli paraphrasé.
+ * Priorité à la preuve la plus forte disponible — citation exacte capturée à
+ * l'analyse (engagements, jamais reconstituée ici) puis lien vers la source
+ * publique (signaux externes) — sinon le repli habituel source + date + confiance.
+ */
+function proofPanelMarkup(action: HomePriorityAction): string {
+  const body = action.sourceExcerpt
+    ? `<blockquote class="krs-proof-quote">« ${esc(action.sourceExcerpt)} »</blockquote><div class="krs-proof-meta">${action.sourceDirection === 'outbound' ? 'Envoyé' : action.sourceDirection === 'inbound' ? 'Reçu' : 'Échange'}${action.sourceOccurredAt ? ` le ${esc(formatDate(action.sourceOccurredAt))}` : ''}</div>`
+    : `<div class="krs-proof-meta">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${confidenceLevel(action.confidence) ? ` · confiance ${esc(confidenceLevel(action.confidence) ?? '')}` : ''}</div>`
+  const link = action.sourceUrl
+    ? `<a class="krs-proof-link" href="${esc(action.sourceUrl)}" target="_blank" rel="noopener noreferrer">Ouvrir la source ↗</a>`
+    : ''
+  return `<div class="krs-proof" hidden>${body}${link}</div>`
+}
+
 /* Bloc 9 — actions du jour */
 function actionsMarkup(actions: HomePriorityAction[]): string {
   if (!actions.length) {
     return emptyState(HICON.target, 'Aucune action prioritaire aujourd’hui', 'Tohu te préviendra dès qu’un signal, un silence ou une échéance demandera ton attention.')
   }
-  return actions.map((action) => `<article class="krs-card" data-type="${esc(action.type)}" data-action-id="${esc(action.actionId)}">
+  return actions.map((action) => {
+    const weight = weightOf(action.priority)
+    const suggested = suggestedActionFor(action)
+    return `<article class="krs-card w-${weight}" data-type="${esc(action.type)}" data-action-id="${esc(action.actionId)}">
     <div class="krs-band" aria-hidden="true"></div>
     <div class="krs-main">
       <div class="krs-crow">
@@ -773,14 +802,19 @@ function actionsMarkup(actions: HomePriorityAction[]): string {
       <div class="krs-arow">
         ${action.accountId ? `<button type="button" class="krs-cpt" data-open-account="${esc(action.accountId)}">${HICON.link} ${esc(action.accountName ?? 'Compte')}</button>` : ''}
         ${action.personId ? `<button type="button" class="krs-cpt" data-open-person="${esc(action.personId)}">${HICON.user} ${esc(action.personName ?? 'Personne')}</button>` : ''}
-        <span class="krs-asig">↳ ${esc(action.source)} · ${esc(formatDate(action.observedAt))}${confidenceLevel(action.confidence) ? ` · confiance ${confidenceLevel(action.confidence)}` : ''}</span>
+        <button type="button" class="krs-proof-btn" data-proof-toggle aria-expanded="false" title="D’où vient ce constat ?">i</button>
+        ${suggested?.kind === 'add-person' ? `<button type="button" class="krs-b sm suggest" data-home="action-add-person" data-account-id="${esc(action.accountId)}" data-account-name="${esc(action.accountName ?? '')}">${esc(suggested.label)}</button>` : ''}
+        ${suggested?.kind === 'open-account' ? `<button type="button" class="krs-b sm suggest" data-open-account="${esc(action.accountId)}">${esc(suggested.label)}</button>` : ''}
+        ${suggested?.kind === 'open-person' ? `<button type="button" class="krs-b sm suggest" data-open-person="${esc(action.personId)}">${esc(suggested.label)}</button>` : ''}
         <span class="krs-do-inline">
           <button class="krs-b sm yes" data-home="action-done" aria-label="Marquer comme fait"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg> Fait</button>
           <button class="krs-b sm no" data-home="action-dismiss" aria-label="Écarter cette action"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </span>
       </div>
+      ${proofPanelMarkup(action)}
     </div>
-  </article>`).join('')
+  </article>`
+  }).join('')
 }
 
 /* Bloc 10 — signaux · veille */
@@ -811,7 +845,7 @@ function signalsMarkup(data: HomeDashboardData): string {
       <span class="sig-ic" aria-hidden="true">${HICON.globe}</span>
       <div><div class="sig-ttl">Signaux · veille</div><div class="sig-sub">multi-compte · faits datés à valider</div></div>
     </div>
-    <div class="rc-sync"><span class="spinner" aria-hidden="true"></span><span>Dernière synchronisation : <b>${esc(relativeTime(lastSync))}</b></span></div>
+    <div class="rc-sync">${tohuSpinner(16)}<span>Dernière synchronisation : <b>${esc(relativeTime(lastSync))}</b></span></div>
     <div class="syncbar" aria-hidden="true"></div>
     <div class="sig-body">${items}</div>
     ${foot}
@@ -862,7 +896,11 @@ function bindCockpit(ctx: HomeContext, data: HomeDashboardData): void {
   root.querySelector('[data-home="close-digest"]')?.addEventListener('click', (event) => {
     (event.currentTarget as HTMLElement).closest('.hdelta')?.remove()
   })
-  root.querySelector('[data-home="add-accounts"]')?.addEventListener('click', () => void startDetection(ctx, data))
+  // Le bandeau plan (« Ajouter des comptes », déjà onboardé) passe par le
+  // panneau global unique (bouton « Ajouter » du topbar, comptes + personnes
+  // dans la même vue) plutôt que par le stepper plein écran ci-dessous, qui
+  // reste réservé au tout premier onboarding (portefeuille vide).
+  root.querySelector('[data-home="add-accounts"]')?.addEventListener('click', () => requestAddPanel({ tab: 'compte' }))
   root.querySelectorAll<HTMLButtonElement>('[data-top-tab]').forEach((tab) => tab.addEventListener('click', () => {
     root.querySelectorAll<HTMLButtonElement>('[data-top-tab]').forEach((node) => {
       const on = node === tab
@@ -900,7 +938,23 @@ function bindActions(ctx: HomeContext, data: HomeDashboardData): void {
   const stack = ctx.container.querySelector('#home-actions')
   if (!stack) return
   stack.addEventListener('click', (event) => {
-    const button = (event.target as Element).closest<HTMLButtonElement>('[data-home^="action-"]')
+    const target = event.target as Element
+    const proofToggle = target.closest<HTMLButtonElement>('[data-proof-toggle]')
+    if (proofToggle) {
+      const proof = proofToggle.closest('.krs-main')?.querySelector<HTMLElement>('.krs-proof')
+      if (proof) {
+        const expanded = proofToggle.getAttribute('aria-expanded') === 'true'
+        proof.hidden = expanded
+        proofToggle.setAttribute('aria-expanded', String(!expanded))
+      }
+      return
+    }
+    const addPersonButton = target.closest<HTMLButtonElement>('[data-home="action-add-person"]')
+    if (addPersonButton) {
+      requestAddPanel({ tab: 'personne', filterAccountId: addPersonButton.dataset.accountId || null, filterAccountName: addPersonButton.dataset.accountName || null })
+      return
+    }
+    const button = target.closest<HTMLButtonElement>('[data-home^="action-"]')
     if (!button) return
     const card = button.closest<HTMLElement>('.krs-card')
     const action = data.priorityActions.find((item) => item.actionId === card?.dataset.actionId)

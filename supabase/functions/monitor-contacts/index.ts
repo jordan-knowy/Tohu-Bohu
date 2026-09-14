@@ -29,6 +29,13 @@ const MAX_PER_RUN = 18;
 // pour ne pas ouvrir 18 promesses d'un coup en attente du sémaphore.
 const LOCAL_CONCURRENCY = 5;
 const COMPANY_FRESH_MS = 60 * 24 * 60 * 60 * 1000; // 60 jours
+// Colonnes de la contrainte d'unicité anti-doublon de person_career_entries
+// (migration dedup_person_career_entries) : deux passages concurrents de ce
+// cron sur le même contact (cron qui se chevauche + "Enrichir maintenant")
+// peuvent tous les deux constater "aucun historique encore en base" avant que
+// l'un des deux ait écrit le sien — l'upsert + cette contrainte rend
+// l'insertion idempotente au lieu de dupliquer la ligne.
+const CAREER_ENTRY_CONFLICT = 'organization_id,contact_id,entry_type,title,organization_name,started_at,ended_at';
 
 // ── Classification de domaine (portée de enrich-contact) ─────────────────────
 const PERSONAL_DOMAINS = new Set([
@@ -385,7 +392,7 @@ Deno.serve(async (req) => {
           }).eq('id', currentCareer.id);
         }
         if (roleChanged) {
-          await supabase.from('person_career_entries').insert({
+          await supabase.from('person_career_entries').upsert({
             organization_id: c.organization_id,
             contact_id: c.id,
             company_id: c.companies?.id ?? null,
@@ -403,7 +410,7 @@ Deno.serve(async (req) => {
             last_verified_at: enrichedAt,
             confidence: enr.roleConfidence === 'confirmed' ? 90 : 65,
             inference_level: 'observable',
-          });
+          }, { onConflict: CAREER_ENTRY_CONFLICT, ignoreDuplicates: true });
         } else if (currentCareer) {
           await supabase.from('person_career_entries').update({
             last_verified_at: enrichedAt,
@@ -423,25 +430,25 @@ Deno.serve(async (req) => {
         };
         const pastExperience = Array.isArray(enr.pastExperience) ? enr.pastExperience : [];
         if (pastExperience.length) {
-          await supabase.from('person_career_entries').insert(pastExperience.slice(0, 15).map((job: any) => ({
+          await supabase.from('person_career_entries').upsert(pastExperience.slice(0, 15).map((job: any) => ({
             ...historyBase,
             entry_type: 'experience',
             title: String(job.title ?? '').slice(0, 200),
             organization_name: String(job.company ?? '').slice(0, 200),
             started_at: job.startDate ?? null,
             ended_at: job.endDate ?? null,
-          })).filter((row: any) => row.title && row.organization_name));
+          })).filter((row: any) => row.title && row.organization_name), { onConflict: CAREER_ENTRY_CONFLICT, ignoreDuplicates: true });
         }
         const education = Array.isArray(enr.education) ? enr.education : [];
         if (education.length) {
-          await supabase.from('person_career_entries').insert(education.slice(0, 10).map((entry: any) => ({
+          await supabase.from('person_career_entries').upsert(education.slice(0, 10).map((entry: any) => ({
             ...historyBase,
             entry_type: 'education',
             title: String(entry.degree ?? '').slice(0, 200),
             organization_name: String(entry.school ?? '').slice(0, 200),
             started_at: entry.startDate ?? null,
             ended_at: entry.endDate ?? null,
-          })).filter((row: any) => row.title && row.organization_name));
+          })).filter((row: any) => row.title && row.organization_name), { onConflict: CAREER_ENTRY_CONFLICT, ignoreDuplicates: true });
         }
       }
 

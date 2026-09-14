@@ -2,7 +2,7 @@ import type { Provider, Session } from '@supabase/supabase-js'
 import '../styles/fonts.css'
 import '../styles/tokens.css'
 import '../styles/public.css'
-import { tohuLogo } from '../components/logo'
+import { tohuLogo, tohuSpinner } from '../components/logo'
 import { displayName, initials, requireSession, signOut } from '../lib/auth'
 import { absoluteUrl, getSupabase } from '../lib/supabase'
 import { ONBOARDING_PATH, replaceLegacyPublicPath } from '../lib/routes'
@@ -119,7 +119,7 @@ async function saveIdentity(): Promise<boolean> {
 
 async function finish(): Promise<void> {
   const button = document.querySelector<HTMLButtonElement>('#finish')
-  if (button) { button.disabled = true; button.innerHTML = '<span class="spinner"></span> Préparation…' }
+  if (button) { button.disabled = true; button.innerHTML = `${tohuSpinner(16)} Préparation…` }
   const { error } = await getSupabase().from('profiles').update({ onboarding_completed: true }).eq('id', session.user.id)
   if (error) {
     feedback('#connector-error', error.message)

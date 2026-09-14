@@ -2,7 +2,16 @@
 // distincte de Calendar), récupère leurs transcripts, et les recoupe avec les
 // événements Calendar (mêmes scopes que sync-email-analysis) pour obtenir les emails
 // des participants — l'API Meet n'expose que des noms d'affichage, jamais d'email.
+//
+// Un conferenceRecord n'existe qu'une fois l'appel démarré : sync-google-calendar
+// (fenêtre passé+futur, tous types d'événements) crée en général déjà la ligne
+// `meetings` correspondante avant que ce conferenceRecord n'apparaisse. On converge
+// donc sur le même external_event_id (`google:{eventId}`) quand un événement Calendar
+// est apparié, pour enrichir cette ligne (plateforme, transcript) plutôt que d'en
+// créer une seconde — upsertCalendarMeeting porte aussi le garde-fou individuel/
+// collectif (jamais de fiche candidate pour un participant d'une réunion collective).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { cleanEmail, upsertCalendarMeeting, type NormalizedCalendarEvent } from '../_shared/calendar-sync.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,29 +33,9 @@ const MAX_CONFERENCES = positiveIntegerEnv('MEET_SYNC_MAX_CONFERENCES', 30)
 // Tolérance de rapprochement conferenceRecord ↔ événement Calendar : l'API Meet ne
 // référence pas directement l'événement, on recoupe par proximité temporelle du début.
 const MATCH_TOLERANCE_MS = 10 * 60 * 1000
-
-const PUBLIC_EMAIL_DOMAINS = new Set([
-  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.fr',
-  'hotmail.com', 'hotmail.fr', 'live.com', 'live.fr', 'msn.com',
-  'icloud.com', 'me.com', 'yahoo.com', 'yahoo.fr', 'proton.me', 'protonmail.com',
-  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
-  'gmx.com', 'gmx.fr', 'aol.com', 'mac.com',
-  'avocat.com', 'avocat.fr',
-])
-
-function cleanEmail(value: string | null | undefined): string {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function corporateDomain(email: string): string | null {
-  const domain = cleanEmail(email).split('@')[1] ?? ''
-  return domain && !PUBLIC_EMAIL_DOMAINS.has(domain) ? domain : null
-}
-
-function companyNameFromDomain(domain: string): string {
-  const base = domain.split('.')[0] ?? domain
-  return base.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || domain
-}
+// Même seuil que sync-google-calendar/sync-microsoft-calendar (env partagée) : la
+// convergence sur la même ligne `meetings` exige le même calcul individuel/collectif.
+const SMALL_MEETING_MAX_ATTENDEES = positiveIntegerEnv('CALENDAR_SYNC_SMALL_MEETING_MAX_ATTENDEES', 5)
 
 async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
   const clientId = Deno.env.get('GOOGLE_CLIENT_ID')
@@ -63,7 +52,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: 
 }
 
 type CalendarAttendee = { email: string; displayName: string | null; organizer: boolean }
-type CalendarMeeting = { title: string; startMs: number; endMs: number | null; attendees: CalendarAttendee[] }
+type CalendarMeeting = { id: string; title: string; startMs: number; endMs: number | null; attendees: CalendarAttendee[] }
 
 async function meetLinkedCalendarEvents(token: string, sinceIso: string): Promise<CalendarMeeting[]> {
   const results: CalendarMeeting[] = []
@@ -71,7 +60,7 @@ async function meetLinkedCalendarEvents(token: string, sinceIso: string): Promis
   do {
     const params = new URLSearchParams({
       timeMin: sinceIso, singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
-      fields: 'nextPageToken,items(summary,start,end,attendees,conferenceData)',
+      fields: 'nextPageToken,items(id,summary,start,end,attendees,conferenceData)',
     })
     if (pageToken) params.set('pageToken', pageToken)
     const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -80,8 +69,9 @@ async function meetLinkedCalendarEvents(token: string, sinceIso: string): Promis
     for (const item of (page.items ?? []) as any[]) {
       const isMeet = item.conferenceData?.conferenceSolution?.key?.type === 'hangoutsMeet'
       const startMs = item.start?.dateTime ? new Date(item.start.dateTime).getTime() : null
-      if (!isMeet || !startMs) continue
+      if (!isMeet || !startMs || !item.id) continue
       results.push({
+        id: item.id,
         title: item.summary ?? 'Réunion Google Meet',
         startMs,
         endMs: item.end?.dateTime ? new Date(item.end.dateTime).getTime() : null,
@@ -197,45 +187,32 @@ Deno.serve(async (request) => {
           .sort((a, b) => Math.abs(a.startMs - recordStart) - Math.abs(b.startMs - recordStart))[0] ?? null
 
         const externalAttendees = (matchedEvent?.attendees ?? []).filter((attendee) => attendee.email !== ownEmail)
-        let companyId: string | null = null
-        const primaryAttendee = externalAttendees[0] ?? null
-        if (primaryAttendee) {
-          const domain = corporateDomain(primaryAttendee.email)
-          if (domain) {
-            const { data: company } = await supabase.rpc('resolve_company_identity', {
-              p_organization_id: organizationId, p_name: companyNameFromDomain(domain), p_domain: domain, p_industry: null, p_create_if_missing: true,
-            }).maybeSingle()
-            companyId = company?.company_id ?? null
-          }
-        }
-
-        const { data: meetingRow, error: meetingError } = await supabase.from('meetings').upsert({
-          organization_id: organizationId,
-          owner_user_id: user.id,
-          company_id: companyId,
-          external_event_id: record.name,
+        const event: NormalizedCalendarEvent = {
+          externalEventId: matchedEvent?.id ? `google:${matchedEvent.id}` : record.name,
           title: matchedEvent?.title ?? 'Réunion Google Meet',
-          starts_at: record.startTime, ends_at: record.endTime ?? null,
+          startsAt: record.startTime,
+          endsAt: record.endTime ?? null,
+          status: 'confirmed',
+          meetingUrl: null,
+          calendarHtmlLink: null,
           platform: 'google_meet',
-          raw_payload: record,
-        }, { onConflict: 'organization_id,external_event_id' }).select('id').single()
-        if (meetingError || !meetingRow) throw meetingError ?? new Error('Réunion non enregistrée')
-        meetingsSynced++
-
-        for (const attendee of externalAttendees) {
-          let contactId: string | null = null
-          const { data: resolved } = await supabase.rpc('resolve_contact_identity', {
-            p_organization_id: organizationId, p_email: attendee.email, p_full_name: attendee.displayName ?? attendee.email,
-            p_company_id: companyId, p_owner_user_id: user.id, p_role_title: null, p_source: 'google_meet',
-          }).maybeSingle()
-          contactId = resolved?.contact_id ?? null
-          const { error: participantError } = await supabase.from('meeting_participants').upsert({
-            organization_id: organizationId, meeting_id: meetingRow.id, contact_id: contactId,
-            email: attendee.email, display_name: attendee.displayName, name: attendee.displayName,
-            role_in_meeting: attendee.organizer ? 'organizer' : 'attendee', is_current_user: false,
-          }, { onConflict: 'meeting_id,email' })
-          if (!participantError) participantsMatched++
+          attendees: [
+            ...externalAttendees.map((attendee) => ({ ...attendee, self: false })),
+            { email: ownEmail, displayName: null, organizer: false, self: true },
+          ],
+          raw: record,
         }
+        // Si un événement Calendar est apparié, sync-google-calendar a probablement déjà
+        // créé/enrichi cette ligne (scope, statut, liens) — on ne les écrase pas ici,
+        // ce conferenceRecord n'apporte que la plateforme "google_meet" et les transcripts.
+        const { meetingId, participantsUpserted } = await upsertCalendarMeeting({
+          supabase, organizationId, ownerUserId: user.id, event, source: 'google_meet',
+          smallMeetingMaxAttendees: SMALL_MEETING_MAX_ATTENDEES,
+          preserveCalendarFields: Boolean(matchedEvent?.id),
+        })
+        meetingsSynced++
+        participantsMatched += participantsUpserted
+        const meetingRow = { id: meetingId }
 
         const transcripts = await listAll(accessToken, `https://meet.googleapis.com/v2/${record.name}/transcripts`, 'transcripts')
         if (!transcripts.length) continue

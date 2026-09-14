@@ -143,6 +143,45 @@ function header(headers: Array<{ name: string; value: string }>, name: string): 
   return headers.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ?? ''
 }
 
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
+/** Gmail ET Microsoft Graph renvoient un 403 (pas un 429) pour le
+ *  dépassement de quota « par minute et par utilisateur » — motif
+ *  `rateLimitExceeded` / `userRateLimitExceeded` / `quotaExceeded` dans le
+ *  corps. Ce cas est RÉESSAYABLE (le quota se reconstitue en < 1 min),
+ *  contrairement à un 403 d'autorisation (scope manquant) qui, lui, est
+ *  définitif. On distingue les deux en inspectant le corps. */
+const RATE_LIMIT_BODY = /rateLimitExceeded|userRateLimitExceeded|quotaExceeded|Quota exceeded|Too Many Requests/i
+
+/** Un 429/5xx ou un 403 de quota ponctuel (Gmail/Graph, hoquet réseau) ne doit
+ *  jamais se traduire par un corps de message vide et silencieux — les
+ *  appelants (`gmailMessages`, `hydrateGmailBodies`, `graphFolder`,
+ *  `microsoftTargetMessages`) traitaient jusqu'ici tout `!response.ok` comme
+ *  définitif, d'où des profils « 0 email analysé » alors que les messages
+ *  existaient bien côté fournisseur mais que la lecture du corps avait été
+ *  throttlée. */
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 4): Promise<Response> {
+  let response: Response
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    response = await fetch(url, init)
+    if (response.ok || attempt === attempts) return response
+    let retryable = RETRYABLE_STATUSES.has(response.status)
+    // Un 403 n'est réessayé QUE s'il s'agit d'un dépassement de quota (jamais
+    // un 403 d'autorisation, qui ne guérira pas). On lit une copie du corps
+    // pour trancher, sans consommer le corps que l'appelant lira ensuite.
+    if (!retryable && response.status === 403) {
+      const peek = await response.clone().text().catch(() => '')
+      retryable = RATE_LIMIT_BODY.test(peek)
+    }
+    if (!retryable) return response
+    const retryAfter = Number(response.headers.get('Retry-After'))
+    // Backoff plus large sur un quota/minute : un délai trop court retomberait
+    // dans la même fenêtre encore saturée. Base 800 ms, doublée à chaque essai.
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 800 * 2 ** (attempt - 1)
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return response!
+}
+
 function automationHeaders(headers: Array<{ name: string; value: string }>): Record<string, string> {
   const names = new Set(['auto-submitted', 'precedence', 'list-id', 'list-unsubscribe', 'x-auto-response-suppress'])
   return Object.fromEntries(headers
@@ -201,6 +240,22 @@ const BACKFILL_MAX_CONNECTORS_PER_RUN = positiveIntegerEnv('EMAIL_BACKFILL_MAX_C
  *  backfill (History API / delta = uniquement les nouveautés) — plus de
  *  connecteurs peuvent être traités par tick, plus fréquemment. */
 const INCREMENTAL_MAX_CONNECTORS_PER_RUN = positiveIntegerEnv('EMAIL_INCREMENTAL_MAX_CONNECTORS_PER_RUN', 15)
+/** Budget dédié au profil comportemental du responsable connecté (« Mon
+ *  profil »), INDÉPENDANT de la pertinence des contacts externes : c'est sa
+ *  propre langue qu'on mesure, peu importe qui la reçoit (suivi ou non,
+ *  réciproque ou non). Sans ce budget dédié, un correspondant jamais « suivi »
+ *  ou n'ayant jamais répondu ne laisse jamais hydrater le corps de nos
+ *  messages qui lui sont adressés, et le profil self reste bloqué à 0. */
+const RESPONSIBLE_CORPUS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_RESPONSIBLE_MAX_MESSAGES', 120)
+/** Plafond par destinataire pour que le budget self ne soit pas monopolisé
+ *  par un seul correspondant très actif (diversité des contextes). */
+const RESPONSIBLE_CORPUS_MAX_PER_RECIPIENT = positiveIntegerEnv('EMAIL_RESPONSIBLE_MAX_PER_RECIPIENT', 6)
+/** Nombre de nouveaux messages sortants exploitables accumulés (hors passe
+ *  complète) au-delà duquel un connecteur déjà backfillé redevient éligible
+ *  au tick de reprise (qui, lui, relance l'analyse comportementale) — sans
+ *  cela, une fois `backfill_complete`, « Mon profil » ne se rafraîchit plus
+ *  jamais tout seul (seul un clic manuel le referait), voir Partie C. */
+const RESPONSIBLE_REFRESH_PENDING_THRESHOLD = positiveIntegerEnv('EMAIL_RESPONSIBLE_REFRESH_THRESHOLD', 15)
 
 async function refreshAccessToken(provider: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
   const isGoogle = provider === 'google'
@@ -249,7 +304,7 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
       maxResults: String(Math.min(500, DISCOVERY_MAX_MESSAGES - ids.length)),
     })
     if (pageToken) params.set('pageToken', pageToken)
-    const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+    const listResponse = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, { headers: { Authorization: `Bearer ${token}` } })
     if (!listResponse.ok) throw new Error(`Gmail ${listResponse.status}`)
     const page = await listResponse.json()
     ids.push(...((page.messages ?? []) as Array<{ id: string; threadId: string }>))
@@ -261,7 +316,7 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
   const output: Mail[] = []
   for (let index = 0; index < ids.length; index += 20) {
     const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }) => {
-      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${detailParams}`, { headers: { Authorization: `Bearer ${token}` } })
+      const response = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${detailParams}`, { headers: { Authorization: `Bearer ${token}` } })
       if (!response.ok) return null
       const message = await response.json()
       const headers = message.payload?.headers ?? []
@@ -292,7 +347,7 @@ async function hydrateGmailBodies(token: string, mails: Mail[], selected: Set<st
   const targets = mails.filter((mail) => selected.has(mail.id))
   for (let index = 0; index < targets.length; index += 20) {
     await Promise.all(targets.slice(index, index + 20).map(async (mail) => {
-      const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
+      const response = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
       if (!response.ok) return
       const message = await response.json()
       mail.body = sanitizeBody(gmailBody(message.payload))
@@ -306,7 +361,7 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
   let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$orderby=receivedDateTime%20desc&$select=${select}${filterParam}`
   const raw: any[] = []
   while (nextUrl && raw.length < maximum) {
-    const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    const response = await fetchWithRetry(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
     if (!response.ok) throw new Error(`Microsoft Graph ${response.status}`)
     const page = await response.json()
     raw.push(...(page.value ?? []))
@@ -356,7 +411,7 @@ async function microsoftTargetMessages(token: string, ownEmail: string, targetEm
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/messages?$top=100&$search=${encodeURIComponent(`"participants:${targetEmail}"`)}&$select=${select}`
     let fetched = 0
     while (nextUrl && fetched < TARGET_CONTACT_MAX_MESSAGES) {
-      const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' } })
+      const response = await fetchWithRetry(nextUrl, { headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' } })
       if (!response.ok) throw new Error(`Microsoft Graph ciblé ${response.status}`)
       const page = await response.json()
       for (const message of page.value ?? []) byId.set(String(message.id), message)
@@ -778,7 +833,7 @@ type RelevanceStat = { inbound: number; outbound: number; lastSentAt: string; me
  *  que par simple position chronologique dans une boîte parfois très bruitée. */
 function selectMessagesByRelevance(
   messages: Mail[],
-  ownEmail: string,
+  ownEmails: Set<string>,
   eligibleEmails: Set<string>,
   contactByEmail: Map<string, any>,
   trackedDomains: Set<string>,
@@ -789,7 +844,7 @@ function selectMessagesByRelevance(
   const statsByEmail = new Map<string, RelevanceStat>()
   for (const message of messages) {
     const externals = (message.direction === 'inbound' ? [message.from] : message.to)
-      .filter((item) => item.email && item.email !== ownEmail && eligibleEmails.has(cleanEmail(item.email)))
+      .filter((item) => item.email && !ownEmails.has(item.email) && eligibleEmails.has(cleanEmail(item.email)))
     for (const external of externals) {
       const contact = contactByEmail.get(external.email)
       const manuallyIntegrated = isManuallyIntegrated(contact)
@@ -857,6 +912,42 @@ function selectMessagesByRelevance(
   return { selectedIds, contactsPrioritized, missingProfileContactIds }
 }
 
+/** Sélection dédiée au profil comportemental du responsable connecté — ne
+ *  dépend JAMAIS du statut du destinataire (suivi, réciproque, tracké) :
+ *  c'est notre propre langue qu'on mesure, pas la relation avec un tiers
+ *  (contrairement à `selectMessagesByRelevance`, entièrement pilotée par la
+ *  pertinence du correspondant externe). Échantillonne les envois sortants
+ *  les plus récents non automatisés, plafonnés par destinataire pour la
+ *  diversité des contextes plutôt que dominés par un seul correspondant actif. */
+function selectSelfMessages(
+  messages: Mail[],
+  alreadySelected: Set<string>,
+  budget: number,
+  maxPerRecipient: number,
+): Set<string> {
+  const candidates = messages
+    .filter((message) => message.direction === 'outbound' && !alreadySelected.has(message.id))
+    .filter((message) => !classifyEmailAutomation({
+      email: message.to[0]?.email ?? '',
+      name: message.to[0]?.name ?? '',
+      subject: message.subject,
+      body: message.body,
+      headers: message.headers,
+    }).automated)
+    .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+  const selected = new Set<string>()
+  const perRecipient = new Map<string, number>()
+  for (const message of candidates) {
+    if (selected.size >= budget) break
+    const recipientKey = [...new Set(message.to.map((item) => item.email))].sort().join(',') || 'unknown'
+    const count = perRecipient.get(recipientKey) ?? 0
+    if (count >= maxPerRecipient) continue
+    selected.add(message.id)
+    perRecipient.set(recipientKey, count + 1)
+  }
+  return selected
+}
+
 type SyncParams = {
   supabase: ReturnType<typeof createClient>
   organizationId: string
@@ -914,6 +1005,12 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     if (!accessToken) throw new Error('Jeton OAuth indisponible')
 
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
+    // Toutes les identités déclarées du responsable connecté (adresse de ce
+    // connecteur + alias / boîte pro secondaire / Send-As) : un message envoyé
+    // depuis l'une d'elles reste « nous », jamais un tiers externe — voir
+    // user_identity_aliases (20260911100000_user_identity_aliases.sql).
+    const { data: ownAliasRows } = await supabase.from('user_identity_aliases').select('email').eq('organization_id', organizationId).eq('user_id', actingUserId)
+    const ownEmails = new Set([ownEmail, ...(ownAliasRows ?? []).map((row: any) => cleanEmail(row.email))].filter(Boolean))
     let targetEmails: string[] = []
     if (manualContactId) {
       const [{ data: target, error: targetError }, { data: targetAliases, error: aliasError }] = await Promise.all([
@@ -957,17 +1054,28 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         }
       : rawScan
     const messages = scan.messages
+    // Ne fait jamais régresser un « sortant » déjà détecté (ex. dossier
+    // SentItems côté Microsoft) : élargit seulement la reconnaissance de nos
+    // propres messages aux alias déclarés, sans jamais retirer une direction
+    // déjà correcte pour les comptes sans alias (cas très majoritaire).
+    if (ownEmails.size > 1) {
+      for (const message of messages) {
+        if (message.direction === 'inbound' && ownEmails.has(message.from.email)) message.direction = 'outbound'
+      }
+    }
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Lecture des métadonnées autorisées', progress: 35 }).eq('id', syncJobId)
     const [
       { data: existingContacts },
       { data: identityAliases, error: identityAliasError },
       { data: trackedCompanyRows, error: trackedCompaniesError },
       { data: existingProfileRows, error: existingProfilesError },
+      { data: existingResponsibleProfileRow },
     ] = await Promise.all([
       supabase.from('contacts').select('id,email,secondary_emails,full_name,owner_user_id,source_summary,is_tracked,company_id').eq('organization_id', organizationId).is('merged_into_contact_id', null),
       supabase.from('contact_identity_aliases').select('contact_id,identity_value').eq('organization_id', organizationId).eq('identity_type', 'email'),
       supabase.from('companies').select('id,domain').eq('organization_id', organizationId).eq('is_tracked', true),
       supabase.from('cognitive_profiles').select('contact_id,cognitive_profile_data').eq('organization_id', organizationId).eq('profile_version', 1),
+      supabase.from('user_behavioral_profiles').select('cognitive_profile_data,source_interaction_count,updated_from').eq('organization_id', organizationId).eq('user_id', actingUserId).maybeSingle(),
     ])
     if (identityAliasError) throw identityAliasError
     if (trackedCompaniesError) throw trackedCompaniesError
@@ -1000,7 +1108,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // dans Tohu qu'après preuve d'un échange dans les deux sens. Les fiches
     // saisies manuellement et la relecture ciblée d'une fiche existante restent
     // utilisables sans être transformées en « découverte automatique ».
-    const eligibleEmails = reciprocalExternalEmails(messages, ownEmail)
+    const eligibleEmails = reciprocalExternalEmails(messages, ownEmails)
     for (const [email, contact] of contactByEmail) {
       if (isManuallyIntegrated(contact)) eligibleEmails.add(email)
     }
@@ -1017,7 +1125,16 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       .map((row: any) => String(row.contact_id)))
     const relevance = manualContactId
       ? { selectedIds: new Set(messages.map((message) => message.id)), contactsPrioritized: targetEmails.length ? 1 : 0, missingProfileContactIds: new Set<string>() }
-      : selectMessagesByRelevance(messages, ownEmail, eligibleEmails, contactByEmail, trackedDomains, trackedCompanyIds, currentV3ProfileContactIds, ANALYSIS_MAX_MESSAGES)
+      : selectMessagesByRelevance(messages, ownEmails, eligibleEmails, contactByEmail, trackedDomains, trackedCompanyIds, currentV3ProfileContactIds, ANALYSIS_MAX_MESSAGES)
+    // Budget dédié au profil « Mon profil » (voir selectSelfMessages) : jamais
+    // gouverné par la pertinence d'un contact externe, pour que nos propres
+    // messages comptent même adressés à un correspondant non suivi ou n'ayant
+    // jamais répondu.
+    if (!manualContactId) {
+      for (const id of selectSelfMessages(messages, relevance.selectedIds, RESPONSIBLE_CORPUS_MAX_MESSAGES, RESPONSIBLE_CORPUS_MAX_PER_RECIPIENT)) {
+        relevance.selectedIds.add(id)
+      }
+    }
     for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
     if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
 
@@ -1033,9 +1150,16 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       if (syncJobId && messages.length > 20 && processedMessages % 20 === 0) {
         void supabase.from('sync_jobs').update({ current_step: `Traitement des messages (${processedMessages}/${messages.length})`, progress: 35 + Math.round((processedMessages / messages.length) * 25) }).eq('id', syncJobId as string)
       }
+      // Auto-profil (« Mon profil ») : compte NOTRE langue dès qu'un message
+      // sortant a été retenu (voir selectSelfMessages), qu'un destinataire ait
+      // ou non déjà une fiche Personne éligible — sa pertinence à LUI n'a
+      // aucune incidence sur la valeur de preuve de ce qu'on a NOUS écrit.
+      if (!manualContactId && message.direction === 'outbound' && !message.discoveryOnly && message.body) {
+        responsibleCorpus.push(message.body)
+      }
       const externalByEmail = new Map(
         (message.direction === 'inbound' ? [message.from] : message.to)
-          .filter((item) => item.email && item.email !== ownEmail)
+          .filter((item) => item.email && !ownEmails.has(item.email))
           .map((item) => [item.email, item]),
       )
       const messageContacts: any[] = []
@@ -1097,14 +1221,15 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       if (!thread) return
       const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id, analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
-      if (message.body && message.direction === 'outbound') responsibleCorpus.push(message.body)
-      else if (message.body && (
+      // « Ce que le contact a écrit » — l'auto-profil (ci-dessus) couvre déjà
+      // nos propres messages indépendamment de primaryContact/eligibleEmails.
+      if (message.body && message.direction === 'inbound' && (
         primaryContact.is_tracked === true
         || trackedCompanyIds.has(String(primaryContact.company_id ?? ''))
         || trackedDomains.has(corporateDomain(String(primaryContact.email ?? '')) ?? '')
         || primaryContact.id === manualContactId
       )) {
-        contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email · ${message.direction === 'inbound' ? 'reçu' : 'envoyé'} · ${String(message.sentAt).slice(0, 10)}]\n${message.body}`])
+        contactCorpus.set(primaryContact.id, [...(contactCorpus.get(primaryContact.id) ?? []), `[Email · reçu · ${String(message.sentAt).slice(0, 10)}]\n${message.body}`])
       }
     })
 
@@ -1114,7 +1239,23 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     let responsibleAnalyzed = false
     if (!manualContactId && responsibleCorpus.length >= 3) {
       try {
-        const result = await analyze((await supabase.from('profiles').select('full_name').eq('id', actingUserId).single()).data?.full_name ?? actingUserEmail ?? 'Responsable', 'responsable', responsibleCorpus)
+        // Continuité statistique (mêmes règles que le profil d'un contact,
+        // voir analyze()) + comptage CUMULATIF : sans ça, un profil qui a déjà
+        // réussi une fois se ferait réécrire from scratch à chaque passe et
+        // "N emails analysés" refléterait seulement la dernière passe au lieu
+        // du total réellement contribué au fil du temps (cf. cause racine
+        // du "0 email analysé" : les corps ne sont jamais persistés, donc rien
+        // n'est perdu si on ACCUMULE plutôt que remplacer).
+        const previousResponsibleProfile = asRecord(existingResponsibleProfileRow?.cognitive_profile_data ?? {})
+        const cumulativeInteractionCount = Number(existingResponsibleProfileRow?.source_interaction_count ?? 0) + responsibleCorpus.length
+        const result = await analyze(
+          (await supabase.from('profiles').select('full_name').eq('id', actingUserId).single()).data?.full_name ?? actingUserEmail ?? 'Responsable',
+          'responsable',
+          responsibleCorpus,
+          previousResponsibleProfile,
+          cumulativeInteractionCount,
+          { client: supabase, organizationId, userId: actingUserId },
+        )
         const cognitiveProfileData = asRecord(result.cognitive_profile_data)
         assertCurrentCognitiveSchema(cognitiveProfileData)
         const now = new Date().toISOString()
@@ -1128,12 +1269,15 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
           behavioral_analysis_data: structuredBehavioralSignals(cognitiveProfileData),
           communication_style_data: asRecord(cognitiveProfileData.secondary_axes),
           cognitive_profile_data: cognitiveProfileData,
-          source_message_count: responsibleCorpus.length,
-          source_interaction_count: responsibleCorpus.length,
-          maturity_level: maturityFor(responsibleCorpus.length),
+          source_message_count: cumulativeInteractionCount,
+          source_interaction_count: cumulativeInteractionCount,
+          maturity_level: maturityFor(cumulativeInteractionCount),
           analysis_version: 3,
           last_analyzed_at: now,
-          updated_from: [provider, 'email'],
+          // Fusionné plutôt que remplacé : un connecteur Outlook synchronisé
+          // après Gmail ne doit pas faire disparaître Gmail de la liste des
+          // sources ayant contribué au même profil consolidé.
+          updated_from: [...new Set([...(existingResponsibleProfileRow?.updated_from ?? []), provider, 'email'])],
           updated_at: now,
         }, { onConflict: 'organization_id,user_id' })
         responsibleAnalyzed = true
@@ -1366,8 +1510,9 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       organizations_detected: discoveredDomains,
       people_analyzed: peopleAnalyzed,
       responsible_analyzed: responsibleAnalyzed,
+      responsible_corpus_size: responsibleCorpus.length,
       automated_messages_ignored: skippedAutomated,
-      one_way_addresses_ignored: [...relationshipEvidenceByEmail(messages, ownEmail).keys()]
+      one_way_addresses_ignored: [...relationshipEvidenceByEmail(messages, ownEmails).keys()]
         .filter((email) => !eligibleEmails.has(email)).length,
       ignored_reasons: skippedReasons,
       relationships_prioritized: relevance.contactsPrioritized,
@@ -1383,7 +1528,10 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     } : {}
     const connectorMetadata = manualContactId
       ? { ...(connector.metadata ?? {}), last_manual_cognitive_sync: { contact_id: manualContactId, at: new Date().toISOString(), ...syncSummary } }
-      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
+      // Une passe complète vient de réexaminer tout ce qui était en attente
+      // (y compris pour « Mon profil ») : le compteur d'accumulation entre deux
+      // passes complètes (voir runIncrementalSync) repart à zéro.
+      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, responsible_pending_messages: 0, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
     await supabase.from('connectors').update({
       status: 'connected',
       last_synced_at: new Date().toISOString(),
@@ -1427,6 +1575,8 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
     if (!accessToken) throw new Error('Jeton OAuth indisponible')
 
     const ownEmail = cleanEmail((connector.metadata as any)?.account_email ?? actingUserEmail)
+    const { data: ownAliasRows } = await supabase.from('user_identity_aliases').select('email').eq('organization_id', organizationId).eq('user_id', actingUserId)
+    const ownEmails = new Set([ownEmail, ...(ownAliasRows ?? []).map((row: any) => cleanEmail(row.email))].filter(Boolean))
     let messages: Mail[] = []
     let expired = false
     const cursorPatch: Record<string, unknown> = {}
@@ -1480,6 +1630,13 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
         if (sent.newDeltaLink) cursorPatch.ms_delta_link_sent = sent.newDeltaLink
       }
     }
+    // Voir la même normalisation dans runEmailSync : n'élargit jamais que vers
+    // « sortant », ne retire jamais une direction déjà correcte.
+    if (ownEmails.size > 1) {
+      for (const message of messages) {
+        if (message.direction === 'inbound' && ownEmails.has(message.from.email)) message.direction = 'outbound'
+      }
+    }
 
     if (expired) {
       // Curseur trop ancien (inactivité prolongée) : on retombe en mode
@@ -1519,8 +1676,8 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (contact && normalized) contactByEmail.set(normalized, contact)
     }
 
-    const incrementalEvidence = relationshipEvidenceByEmail(messages, ownEmail)
-    const eligibleEmails = reciprocalExternalEmails(messages, ownEmail)
+    const incrementalEvidence = relationshipEvidenceByEmail(messages, ownEmails)
+    const eligibleEmails = reciprocalExternalEmails(messages, ownEmails)
     for (const [email, contact] of contactByEmail) {
       if (isManuallyIntegrated(contact)) eligibleEmails.add(email)
     }
@@ -1534,11 +1691,22 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (await providerHasReciprocalExchange(provider, accessToken, email)) eligibleEmails.add(email)
     })
 
+    // Aucune ré-analyse comportementale ici (coûteuse, voir le commentaire de
+    // fonction) — seulement un compteur : au-delà du seuil, le prochain tick de
+    // reprise du backfill redeviendra éligible pour ce connecteur et relancera
+    // une vraie passe d'analyse (voir RESPONSIBLE_REFRESH_PENDING_THRESHOLD).
+    const newOutboundForResponsible = messages.filter((message) => message.direction === 'outbound' && !classifyEmailAutomation({
+      email: message.to[0]?.email ?? '', name: message.to[0]?.name ?? '', subject: message.subject, body: message.body, headers: message.headers,
+    }).automated).length
+    if (newOutboundForResponsible > 0) {
+      cursorPatch.responsible_pending_messages = Number((connector.metadata as any)?.responsible_pending_messages ?? 0) + newOutboundForResponsible
+    }
+
     let storedMessages = 0
     await runWithConcurrency(messages, MESSAGE_PROCESSING_CONCURRENCY, async (message) => {
       const externalByEmail = new Map(
         (message.direction === 'inbound' ? [message.from] : message.to)
-          .filter((item) => item.email && item.email !== ownEmail)
+          .filter((item) => item.email && !ownEmails.has(item.email))
           .map((item) => [item.email, item]),
       )
       const messageContacts: any[] = []
@@ -1628,7 +1796,11 @@ Deno.serve(async (request) => {
       ? (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete === true)
       : (candidates ?? []).filter((row: any) =>
           (row.metadata as any)?.backfill_complete !== true
-          || Number((row.metadata as any)?.profile_backfill_pending ?? 0) > 0)
+          || Number((row.metadata as any)?.profile_backfill_pending ?? 0) > 0
+          // Sans ceci, « Mon profil » ne se rafraîchit plus jamais après le
+          // premier backfill : les ticks incrémentaux n'analysent jamais (coût
+          // LLM), donc c'est ce seuil qui relance périodiquement une vraie passe.
+          || Number((row.metadata as any)?.responsible_pending_messages ?? 0) >= RESPONSIBLE_REFRESH_PENDING_THRESHOLD)
     if (body.organizationId) pool = pool.filter((row: any) => row.organization_id === body.organizationId)
     const selected = pool.slice(0, incremental ? INCREMENTAL_MAX_CONNECTORS_PER_RUN : BACKFILL_MAX_CONNECTORS_PER_RUN)
 
@@ -1665,16 +1837,21 @@ Deno.serve(async (request) => {
   if (!authorization) return json({ error: 'Authentification requise' }, 401)
   const { data: { user }, error: userError } = await supabase.auth.getUser(authorization.replace('Bearer ', ''))
   if (userError || !user) return json({ error: 'Session invalide' }, 401)
-  const { organizationId, provider, jobId, contactId } = body
-  if (!organizationId || !['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
-  const { data: membership } = await supabase.from('memberships').select('id').eq('organization_id', organizationId).eq('user_id', user.id).maybeSingle()
-  if (!membership) return json({ error: 'Accès refusé' }, 403)
+  const { provider, jobId, contactId } = body
+  if (!['google', 'microsoft'].includes(provider)) return json({ error: 'Paramètres invalides' }, 400)
+  // Un connecteur est strictement personnel : l'organisation de destination des
+  // données synchronisées est celle du connecteur lui-même (son foyer, imposé
+  // par un trigger DB), jamais celle affichée dans le navigateur au moment du
+  // clic — sinon une personne membre de plusieurs organisations pourrait faire
+  // atterrir ses propres emails dans le CRM d'une organisation qui n'est pas
+  // la sienne.
+  const { data: connector } = await supabase.from('connectors').select('id,metadata,organization_id').eq('user_id', user.id).eq('provider', provider).maybeSingle()
+  if (!connector) return json({ error: 'Connecteur introuvable' }, 404)
+  const organizationId = connector.organization_id
   if (contactId) {
     const { data: target } = await supabase.from('contacts').select('id').eq('organization_id', organizationId).eq('id', contactId).is('merged_into_contact_id', null).maybeSingle()
     if (!target) return json({ error: 'Personne introuvable dans cet espace' }, 404)
   }
-  const { data: connector } = await supabase.from('connectors').select('id,metadata').eq('organization_id', organizationId).eq('user_id', user.id).eq('provider', provider).maybeSingle()
-  if (!connector) return json({ error: 'Connecteur introuvable' }, 404)
 
   let reusedJobId: string | null = null
   if (typeof jobId === 'string') {

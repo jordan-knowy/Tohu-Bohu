@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { tohuLogo } from '../components/logo'
+import { TohuSpinner } from '../components/TohuSpinner'
 import { initials } from '../lib/auth'
 import {
   addUserToOrganization, deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getOrganizationsList, getSuperAdminData, getUserMemberships, removeUserFromOrganization, setEmailDispatchRule, setMembershipRole, setSuperAdminRole, setUserAccess, setUserSeats, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
@@ -711,7 +712,7 @@ function AiUsageView() {
   useEffect(() => { void getAiUsage().then(setStats).catch((reason) => setError(reason instanceof Error ? reason.message : 'Chargement impossible')) }, [])
   const maxDayCost = useMemo(() => Math.max(1e-9, ...(stats?.by_day ?? []).map((day) => day.cost)), [stats])
   if (error) return <div className="inline-error">{error}</div>
-  if (!stats) return <div className="super-admin-loading"><span className="spinner" /></div>
+  if (!stats) return <div className="super-admin-loading"><TohuSpinner size={28} /></div>
   const empty = (stats.totals.all?.calls ?? 0) === 0
   return <section className="sa-ai">
     <div className="sa-view-heading"><div><p>OpenRouter · tokens réels, coût estimé</p><h1>Suivi IA &amp; coûts</h1><span>Actualisé {dateTimeFormatter.format(new Date(stats.generated_at))}</span></div></div>
@@ -780,7 +781,7 @@ export default function SuperAdminPage() {
   }, [])
 
   if (authorized === false) return <Navigate to="/app/account" replace />
-  if (authorized === null || !kpis || !consoleData) return <div className="super-admin-loading"><span className="spinner" /><span>{error ?? 'Chargement de la console Super Admin…'}</span></div>
+  if (authorized === null || !kpis || !consoleData) return <div className="super-admin-loading"><TohuSpinner size={28} /><span>{error ?? 'Chargement de la console Super Admin…'}</span></div>
 
   return <div className="sa-shell">
     <aside className={`sa-sidebar ${mobileNav ? 'open' : ''}`}>

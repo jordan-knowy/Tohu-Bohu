@@ -6,7 +6,7 @@
  * vit dans son dossier feature (account-list/, person-detail/, …) ou dans
  * shell/pages/ pour les vues portées depuis l'ancien shell vanilla.
  */
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
@@ -36,6 +36,8 @@ import GlobalSearch from './GlobalSearch'
 import NotificationBell from './NotificationBell'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import { useTopbarHeader } from './topbarHeaderSignal'
+import { useAddPanelRequests, type AddPanelRequest } from './addPanelSignal'
+import { AddEntitiesModal } from '../components/AddEntitiesModal'
 import AskPage from './pages/AskPage'
 import BohuBar from './BohuBar'
 import HomePage from './pages/HomePage'
@@ -53,6 +55,7 @@ const AccountsNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const PeopleNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3" /><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6" /><circle cx="17" cy="9" r="2.3" /><path d="M15.8 14.3c2.4.5 4.2 2.6 4.2 5.7" /></svg>
 const ConnectorsNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 2.5v5M15 2.5v5" /><path d="M6 7.5h12V11a6 6 0 0 1-12 0V7.5Z" /><path d="M12 17v4.5" /></svg>
 const ProfileNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4.5 20c0-4.1 3.4-7 7.5-7s7.5 2.9 7.5 7" /></svg>
+const AddNavIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 
 const PAGE_TITLES: Array<{ test: (path: string) => boolean; title: string; subtitle: string }> = [
   { test: (path) => path === '/app/ask', title: 'Ask Bohu', subtitle: 'Le cerveau relationnel de ton équipe' },
@@ -105,11 +108,17 @@ function AppShell({ context }: { context: AppContext }) {
   const [counts, setCounts] = useState({ accounts: 0, people: 0 })
   const [footer, setFooter] = useState({ name: displayName(context.session.user), plan: 'Tohu', avatarUrl: null as string | null })
   const [avatarError, setAvatarError] = useState(false)
+  const [addPanel, setAddPanel] = useState<AddPanelRequest | null>(null)
 
   useEffect(() => {
     document.body.classList.add('app-page')
     return () => document.body.classList.remove('app-page')
   }, [])
+
+  // Point d'entrée unique « Ajouter » : le bouton du topbar l'ouvre directement,
+  // et n'importe quelle page (fiche Compte, Home…) peut aussi le demander via
+  // requestAddPanel() sans connaître AppShell — voir addPanelSignal.ts.
+  useAddPanelRequests(useCallback((request) => setAddPanel(request), []))
 
   useEffect(() => {
     const loadFooter = () => void Promise.all([
@@ -179,11 +188,22 @@ function AppShell({ context }: { context: AppContext }) {
           : <div><h1 id="page-title">{page.title}</h1><p id="page-subtitle">{page.subtitle}</p></div>}
         <WorkspaceSwitcher workspaceId={context.workspaceId} />
         <GlobalSearch />
+        <button type="button" className="btn-add-global" onClick={() => setAddPanel({})}>{AddNavIcon}<span>Ajouter</span></button>
         <NotificationBell userId={context.session.user.id} />
       </header>
       <main className={LEGACY_CONTENT_PATHS.has(location.pathname) ? 'content' : 'ra-content'}><Outlet context={context} /></main>
       {location.pathname !== '/app/ask' && <BohuBar />}
     </div>
+    {addPanel && <ToastProvider>
+      <AddEntitiesModal
+        workspaceId={context.workspaceId}
+        initialTab={addPanel.tab ?? 'compte'}
+        filterAccountId={addPanel.filterAccountId ?? null}
+        filterAccountName={addPanel.filterAccountName ?? null}
+        onClose={() => setAddPanel(null)}
+        onTracked={() => window.dispatchEvent(new Event('tohu:workspace-updated'))}
+      />
+    </ToastProvider>}
   </div>
 }
 

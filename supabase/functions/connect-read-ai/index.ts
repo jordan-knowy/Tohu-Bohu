@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const { error: upsertError } = await supabase.from('connectors').upsert({
       organization_id: organizationId, user_id: user.id, provider: 'read_ai', status: 'connected',
       scopes: [], metadata: { ...existingMeta, webhook_secret: secret, signing_key: nextSigningKey, connected_at: (existingMeta.connected_at as string | undefined) ?? new Date().toISOString() }, updated_at: new Date().toISOString(),
-    }, { onConflict: 'organization_id,user_id,provider' })
+    }, { onConflict: 'user_id,provider' })
     if (upsertError) return json({ error: upsertError.message }, 500)
 
     const webhookUrl = `${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/read-ai-webhook?token=${secret}`

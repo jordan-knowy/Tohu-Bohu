@@ -237,6 +237,23 @@
 .krs-b.yes:hover{border-color:var(--sage);color:var(--sage)}
 .krs-b.no:hover{border-color:var(--coral);color:var(--coral)}
 .krs-b.later:hover{border-color:var(--amber);color:var(--amber)}
+/* Poids visuel (priorité 0-100, voir home/factCard.ts::weightOf) — s'ajoute à
+   la couleur par type ci-dessus, ne la remplace pas : un même type peut être
+   urgent ou non, la bande et « prio » en témoignent au premier regard. */
+.krs-card.w-high{box-shadow:0 2px 10px rgba(217,79,99,.12)}
+.krs-card.w-high .krs-band{width:6px}
+.krs-card.w-high .krs-prio{color:var(--coral);font-weight:800}
+.krs-card.w-medium .krs-prio{color:var(--amber);font-weight:700}
+.krs-card.w-low .krs-prio{color:var(--t3)}
+.krs-proof-btn{width:22px;height:22px;border-radius:50%;border:1px solid var(--border-m);background:#fff;color:var(--violet);font-family:var(--font);font-weight:800;font-size:11px;display:grid;place-items:center;cursor:pointer;flex:none;padding:0}
+.krs-proof-btn:hover,.krs-proof-btn[aria-expanded="true"]{background:var(--violet);border-color:var(--violet);color:#fff}
+.krs-proof{margin-top:9px;background:var(--night);color:#EDE9F7;border-radius:10px;padding:10px 13px;font-family:var(--mono);font-size:10px;line-height:1.55}
+.krs-proof-quote{margin:0 0 6px;padding:0;border:0;font-family:var(--font);font-style:italic;font-size:12px;line-height:1.5;color:#fff}
+.krs-proof-meta{color:#B9AEE0;font-family:var(--mono);font-size:9.5px;letter-spacing:.01em}
+.krs-proof-link{display:inline-flex;align-items:center;gap:4px;margin-top:7px;color:var(--violet-l);font-family:var(--mono);font-size:9.5px;font-weight:700;text-decoration:none}
+.krs-proof-link:hover{text-decoration:underline}
+.krs-b.suggest{border-color:var(--violet-x);background:var(--violet-s);color:var(--violet-d);font-weight:700}
+.krs-b.suggest:hover{background:var(--violet);color:#fff}
 /* Rail Signaux · veille */
 .sig-card{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-md)}
 .sig-head{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--violet-s),transparent)}
@@ -253,7 +270,6 @@
 .sig-ttl{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t1)}
 .sig-sub{font-family:var(--mono);font-size:8.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
 .rc-sync{display:flex;align-items:center;gap:8px;padding:10px 15px 0;font-size:9.5px;color:var(--t3);font-family:var(--mono)}
-.rc-sync .spinner{width:10px;height:10px;border-width:1.5px;color:var(--violet)}
 .syncbar{height:3px;border-radius:var(--r-f);background:var(--border);overflow:hidden;position:relative;margin:8px 15px 4px}
 .syncbar::after{content:'';position:absolute;left:-40%;top:0;height:100%;width:40%;background:linear-gradient(90deg,transparent,var(--violet),transparent);animation:syncslide 1.6s linear infinite}
 .sig-body{padding:2px 14px 8px;max-height:56vh;overflow-y:auto}

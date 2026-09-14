@@ -85,6 +85,9 @@ export type HomeSignal = {
   inferenceLevel: string | null
   /** Verdict déjà donné par l'utilisateur via signal_feedback, sinon null. */
   userVerdict: 'confirmed' | 'dismissed' | null
+  /** Lien vers la source publique (article, page LinkedIn…) quand connu —
+   *  la preuve la plus forte pour un fait externe, mieux qu'une paraphrase. */
+  sourceUrl: string | null
 }
 
 export type HomeActionType =
@@ -112,6 +115,16 @@ export type HomePriorityAction = {
   confidence: number | null
   sourceSignalId: string | null
   recommended: string
+  /** Fait externe (mouvement/opportunite/validation depuis un signal) : lien
+   *  vers la source publique quand connu — preuve la plus forte, à privilégier
+   *  sur la paraphrase dans le panneau « D'où vient ce constat ? ». */
+  sourceUrl: string | null
+  /** Engagement (person_memory_entries) : citation exacte capturée à l'analyse
+   *  (≤240 car., vérifiée anti-hallucination), pour le même panneau — jamais
+   *  reconstituée ici, seulement si déjà persistée. */
+  sourceExcerpt: string | null
+  sourceOccurredAt: string | null
+  sourceDirection: 'inbound' | 'outbound' | null
 }
 
 /** Action archivée (Fait/Écarté) — snapshot lisible au moment de la décision,

@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
         metadata: { connected_at: new Date().toISOString() },
         last_synced_at: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'organization_id,user_id,provider' }).select('id').single();
+      }, { onConflict: 'user_id,provider' }).select('id').single();
       if (connectorError || !connector) {
         console.error('HubSpot connector upsert failed:', connectorError?.message);
         return Response.redirect(`${APP_URL}/app/connectors?error=hubspot_internal`, 302);

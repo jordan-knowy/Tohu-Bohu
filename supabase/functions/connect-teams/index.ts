@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
         metadata: { tenant_id: tenant, connected_at: new Date().toISOString() },
         last_synced_at: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'organization_id,user_id,provider' });
+      }, { onConflict: 'user_id,provider' });
       if (connectorError) {
         console.error('Teams connector upsert failed:', connectorError.message);
         return Response.redirect(`${APP_URL}/app/connectors?error=teams_internal`, 302);

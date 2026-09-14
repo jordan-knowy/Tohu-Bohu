@@ -156,7 +156,7 @@ Produis :
 - "synthese" : 2 à 4 phrases factuelles sur l'état actuel de la relation avec ce compte (ton neutre, pas de superlatif) ;
 - "forces" : jusqu'à 4 points forts observés, chacun ancré sur un fait daté quand c'est possible ;
 - "risques" : jusqu'à 4 tensions ou risques observés (frictions, silences, désaccords, retards de paiement, concentration excessive...) — cherche-les activement dans les moments_cles marqués "friction" et les signaux de veille ;
-- "prochaines_actions" : jusqu'à 3 actions concrètes déduites directement des risques ou opportunités identifiés ci-dessus (jamais génériques) ;
+- "prochaines_actions" : jusqu'à 3 actions concrètes déduites directement des risques ou opportunités identifiés ci-dessus (jamais génériques). Avant de formuler une action, compare-la à "recommandations_ouvertes" : si l'une d'elles poursuit déjà substantiellement le même objectif (même compte, même intention stratégique, même levier d'action) — même rédigée avec des mots différents — ne la reformule pas comme une action distincte. Dans ce cas, soit tu l'omets (elle est déjà couverte), soit tu ne proposes que ce qui la complète réellement (une sous-action concrète non couverte). Deux actions qui reviennent au même objectif stratégique avec une formulation différente comptent comme UNE seule action, jamais deux ;
 - "confidence" : 0 à 100, reflétant la quantité et la clarté des preuves disponibles.
 
 Réponds uniquement avec ce JSON strict : {"synthese":"...","forces":[],"risques":[],"prochaines_actions":[],"confidence":0}`

@@ -19,7 +19,8 @@ import {
 } from '../../account-center/service'
 import { displayName, initials, signOut } from '../../lib/auth'
 import { getSupabase } from '../../lib/supabase'
-import { getProfile, type ProfileRow } from '../../services/data'
+import { TohuSpinner } from '../../components/TohuSpinner'
+import { getProfile, uploadProfileAvatar, type ProfileRow } from '../../services/data'
 import { triggerManualCognitiveAnalysis } from '../../services/behavior-sync'
 import { useToast } from '../../person-detail/ui'
 
@@ -98,6 +99,8 @@ const DELETION_QUESTIONS = [
     ],
   },
 ] as const
+
+const CameraIcon = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" /></svg>
 
 function money(cents: number, currency = 'eur'): string {
   return new Intl.NumberFormat('fr-FR', {
@@ -202,6 +205,7 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
   const [seats, setSeats] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   const load = async () => {
     const client = getSupabase()
@@ -271,6 +275,36 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
       toast(reason instanceof Error ? reason.message : 'Impossible d’enregistrer.', 'error')
     } finally {
       setBusy(null)
+    }
+  }
+
+  const applyAvatarUrl = async (url: string | null, successMessage: string) => {
+    setAvatarUploading(true)
+    try {
+      const { error: updateError } = await getSupabase().from('profiles').update({ avatar_url: url }).eq('id', context.session.user.id)
+      if (updateError) throw updateError
+      setForm((current) => ({ ...current, avatar_url: url ?? '' }))
+      setProfile((current) => current ? { ...current, avatar_url: url } : current)
+      toast(successMessage)
+      window.dispatchEvent(new CustomEvent('tohu:profile-updated'))
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Impossible de mettre à jour la photo.', 'error')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleAvatarFile = async (input: HTMLInputElement) => {
+    const file = input.files?.[0] ?? null
+    input.value = ''
+    if (!file) return
+    setAvatarUploading(true)
+    try {
+      const url = await uploadProfileAvatar(context.session.user.id, file)
+      await applyAvatarUrl(url, 'Photo de profil mise à jour.')
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Envoi de la photo impossible.', 'error')
+      setAvatarUploading(false)
     }
   }
 
@@ -379,7 +413,7 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
   }
 
   if (error) return <div className="inline-error">{error}</div>
-  if (!profile || !account || !plan) return <div className="loading-state"><span className="spinner" /></div>
+  if (!profile || !account || !plan) return <div className="loading-state"><TohuSpinner size={28} /></div>
 
   const nextAmount = billing.upcoming?.amountDue ?? account.subscription.amount_per_period
   const nextDate = billing.upcoming?.date ?? account.subscription.current_period_end
@@ -507,9 +541,23 @@ export default function AccountSettingsPage({ context }: { context: PageContext 
       <section className="panel">
         <header className="panel-head"><span><span className="panel-title">Informations du compte</span><span className="panel-sub">Ton identité dans Tohu</span></span></header>
         <form className="panel-body settings-form" onSubmit={(event) => void saveProfile(event)}>
+          <div className="field">
+            <label>Photo de profil</label>
+            <div className="settings-avatar-picker">
+              <span className="settings-avatar-preview">{form.avatar_url ? <img src={form.avatar_url} alt="" /> : initials(form.full_name || displayName(context.session.user))}</span>
+              <div className="settings-avatar-actions">
+                <label className={`settings-avatar-upload${avatarUploading ? ' is-busy' : ''}`}>
+                  {avatarUploading ? <TohuSpinner size={13} /> : CameraIcon}
+                  {avatarUploading ? 'Envoi…' : 'Changer la photo'}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden disabled={avatarUploading} onChange={(event) => void handleAvatarFile(event.currentTarget)} />
+                </label>
+                {form.avatar_url ? <button type="button" className="settings-avatar-remove" disabled={avatarUploading} onClick={() => void applyAvatarUrl(null, 'Photo de profil retirée.')}>Retirer</button> : null}
+              </div>
+              <small>PNG, JPG ou WEBP · 5 Mo max</small>
+            </div>
+          </div>
           <div className="field"><label htmlFor="settings-name">Nom complet</label><input className="input" id="settings-name" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} required /></div>
           <div className="field"><label htmlFor="settings-email">Email</label><input className="input" id="settings-email" value={context.session.user.email ?? ''} disabled /></div>
-          <div className="field"><label htmlFor="settings-avatar">URL de l’avatar</label><input className="input" id="settings-avatar" value={form.avatar_url} onChange={(event) => setForm((current) => ({ ...current, avatar_url: event.target.value }))} placeholder="https://…" /></div>
           <button className="btn-view" type="submit" disabled={busy !== null}>{busy === 'profile' ? 'Enregistrement…' : 'Enregistrer'}</button>
         </form>
       </section>

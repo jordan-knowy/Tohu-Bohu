@@ -51,9 +51,9 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     client.from('person_contact_details').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('created_at', { ascending: true }),
     client.from('person_career_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('started_at', { ascending: false }).limit(40),
     client.from('person_memory_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(40),
-    client.from('meeting_participants').select('meetings(id,title,starts_at,platform,meeting_type,company_id,owner_user_id)').eq('contact_id', personId).limit(500),
+    client.from('meeting_participants').select('meetings(id,title,starts_at,platform,meeting_type,company_id,owner_user_id,status,meeting_scope,meeting_url,calendar_html_link)').eq('contact_id', personId).limit(500),
     client.from('communication_messages').select('id,sent_at,direction,subject,provider').eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).order('sent_at', { ascending: false }).limit(500),
-    client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
+    client.from('connectors').select('provider,status,last_synced_at,metadata,scopes').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'contact').eq('subject_id', personId).eq('lock_state', 'active').maybeSingle(),
     client.from('contact_name_suggestions').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -321,47 +321,6 @@ export async function setPersonOwner(data: PersonDetailData, userId: string, own
   if (error) throw error
 }
 
-/** Partage (P4.4, révisé) : contrairement à une réassignation d'owner, le
- *  partage est ADDITIF — l'expéditeur garde sa propre relation avec la
- *  personne, le destinataire (forcément un membre de la même organisation)
- *  reçoit une vue en plus. Fondation de la future vue « entreprise ». */
-export async function sharePerson(data: PersonDetailData, toUserId: string, note: string): Promise<void> {
-  const { error } = await getSupabase().rpc('share_fiche', {
-    p_organization_id: data.person.workspaceId,
-    p_entity_type: 'contact',
-    p_entity_id: data.person.id,
-    p_to_user_id: toUserId,
-    p_note: note.trim() || null,
-  })
-  if (error) throw error
-}
-
-export type PersonRoleLabel = 'owner' | 'admin' | 'member'
-export type FicheShare = {
-  id: string
-  fromUserId: string
-  fromName: string
-  fromRole: PersonRoleLabel
-  note: string | null
-  createdAt: string
-}
-
-/** Partages reçus pour cette fiche — qui me l'a partagée, et son rôle dans
- *  l'organisation (affiché comme petit titre Manager/Directeur/Collaborateur). */
-export async function getFicheSharesReceived(workspaceId: string, entityType: 'contact' | 'company', entityId: string): Promise<FicheShare[]> {
-  const { data, error } = await getSupabase().rpc('list_fiche_shares', {
-    p_organization_id: workspaceId, p_entity_type: entityType, p_entity_id: entityId,
-  })
-  if (error) throw error
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    id: String(row.id),
-    fromUserId: String(row.from_user_id),
-    fromName: String(row.from_name ?? 'Membre'),
-    fromRole: (row.from_role === 'owner' || row.from_role === 'admin' ? row.from_role : 'member') as PersonRoleLabel,
-    note: row.note ? String(row.note) : null,
-    createdAt: String(row.created_at),
-  }))
-}
 
 export type FicheVision = {
   organizationId: string

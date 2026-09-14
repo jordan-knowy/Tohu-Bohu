@@ -2034,7 +2034,7 @@
 .v48-reliability>div b{color:#160D43;font-family:var(--font);font-size:12px;font-weight:700}
 .v48-owner-card{width:260px;flex:0 0 260px;display:flex;flex-direction:column;gap:16px;padding-left:28px;border-left:1px solid #ECE9F5}
 .v48-owner-row{display:flex;align-items:flex-start;gap:12px}
-.v48-owner-avatar{width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#6D49D5;color:#fff;font-family:var(--font);font-size:16px;font-weight:800;flex:none}
+.v48-owner-avatar{width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#6D49D5;color:#fff;font-family:var(--font);font-size:16px;font-weight:800;flex:none;overflow:hidden}.v48-owner-avatar img{width:100%;height:100%;object-fit:cover}
 .v48-owner-card small{display:inline-flex;padding:3px 8px;border-radius:999px;background:#e6f3f5;color:#1e7a88;font-size:9px}
 @keyframes v48-halo{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:.25;transform:scale(1.07)}}
 @keyframes v48-pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -2071,6 +2071,18 @@
 .profile-self-page .v48-self-accounts>button{grid-template-columns:auto minmax(0,1fr) auto}
 .profile-self-page .v48-self-sources article strong{overflow-wrap:anywhere}
 .profile-self-page .rel-chip{cursor:default}
+.v48-section-hint{margin:0;padding:0 20px 12px;color:#8b84a3;font-size:11px;line-height:1.5}
+.v48-alias-list{display:grid;gap:6px;padding:0 20px 12px;list-style:none;margin:0}
+.v48-alias-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid #e7e2f4;border-radius:8px;font-size:12px}
+.v48-alias-list li span{overflow-wrap:anywhere;min-width:0}
+.v48-alias-list li button{flex:0 0 auto;border:none;background:transparent;color:#8b84a3;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px}
+.v48-alias-list li button:hover{color:#c04b4b}
+.v48-alias-empty{color:#8b84a3;font-size:11px;border-style:dashed}
+.v48-alias-form{display:flex;gap:8px;padding:0 20px 20px}
+.v48-alias-form input{flex:1;min-width:0;padding:8px 10px;border:1px solid #e7e2f4;border-radius:8px;font-size:12px}
+.v48-alias-form button{flex:0 0 auto;padding:8px 14px;border:none;border-radius:8px;background:#6e50c8;color:#fff;font-size:12px;cursor:pointer}
+.v48-alias-form button:disabled{opacity:.5;cursor:default}
+.v48-alias-error{margin:0;padding:0 20px 16px;color:#c04b4b;font-size:11px}
 
 /* V48 — Profil */
 .v48-person-profile{display:grid;gap:12px}
@@ -2088,8 +2100,11 @@
 .v48-person-profile .rdv-s{margin:0;opacity:.78;font-size:10px;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .v48-person-profile .lvb2{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.16);font-family:var(--mono);font-size:8px;letter-spacing:.1em}
 .v48-person-profile .lvd{width:5px;height:5px;border-radius:50%;background:#96ddb8;animation:v48-pulse 1.9s ease-in-out infinite}
-.v48-person-profile .rdv-b{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;border:1px solid #fff;border-radius:999px;padding:7px 13px;white-space:nowrap;background:#fff;color:var(--violet);cursor:pointer}
+.v48-person-profile .rdv-b{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;border:1px solid #fff;border-radius:999px;padding:7px 13px;white-space:nowrap;background:#fff;color:var(--violet);cursor:pointer;text-decoration:none}
 .v48-person-profile .rdv-b svg{width:14px;height:14px}.v48-person-profile .rdv-b:hover{background:rgba(255,255,255,.88)}
+.v48-person-profile .rdv-b:disabled{opacity:.6;cursor:default;pointer-events:none}
+.v48-person-profile .rdv-actions{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.v48-person-profile .rdv-actions .rdv-b{margin-left:0}
 .v48-person-profile .po{padding:18px 20px;background:var(--lav);display:flex;flex-direction:column;justify-content:center}
 .v48-person-profile .po-l{margin:0;display:flex;align-items:center;gap:10px;color:var(--violet);font-size:9px;letter-spacing:.18em;text-transform:uppercase}
 .v48-person-profile .po-t{margin:9px 0 0;font-family:var(--font);font-size:16px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}

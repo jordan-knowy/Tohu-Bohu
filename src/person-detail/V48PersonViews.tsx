@@ -5,6 +5,7 @@ import { scoreWindow } from './mapping'
 import type { PersonApproachScenario, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import type { CareerHook } from './sections2'
+import { getSupabase } from '../lib/supabase'
 import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
 import { V48Icon, formatDate, formatMonth, relativeDate, renderEmphasis, scoreTone, useBusy, useToast } from './ui'
@@ -15,6 +16,11 @@ type ViewProps = {
   userId: string
   refresh: () => Promise<void>
   manualSyncAction?: ReactNode
+  /** Remplace le texte état-vide générique (pensé pour une fiche Personne,
+   * « Synchronise les emails et les réunions de cette personne ») quand ce
+   * composant est réutilisé pour « Mon profil » — voir ProfilePage, qui
+   * distingue source non connectée / analyse en cours / pas assez de matière. */
+  emptyStateOverride?: ReactNode
 }
 
 
@@ -254,7 +260,7 @@ function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => 
   </div>
 }
 
-export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
+export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverride }: ViewProps) {
   const cognitive = data.behavior.cognitiveProfile
   const primaryAxes = cognitive.primaryAxes
   const observedPrimary = primaryAxes.filter((axis) => axis.status !== 'insufficient')
@@ -268,12 +274,16 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
 
   const nextMeeting = useMemo(() => {
     const now = Date.now()
-    const upcoming = data.history.filter((event) => event.type === 'meeting' && new Date(event.occurredAt).getTime() > now)
+    // Une réunion collective (standup, webinar) ne compte jamais comme "prochain
+    // rendez-vous" individuel, même si cette personne y est identifiée.
+    const upcoming = data.history.filter((event) => event.type === 'meeting' && event.meetingScope !== 'collective' && new Date(event.occurredAt).getTime() > now)
     return upcoming.length ? upcoming.reduce((soonest, event) => new Date(event.occurredAt) < new Date(soonest.occurredAt) ? event : soonest) : null
   }, [data.history])
 
   const [tip, setTip] = useState<Tip | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const toast = useToast()
+  const [preparingBriefing, busyPrepareBriefing] = useBusy()
   // Sélecteur de source du radar (P6.3) : proposé seulement si une analyse par
   // source a produit au moins un axe observé (mail et/ou réunion).
   const [radarSource, setRadarSource] = useState<'all' | 'email' | 'meeting'>('all')
@@ -297,9 +307,22 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
           <p className="rdv-l">Prochain rendez-vous <span className="lvb2"><span className="lvd" />Live</span></p>
           {nextMeeting
             ? <><p className="rdv-t">{formatDate(nextMeeting.occurredAt)}</p><p className="rdv-s">{nextMeeting.title}{nextMeeting.sourceLabel ? ` · ${nextMeeting.sourceLabel}` : ''}</p></>
-            : <><p className="rdv-t">Aucun rendez-vous synchronisé</p><p className="rdv-s">Connecte ou synchronise un agenda pour préparer le prochain échange.</p></>}
+            : data.calendarConnected
+              ? <><p className="rdv-t">Aucun prochain rendez-vous planifié.</p><p className="rdv-s">Rien à venir dans l’agenda connecté pour cette personne.</p></>
+              : <><p className="rdv-t">Connecte ton agenda pour afficher tes prochains rendez-vous.</p><p className="rdv-s">Google Calendar ou Microsoft 365, depuis les connecteurs.</p></>}
         </div>
-        <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Partager</button>
+        {nextMeeting
+          ? <div className="rdv-actions">
+              {nextMeeting.meetingUrl && <a className="rdv-b" href={nextMeeting.meetingUrl} target="_blank" rel="noreferrer"><V48Icon name="video" />Rejoindre</a>}
+              <button type="button" className="rdv-b" disabled={preparingBriefing === 'prepare'} onClick={() => busyPrepareBriefing('prepare', async () => {
+                const { error } = await getSupabase().functions.invoke('send-meeting-prep', { body: { organizationId: data.person.workspaceId, contactId: data.person.id } })
+                if (error) throw error
+                toast('Antisèche envoyée par email.')
+              })}><V48Icon name="sparkle" />{preparingBriefing === 'prepare' ? 'Préparation…' : 'Préparer'}</button>
+              {nextMeeting.calendarLink && <a className="rdv-b" href={nextMeeting.calendarLink} target="_blank" rel="noreferrer"><V48Icon name="external-link" />Ouvrir dans l’agenda</a>}
+              <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Partager</button>
+            </div>
+          : !data.calendarConnected && <Link className="rdv-b" to="/app/connectors"><V48Icon name="calendar" />Connecter mon agenda</Link>}
       </article>
       <article className="po">
         <p className="po-l">Posture à adopter</p>
@@ -319,7 +342,7 @@ export function V48PersonProfileView({ data, manualSyncAction }: ViewProps) {
               ? cognitive.schemaVersion < 3
                 ? `${data.behavior.analyzedInteractions} échange${data.behavior.analyzedInteractions > 1 ? 's ont' : ' a'} déjà été analysé${data.behavior.analyzedInteractions > 1 ? 's' : ''}, mais dans l’ancien format du profil. Relance l’analyse pour produire les six dimensions de la nouvelle carte.`
                 : `${data.behavior.availableInteractions} échange${data.behavior.availableInteractions > 1 ? 's ont' : ' a'} été retrouvé${data.behavior.availableInteractions > 1 ? 's' : ''}. Le profil apparaîtra après leur analyse et plusieurs preuves concordantes.`
-              : 'Aucun échange attribuable n’a encore été retrouvé. Synchronise les emails et les réunions de cette personne.'}</EmptyState>
+              : emptyStateOverride ?? 'Aucun échange attribuable n’a encore été retrouvé. Synchronise les emails et les réunions de cette personne.'}</EmptyState>
             {manualSyncAction && <div className="v48-profile-upgrade-action">{manualSyncAction}</div>}
           </div>
           : <div className="bd">

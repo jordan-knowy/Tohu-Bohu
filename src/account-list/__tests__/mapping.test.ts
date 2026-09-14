@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  accountTier, buildAccountRows, buildPortfolioSeries, buildTickerItems,
+  accountTier, buildAccountRows, buildAccountScoreSeries, buildTickerItems,
   durationLabel, evolutionPercents, latestContactScore, monthsBetween,
-  type AccountListRaw,
+  type AccountListRaw, type PortfolioPoint,
 } from '../mapping'
 
 const NOW = new Date('2026-07-17T12:00:00Z')
@@ -11,7 +11,7 @@ function raw(overrides: Partial<AccountListRaw> = {}): AccountListRaw {
   return {
     companies: [], contacts: [], scoreHistory: [], settings: [], preferences: [],
     watch: [], meetings: [], messageContactIds: new Set(), signals: [],
-    profileNames: new Map(), accountScores: new Map(), now: NOW,
+    profileNames: new Map(), accountScores: new Map(), visions: [], now: NOW,
     ...overrides,
   }
 }
@@ -94,33 +94,125 @@ describe('latestContactScore — profil moteur puis historique', () => {
   })
 })
 
-describe('buildPortfolioSeries / evolutionPercents — série mensuelle réelle', () => {
-  it('moyenne par compte puis par mois — chaque contact reporte son dernier score connu (as-of), un mois n’est null que si aucun contact n’a encore de score', () => {
-    const contacts = [{ id: 'c1', company_id: 'a' }, { id: 'c2', company_id: 'b' }]
-    const history = [
-      { contact_id: 'c1', score: 60, snapshot_date: '2026-06-10' },
-      { contact_id: 'c1', score: 70, snapshot_date: '2026-06-25' },
-      { contact_id: 'c2', score: 50, snapshot_date: '2026-06-25' },
-      { contact_id: 'c1', score: 80, snapshot_date: '2026-07-01' },
+describe('buildAccountScoreSeries — même source (account_relationship_score_snapshots) que la carte et le tableau', () => {
+  const names = new Map([['a', 'Ac Toulouse'], ['b', 'Limayrac']])
+  const active = new Set(['a', 'b'])
+
+  it('un mois sans snapshot pour un compte le laisse absent — jamais de report du dernier score connu ni du score actuel', () => {
+    const rows = [
+      { company_id: 'a', score: 72, snapshot_month: '2026-06-01' },
+      { company_id: 'a', score: 68, snapshot_month: '2026-07-01' },
+      { company_id: 'b', score: 50, snapshot_month: '2026-06-01' },
+      // b n'a aucun snapshot en juillet : ne doit PAS reporter son score de juin.
     ]
-    const series = buildPortfolioSeries(history, contacts, 3, NOW)
-    // Mai : aucun score connu pour aucun contact → null. Juin : dernier score
-    // connu par contact (c1=70, c2=50) → (70+50)/2=60. Juillet : c1 a un
-    // nouveau score (80), c2 reporte son dernier connu (50, de juin) →
-    // (80+50)/2=65 — la relation avec le compte b n'est pas effacée juste
-    // parce qu'aucune nouvelle mesure n'est tombée ce mois-ci.
-    expect(series.map((point) => point.score)).toEqual([null, 60, 65])
+    const series = buildAccountScoreSeries(rows, names, active, 2, NOW)
+    expect(series.map((point) => point.monthKey)).toEqual(['2026-06', '2026-07'])
+    expect(series[0]?.score).toBe(61) // (72+50)/2
+    expect(series[0]?.accounts.map((a) => a.companyId).sort()).toEqual(['a', 'b'])
+    expect(series[1]?.score).toBe(68) // b absent ce mois-ci, pas de fabrication → moyenne sur 'a' seul
+    expect(series[1]?.accounts.map((a) => a.companyId)).toEqual(['a'])
   })
-  it('évolutions % uniquement quand les points existent', () => {
-    const series = [
-      { monthKey: '2026-05', score: 50 },
-      { monthKey: '2026-06', score: 60 },
-      { monthKey: '2026-07', score: 66 },
+
+  it('un mois sans aucun snapshot est null, pas 0 ni interpolé', () => {
+    const rows = [{ company_id: 'a', score: 72, snapshot_month: '2026-07-01' }]
+    const series = buildAccountScoreSeries(rows, names, active, 3, NOW)
+    expect(series.map((point) => point.score)).toEqual([null, null, 72])
+  })
+
+  it('un compte hors périmètre actif (archivé) est exclu même s’il a un snapshot', () => {
+    const rows = [
+      { company_id: 'a', score: 72, snapshot_month: '2026-07-01' },
+      { company_id: 'z', score: 10, snapshot_month: '2026-07-01' }, // pas dans `active`
+    ]
+    const series = buildAccountScoreSeries(rows, names, active, 1, NOW)
+    expect(series[0]?.score).toBe(72)
+    expect(series[0]?.accounts).toHaveLength(1)
+  })
+
+  it('doublon compte+mois : défense en profondeur, ne compte qu’une fois (la première ligne — ordre computed_at desc)', () => {
+    const rows = [
+      { company_id: 'a', score: 80, snapshot_month: '2026-07-01' }, // la plus récente (computed_at desc)
+      { company_id: 'a', score: 40, snapshot_month: '2026-07-01' }, // doublon plus ancien — ignoré
+    ]
+    const series = buildAccountScoreSeries(rows, names, active, 1, NOW)
+    expect(series[0]?.score).toBe(80)
+    expect(series[0]?.accounts).toHaveLength(1)
+  })
+})
+
+describe('evolutionPercents — ancré strictement sur le dernier point de la série (raccord carte ↔ graphique)', () => {
+  it('calcule m1/m3/m12 depuis les valeurs réellement affichées dans la série', () => {
+    const series: PortfolioPoint[] = [
+      { monthKey: '2026-05', score: 50, accounts: [] },
+      { monthKey: '2026-06', score: 60, accounts: [] },
+      { monthKey: '2026-07', score: 66, accounts: [] },
     ]
     const result = evolutionPercents(series)
-    expect(result.m1).toBe(10)
+    expect(result.m1).toBe(Math.round((66 - 60) / 60 * 100))
     expect(result.m3).toBeNull()
     expect(result.m12).toBeNull()
+  })
+
+  it('si le DERNIER mois de la série est null, aucune évolution n’est fabriquée depuis un mois antérieur', () => {
+    const series: PortfolioPoint[] = [
+      { monthKey: '2026-05', score: 50, accounts: [] },
+      { monthKey: '2026-06', score: 60, accounts: [] },
+      { monthKey: '2026-07', score: null, accounts: [] }, // mois courant sans snapshot
+    ]
+    const result = evolutionPercents(series)
+    expect(result.m1).toBeNull()
+    expect(result.m3).toBeNull()
+    expect(result.m12).toBeNull()
+  })
+})
+
+describe('cohérence carte ↔ graphique ↔ variations (même source, même périmètre de comptes)', () => {
+  it('le dernier point du graphique = la moyenne des mêmes derniers scores comptes que la carte', () => {
+    const names = new Map([['a', 'Ac Toulouse'], ['b', 'Gre Enr'], ['c', 'Limayrac']])
+    const active = new Set(['a', 'b', 'c'])
+    // Mêmes lignes account_relationship_score_snapshots que celles utilisées par
+    // getAccountsOverview pour construire `accounts[].score` (globalScore).
+    const rows = [
+      { company_id: 'a', score: 59, snapshot_month: '2026-07-01' },
+      { company_id: 'b', score: 65, snapshot_month: '2026-07-01' },
+      { company_id: 'c', score: 71, snapshot_month: '2026-07-01' },
+    ]
+    const series = buildAccountScoreSeries(rows, names, active, 1, NOW)
+    const globalScore = Math.round(rows.reduce((sum, r) => sum + r.score, 0) / rows.length)
+    expect(series.at(-1)?.score).toBe(globalScore)
+    expect(series.at(-1)?.score).toBe(65) // (59+65+71)/3 = 65
+  })
+
+  it('la variation M1 affichée dans le tooltip (point courant − point précédent) est cohérente avec evolutionPercents', () => {
+    const names = new Map([['a', 'Ac Toulouse']])
+    const active = new Set(['a'])
+    const rows = [
+      { company_id: 'a', score: 74, snapshot_month: '2026-06-01' },
+      { company_id: 'a', score: 71, snapshot_month: '2026-07-01' },
+    ]
+    const series = buildAccountScoreSeries(rows, names, active, 2, NOW)
+    const tooltipPointDelta = series[1]!.score! - series[0]!.score! // -3 pts, comme le tooltip
+    expect(tooltipPointDelta).toBe(-3)
+    const evolutions = evolutionPercents(series)
+    expect(evolutions.m1).toBe(Math.round((71 - 74) / 74 * 100))
+  })
+
+  it('les filtres de la page (statut/type/owner) ne portent que sur le tableau : carte et graphique partagent le même périmètre `activeCompanyIds`, jamais un sous-ensemble filtré', () => {
+    // Documente l'invariant service.ts : `activeCompanyIds` vient de `accounts`
+    // (post buildAccountRows), pas de la liste filtrée côté UI (tierFilter/
+    // typeFilter/ownerFilter, qui ne s'appliquent qu'au tableau) — carte et
+    // graphique ne peuvent donc jamais diverger sur le périmètre de comptes.
+    const names = new Map([['a', 'Ac Toulouse'], ['b', 'Gre Enr']])
+    const rows = [
+      { company_id: 'a', score: 59, snapshot_month: '2026-07-01' },
+      { company_id: 'b', score: 65, snapshot_month: '2026-07-01' },
+    ]
+    const fullScope = new Set(['a', 'b'])
+    const series = buildAccountScoreSeries(rows, names, fullScope, 1, NOW)
+    // Même si un filtre de tableau ne retenait que 'a', la carte (calculée sur
+    // `accounts`, jamais sur la liste filtrée) et le graphique restent sur les 2 comptes.
+    expect(series[0]?.accounts).toHaveLength(2)
+    expect(series[0]?.score).toBe(62) // (59+65)/2, pas juste 59
   })
 })
 

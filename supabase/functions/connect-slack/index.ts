@@ -35,7 +35,7 @@ Deno.serve(async req => {
         callbackConnectorId = existing.id
         callbackLease = lease
       }
-      const connector = await checked(db.from('connectors').upsert({ organization_id: pending.organization_id, user_id: pending.user_id, provider: 'slack', status: 'not_connected', scopes: (token.authed_user.scope ?? '').split(','), metadata: { team_id: token.team.id, team_name: token.team.name, slack_user_id: token.authed_user.id, share_public: true }, last_synced_at: null }, { onConflict: 'organization_id,user_id,provider' }).select('id').single())
+      const connector = await checked(db.from('connectors').upsert({ organization_id: pending.organization_id, user_id: pending.user_id, provider: 'slack', status: 'not_connected', scopes: (token.authed_user.scope ?? '').split(','), metadata: { team_id: token.team.id, team_name: token.team.name, slack_user_id: token.authed_user.id, share_public: true }, last_synced_at: null }, { onConflict: 'user_id,provider' }).select('id').single())
       callbackConnectorId = connector.id
       // Remove the previous refresh token: the shared vault RPC preserves null refresh tokens.
       await checked(db.from('oauth_accounts').delete().eq('connector_id', connector.id))

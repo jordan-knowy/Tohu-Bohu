@@ -34,6 +34,8 @@ export type PersonListRow = {
   ownerId: string | null
   ownerName: string | null
   tier: PersonTier
+  /** null = aucune vision persistée (personne tout juste ajoutée) — jamais affiché comme restreint par défaut. */
+  visibility: 'workspace' | 'restricted' | null
 }
 
 export type TickerItem = { src: 'ext' | 'int'; tag: string; person: string; summary: string }
@@ -59,6 +61,7 @@ export type PersonListRaw = {
   messages: Row[]
   meetings: Row[]
   profileNames: Map<string, string>
+  visions: Row[]
   now: Date
 }
 
@@ -72,6 +75,12 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
 
   const settingsByContact = new Map(raw.settings.map((row) => [String(row.contact_id), row]))
   const userSettingsByContact = new Map(raw.userSettings.map((row) => [String(row.contact_id), row]))
+  const visionsByContact = new Map<string, Row[]>()
+  for (const vision of raw.visions) {
+    const contactId = text(vision.entity_id)
+    if (!contactId) continue
+    visionsByContact.set(contactId, [...(visionsByContact.get(contactId) ?? []), vision])
+  }
 
   const messagesByContact = new Map<string, Row[]>()
   for (const message of raw.messages) {
@@ -118,6 +127,9 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
       ?? null
 
     const ownerId = text(settings.primary_owner_user_id) ?? text(contact.owner_user_id)
+    const contactVisions = visionsByContact.get(id) ?? []
+    const contactVision = contactVisions.find((vision) => text(vision.owner_user_id) === ownerId) ?? contactVisions[0]
+    const visibility = contactVision ? (text(contactVision.visibility) as PersonListRow['visibility']) : null
 
     return [{
       id,
@@ -143,6 +155,7 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
       ownerId,
       ownerName: ownerId ? raw.profileNames.get(ownerId) ?? null : null,
       tier: scoreTier(score),
+      visibility,
     }]
   }).sort((a, b) => (a.score ?? 101) - (b.score ?? 101) || a.name.localeCompare(b.name))
 }

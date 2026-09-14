@@ -298,17 +298,36 @@ export async function listPeople(search = '', status = '', sort = 'updated_at.de
   return sortEntities(rows, sort)
 }
 
-export async function listManagedAccounts(userId: string): Promise<Account[]> {
-  const { data, error } = await getSupabase()
-    .from('contacts')
-    .select('companies(*)')
-    .eq('owner_user_id', userId)
-    .is('merged_into_contact_id', null)
-    .not('company_id', 'is', null)
+/** Comptes « sous ma responsabilité » pour Mon profil — sous-ensemble des
+ * comptes SUIVIS de l'espace (mêmes `is_tracked=true`, même périmètre
+ * d'organisation que le nombre affiché en Home/liste des comptes : voir
+ * `getHomeDashboard`'s `trackedAccounts`). Ne doit donc jamais dépasser ce
+ * total organisation. La responsabilité suit la même règle que la fiche
+ * Compte (account-list/mapping.ts `ownerId`) : le propriétaire explicite
+ * (account_settings.primary_owner_user_id) fait autorité s'il existe : à
+ * défaut seulement, un contact que je possède sur ce compte me le rattache —
+ * jamais l'inverse, pour ne pas s'approprier un compte explicitement confié
+ * à un⋅e autre membre de l'organisation. */
+export async function listManagedAccounts(userId: string, organizationId: string): Promise<Account[]> {
+  const client = getSupabase()
+  const [{ data: settingsRows, error: settingsError }, { data: contactRows, error: contactError }] = await Promise.all([
+    client.from('account_settings').select('company_id,primary_owner_user_id').eq('organization_id', organizationId),
+    client.from('contacts').select('company_id').eq('organization_id', organizationId).eq('owner_user_id', userId).is('merged_into_contact_id', null).not('company_id', 'is', null),
+  ])
+  if (settingsError) throw settingsError
+  if (contactError) throw contactError
+  const ownedByMe = new Set((settingsRows ?? []).filter((row) => row.primary_owner_user_id === userId).map((row) => String(row.company_id)))
+  const ownedByOther = new Set((settingsRows ?? []).filter((row) => row.primary_owner_user_id && row.primary_owner_user_id !== userId).map((row) => String(row.company_id)))
+  for (const row of contactRows ?? []) {
+    const companyId = String(row.company_id)
+    if (!ownedByOther.has(companyId)) ownedByMe.add(companyId)
+  }
+  if (!ownedByMe.size) return []
+  const { data, error } = await client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).in('id', [...ownedByMe])
   if (error) throw error
   const unique = new Map<string, Account>()
   for (const row of data ?? []) {
-    const company = firstRecord(row.companies)
+    const company = record(row as DbRow)
     if (company.id) unique.set(String(company.id), mapAccount(company))
   }
   return [...unique.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
@@ -429,11 +448,14 @@ export async function saveSignalFeedback(signalId: string, userId: string, verdi
   if (error) throw error
 }
 
+/** Un connecteur est strictement personnel : il n'est plus rattaché à
+ * l'organisation actuellement affichée, mais à l'organisation foyer de son
+ * propriétaire (imposée en base par un trigger). On ne le filtre donc que
+ * par utilisateur — jamais par workspace actif. */
 export async function listConnectors(): Promise<ConnectorRow[]> {
-  const organizationId = await getOrganizationId()
   const { data: { user } } = await getSupabase().auth.getUser()
   if (!user) throw new Error('Session invalide')
-  const { data, error } = await getSupabase().from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', user.id).order('provider')
+  const { data, error } = await getSupabase().from('connectors').select('*').eq('user_id', user.id).order('provider')
   if (error) throw error
   return (data ?? []).map((row) => ({
     provider: row.provider,
@@ -448,7 +470,7 @@ export async function listConnectors(): Promise<ConnectorRow[]> {
 
 export async function setConnector(userId: string, provider: string, status: ConnectorRow['status']): Promise<void> {
   const organizationId = await getOrganizationId()
-  const { error } = await getSupabase().from('connectors').upsert({ organization_id: organizationId, user_id: userId, provider, status, scopes: [] }, { onConflict: 'organization_id,user_id,provider' })
+  const { error } = await getSupabase().from('connectors').upsert({ organization_id: organizationId, user_id: userId, provider, status, scopes: [] }, { onConflict: 'user_id,provider' })
   if (error) throw error
 }
 
@@ -456,6 +478,21 @@ export async function getProfile(userId: string): Promise<ProfileRow> {
   const { data, error } = await getSupabase().from('profiles').select('id,full_name,avatar_url,role_title,company_name,website_url,product_summary,onboarding_completed,platform_role,is_super_admin').eq('id', userId).single()
   if (error) throw error
   return { ...data, full_name: data.full_name ?? 'Membre Tohu', email: null, role: data.role_title, role_title: data.role_title } as ProfileRow
+}
+
+const AVATAR_BUCKET = 'profile-avatars'
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024
+
+export async function uploadProfileAvatar(userId: string, file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Le fichier doit être une image.')
+  if (file.size > AVATAR_MAX_BYTES) throw new Error('L’image ne doit pas dépasser 5 Mo.')
+  const client = getSupabase()
+  const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  const path = `${userId}/${Date.now()}.${extension}`
+  const { error: uploadError } = await client.storage.from(AVATAR_BUCKET).upload(path, file, { contentType: file.type, upsert: true })
+  if (uploadError) throw new Error(uploadError.message)
+  const { data } = client.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+  return data.publicUrl
 }
 
 export async function getResponsibleBehaviorProfile(userId: string, organizationId: string): Promise<UserBehaviorProfile | null> {
@@ -485,6 +522,38 @@ export async function getResponsibleBehaviorProfile(userId: string, organization
   }
   if (error) throw error
   return data as UserBehaviorProfile | null
+}
+
+export type UserIdentityAlias = { id: string; email: string; createdAt: string }
+
+/** Adresses secondaires (alias Send-As, boîte pro, etc.) explicitement
+ * rattachées à l'utilisateur — voir user_identity_aliases. Le pipeline
+ * comportemental (sync-email-analysis) les traite comme « moi » au même
+ * titre que l'adresse du connecteur, pour consolider un seul profil. */
+export async function listUserIdentityAliases(userId: string, organizationId: string): Promise<UserIdentityAlias[]> {
+  const { data, error } = await getSupabase()
+    .from('user_identity_aliases')
+    .select('id,email,created_at')
+    .eq('user_id', userId)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((row) => ({ id: String(row.id), email: String(row.email), createdAt: String(row.created_at) }))
+}
+
+export async function addUserIdentityAlias(userId: string, organizationId: string, email: string): Promise<void> {
+  const clean = email.trim().toLowerCase()
+  if (!clean || !clean.includes('@')) throw new Error('Adresse email invalide.')
+  const { error } = await getSupabase().from('user_identity_aliases').insert({ organization_id: organizationId, user_id: userId, email: clean })
+  if (error) {
+    if (error.code === '23505') throw new Error('Cette adresse est déjà reliée à un profil.')
+    throw error
+  }
+}
+
+export async function removeUserIdentityAlias(aliasId: string): Promise<void> {
+  const { error } = await getSupabase().from('user_identity_aliases').delete().eq('id', aliasId)
+  if (error) throw error
 }
 
 export async function globalSearch(term: string): Promise<Array<{ id: string; type: 'account' | 'person'; name: string; meta: string }>> {

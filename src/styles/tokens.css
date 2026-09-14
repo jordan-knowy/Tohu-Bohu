@@ -53,6 +53,21 @@ a{color:inherit}
 .logo-mark{display:flex;width:31px;height:31px}
 .logo-mark svg{width:100%;height:100%;display:block}
 .logo-word{font-weight:900;font-size:20px;letter-spacing:-.04em}.logo-word i{font-style:normal;color:var(--violet)}
-.spinner{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* Chargement de marque — nœud central + branches qui se connectent en boucle
+   (voir components/logo.ts::tohuSpinner / components/TohuSpinner.tsx). */
+.tohu-spin{overflow:visible;flex:none;vertical-align:middle}
+.tohu-spin-branch{stroke:var(--violet);stroke-width:7;stroke-linecap:round;stroke-dasharray:8 18;animation:tohu-spin-flow 1.3s linear infinite}
+.tohu-spin-branch.b2{animation-delay:.15s}
+.tohu-spin-branch.b3{animation-delay:.3s}
+.tohu-spin-branch.b4{animation-delay:.45s}
+@keyframes tohu-spin-flow{to{stroke-dashoffset:-26}}
+.tohu-spin-node{transform-box:fill-box;transform-origin:center;animation:tohu-spin-pulse 1.3s ease-in-out infinite}
+.tohu-spin-node.n1{fill:var(--sage);animation-delay:.15s}
+.tohu-spin-node.n2{fill:var(--violet);animation-delay:.3s}
+.tohu-spin-node.n3{fill:var(--violet);animation-delay:.45s}
+.tohu-spin-node.n4{fill:var(--teal);animation-delay:.6s}
+@keyframes tohu-spin-pulse{0%,100%{transform:scale(.6);opacity:.5}45%{transform:scale(1.15);opacity:1}}
+.tohu-spin-hub{fill:var(--violet);transform-box:fill-box;transform-origin:center;animation:tohu-spin-hub 1.7s ease-in-out infinite}
+@keyframes tohu-spin-hub{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+@media(prefers-reduced-motion:reduce){.tohu-spin-branch,.tohu-spin-node,.tohu-spin-hub{animation:none;opacity:1;transform:none}}
 @media(max-width:780px){.btn-view,.btn-secondary{min-height:44px}}

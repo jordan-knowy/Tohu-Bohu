@@ -302,7 +302,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
       // voir score-batch) — null pour les snapshots antérieurs à leur ajout, jamais inventées.
       engagementComponent: number(latestScore.engagement_component),
       recencyComponent: number(latestScore.recency_component),
-      history: scoreRows.flatMap((row) => number(row.score) !== null && text(row.computed_at) ? [{ score: number(row.score)!, computedAt: text(row.computed_at)! }] : []).reverse(),
+      history: scoreRows.flatMap((row) => number(row.score) !== null && text(row.computed_at) && text(row.snapshot_month)
+        ? [{ score: number(row.score)!, computedAt: text(row.computed_at)!, snapshotMonth: text(row.snapshot_month)! }] : []).reverse(),
       monthlyHealth,
     },
     people,
@@ -429,47 +430,6 @@ export async function setAccountRelationType(data: AccountDetailData, userId: st
   if (error) throw error
 }
 
-/** Partage additif d'un compte avec un membre de l'organisation : l'expéditeur
- *  garde sa propre relation, le destinataire reçoit une vue en plus (jamais
- *  une réassignation exclusive — voir sharePerson pour le même principe côté
- *  fiche personne). Fondation de la future vue « entreprise ». */
-export async function shareAccount(data: AccountDetailData, toUserId: string, note: string): Promise<void> {
-  const { error } = await getSupabase().rpc('share_fiche', {
-    p_organization_id: data.account.workspaceId,
-    p_entity_type: 'company',
-    p_entity_id: data.account.id,
-    p_to_user_id: toUserId,
-    p_note: note.trim() || null,
-  })
-  if (error) throw error
-}
-
-export type AccountRoleLabel = 'owner' | 'admin' | 'member'
-export type AccountFicheShare = {
-  id: string
-  fromUserId: string
-  fromName: string
-  fromRole: AccountRoleLabel
-  note: string | null
-  createdAt: string
-}
-
-/** Partages reçus pour ce compte — qui me l'a partagé, et son rôle dans
- *  l'organisation (affiché comme petit titre Manager/Directeur/Collaborateur). */
-export async function getAccountFicheSharesReceived(workspaceId: string, entityId: string): Promise<AccountFicheShare[]> {
-  const { data, error } = await getSupabase().rpc('list_fiche_shares', {
-    p_organization_id: workspaceId, p_entity_type: 'company', p_entity_id: entityId,
-  })
-  if (error) throw error
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    id: String(row.id),
-    fromUserId: String(row.from_user_id),
-    fromName: String(row.from_name ?? 'Membre'),
-    fromRole: (row.from_role === 'owner' || row.from_role === 'admin' ? row.from_role : 'member') as AccountRoleLabel,
-    note: row.note ? String(row.note) : null,
-    createdAt: String(row.created_at),
-  }))
-}
 
 export type AccountVision = {
   organizationId: string

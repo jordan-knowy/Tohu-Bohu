@@ -21,7 +21,7 @@ export type IntegrationItem = {
 type SortKey = 'name' | 'interactions' | 'lastInteractionAt'
 const PRECHECK = 10
 
-function relLabel(iso: string | null): string {
+export function relLabel(iso: string | null): string {
   if (!iso) return '—'
   const then = new Date(iso).getTime()
   if (!Number.isFinite(then)) return '—'
