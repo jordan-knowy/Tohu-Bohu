@@ -652,6 +652,12 @@ export type PersonDetailRaw = {
   legacyScores: Row[]
   legacyCareer: Row[]
   relationshipSnapshots: Row[]
+  // Dernier snapshot de dyade V6 (scoring.score_snapshot, entity_type='dyad',
+  // via get_dyad_weather_snapshot) — {} si aucun (cold-start ou pas encore
+  // traité par le batch). Sert de source PRIORITAIRE au score principal quand
+  // il n'est pas cold-start et que le verdict est autorisé (mêmes règles P5/P7
+  // que la Météo du compte) ; sinon repli sur la chaîne legacy existante.
+  dyadWeatherSnapshot: Row
   cognitiveProfile: Row
   behavioralSignals: Row[]
   recommendations: Row[]
@@ -689,10 +695,23 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const legacyHistory = raw.legacyScores.length ? raw.legacyScores : raw.relationshipSnapshots
   const scoreHistory = buildScoreHistory(canonical, legacyHistory)
 
+  // Dyade V6 (mêmes règles P5/P7 que la Météo du compte) : score et 5 axes
+  // PRIORITAIRES sur la chaîne legacy quand la dyade n'est pas cold-start et
+  // que le verdict est autorisé — jamais un score V6 immature affiché comme
+  // définitif, jamais un vide affiché quand le legacy a une vraie valeur.
+  const dyad = raw.dyadWeatherSnapshot
+  const dyadAxes = object(dyad.axes)
+  const dyadUsable = text(dyad.status) !== null && text(dyad.status) !== 'cold_start' && bool(dyad.verdict_allowed) && num(dyad.score) !== null
+
+  const axisValue = (axis: string): number | null => {
+    const a = object(dyadAxes[axis])
+    return num(a.value)
+  }
+
   const meetingDates = raw.meetings.map((row) => text(row.starts_at)).filter((value): value is string => value !== null)
   const messageDates = raw.messages.map((row) => text(row.sent_at)).filter((value): value is string => value !== null)
   const allDates = [...meetingDates, ...messageDates].sort()
-  const score = num(latestSnapshot.score) ?? num(latestHistory.score) ?? num(relationshipSnapshot.engagement_score) ?? num(cognitiveProfile.engagement_score)
+  const score = dyadUsable ? num(dyad.score) : (num(latestSnapshot.score) ?? num(latestHistory.score) ?? num(relationshipSnapshot.engagement_score) ?? num(cognitiveProfile.engagement_score))
   // Seules les productions attribuées à la personne comptent pour ouvrir son
   // profil. Les signaux de veille externes ne sont pas des interactions.
   const authoredMessages = raw.authoredMessageCount
@@ -775,11 +794,11 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       // analyse IA n'existe) — `*Measured` distingue ce cas du signal IA réel
       // (cognitive_profiles.trust_score/satisfaction_score, jamais fabriqué).
       dimensions: {
-        confiance: num(latestSnapshot.confiance_score) ?? num(latestHistory.score_confiance) ?? num(cognitiveProfile.score_confiance),
-        satisfaction: num(latestSnapshot.satisfaction_score) ?? num(latestHistory.score_satisfaction) ?? num(cognitiveProfile.score_satisfaction),
-        engagement: num(latestSnapshot.engagement_score) ?? num(latestHistory.score_engagement) ?? num(cognitiveProfile.score_engagement),
-        reciprocite: num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite),
-        ancrage: num(latestSnapshot.ancrage_score) ?? num(latestHistory.score_ancrage) ?? num(cognitiveProfile.score_ancrage),
+        confiance: dyadUsable ? axisValue('confiance') : (num(latestSnapshot.confiance_score) ?? num(latestHistory.score_confiance) ?? num(cognitiveProfile.score_confiance)),
+        satisfaction: dyadUsable ? axisValue('satisfaction') : (num(latestSnapshot.satisfaction_score) ?? num(latestHistory.score_satisfaction) ?? num(cognitiveProfile.score_satisfaction)),
+        engagement: dyadUsable ? axisValue('engagement') : (num(latestSnapshot.engagement_score) ?? num(latestHistory.score_engagement) ?? num(cognitiveProfile.score_engagement)),
+        reciprocite: dyadUsable ? axisValue('reciprocite') : (num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite)),
+        ancrage: dyadUsable ? axisValue('ancrage') : (num(latestSnapshot.ancrage_score) ?? num(latestHistory.score_ancrage) ?? num(cognitiveProfile.score_ancrage)),
         ancrageCarriers: num(latestSnapshot.ancrage_carriers),
         confianceMeasured: num(cognitiveProfile.trust_score) !== null,
         satisfactionMeasured: num(cognitiveProfile.satisfaction_score) !== null,

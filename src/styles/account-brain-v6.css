@@ -1,0 +1,137 @@
+/* Sections V6 intégrées à la Vue Relation (Météo, Ce qui a changé récemment,
+   Engagements) — voir src/account-detail/AccountWeatherV6.tsx. Rendu à
+   l'intérieur de `.acr` : hérite --v/--ink/--lav/--sage/--coral/--amber/--line
+   /--pale définis dans account-relation.css. Transitions 150-200ms, respecte
+   prefers-reduced-motion (héritage global tokens.css). */
+
+/* ── Météo : bandeau d'alerte + 6 tuiles sur une ligne ─────────────────── */
+.v6w-top{display:flex;align-items:center;gap:18px;margin-bottom:14px}
+.v6w-meta{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--pale)}
+.v6w-meta em{font-style:normal;color:var(--mut)}
+.v6w-warn{color:var(--amber)}
+.hint{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;border:1px solid var(--grid);color:var(--pale);font-size:9.5px;font-style:italic;cursor:help;margin-left:auto}
+
+.r2-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.r2-t{display:flex;flex-direction:column;gap:6px;text-align:left;background:#fff;border:1px solid var(--grid);border-radius:12px;padding:13px 14px;cursor:pointer;font-family:inherit;transition:border-color .16s ease,box-shadow .16s ease;min-width:0}
+.r2-t:hover{background:var(--lav)}
+.r2-t.on{border-color:var(--v);box-shadow:0 0 0 1.5px var(--v) inset}
+.r2-t-ic{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--lav);flex:none}
+.r2-t-ic svg{width:16px;height:16px}
+.r2-t-nm{font-family:'Epilogue',sans-serif;font-weight:800;font-size:12px;letter-spacing:-.01em;margin:0;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r2-t-row{display:flex;align-items:baseline;justify-content:space-between}
+.r2-t-v{font-family:'Epilogue',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.r2-t-w{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--pale)}
+.r2-t .mt-g{position:relative;display:block;height:5px;border-radius:999px;background:#EFEBF9;overflow:visible;margin:2px 0}
+.r2-t .mt-g i{position:absolute;left:0;top:0;height:100%;border-radius:999px}
+.r2-t .mt-g b{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--pale);transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(26,16,64,.18)}
+.r2-t-dl{font-size:9.5px;color:var(--pale);margin:0;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:1080px){.r2-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:640px){.r2-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.r2-det{margin-top:14px;border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;background:#FCFBFE}
+.r2-det-q{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--pale);margin:0 0 6px}
+.r2-det-r{font-family:'Epilogue',sans-serif;font-weight:700;letter-spacing:-.01em;font-size:13.5px;line-height:1.5;margin:0;color:var(--ink)}
+.r2-det-sep{border:0;border-top:1px solid var(--line);margin:12px 0}
+.r2-det-h{font-family:'Epilogue',sans-serif;font-weight:800;font-size:11px;margin:0 0 4px;color:var(--ink)}
+.r2-det-x{font-size:12px;line-height:1.5;color:var(--mut);margin:0}
+.r2-det-x.muted{color:var(--pale)}
+.r2-det-proofs{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.r2-det-proofs li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.r2-det-proofs li:first-child{border-top:none;padding-top:0}
+.r2-det-pd{width:8px;height:8px;border-radius:50%;flex:none;margin-top:4px}
+.r2-det-pt{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0}
+.r2-det-pm{font-size:12px;color:var(--ink);margin:2px 0 0}
+@media(max-width:640px){.r2-det{grid-template-columns:1fr}}
+
+/* ── Ce qui a changé récemment ─────────────────────────────────────────── */
+.v6-chg-list{display:flex;flex-direction:column;gap:10px}
+.v6-chg-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.v6-chg-row:last-child{border-bottom:none}
+.v6-chg-body{flex:1;min-width:0}
+.v6-chg-t{margin:0;font-size:13.5px;color:var(--ink);font-weight:600;display:flex;align-items:center;gap:8px}
+.v6-chg-d{margin:4px 0;font-size:12.5px;color:var(--mut);line-height:1.5}
+.v6-tag-overdue{font-size:10px;font-weight:700;color:var(--coral);text-transform:uppercase;letter-spacing:.03em}
+
+/* Note : les engagements (ex-bloc « Engagements ») sont désormais fusionnés dans
+   « Ce qu'il faut faire » (.acf-*, account-relation.css) — voir ActionsSection,
+   AccountRelationView.tsx. */
+/* Note : SourceBadge/EvidenceItem/EvidenceKindBadge (.ev-*) sont déjà stylés
+   globalement dans person-detail.css — ne pas redéfinir ici (single design
+   system, voir components/Evidence.tsx). */
+
+/* ── Hero météo (bannière « Où on en est ») ────────────────────────────── */
+.r2-big{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 22px 8px 26px;border-left:1px solid rgba(255,255,255,.14)}
+@media(max-width:900px){.r2-big{border-left:0;padding-left:0}}
+.r2-big-n{display:flex;align-items:center;justify-content:center;gap:12px;font-family:'Epilogue',sans-serif;font-weight:800;font-size:46px;letter-spacing:-.03em;line-height:1;margin:0;color:#fff}
+.r2-big-n small{font-size:14px;color:#B9B2CC;letter-spacing:0;align-self:flex-end;margin-bottom:4px}
+.wx{display:inline-flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:13px;background:rgba(255,255,255,.08);flex:none}
+.wx svg{width:28px;height:28px}
+.r2-big-k{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#C9BCF2;margin:8px 0 0}
+.r2-big-s{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#B9B2CC;margin:6px 0 0}
+.r2-big-sep{border:0;border-top:1px solid rgba(255,255,255,.12);width:100%;margin:16px 0 14px}
+.r2-big-spark{width:100%;height:30px;display:block;margin:0 0 8px;overflow:visible}
+.r2-big-spark path{fill:none;stroke:#B9B2CC;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.r2-big-spark circle{fill:#fff}
+.r2-big-marks{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.04em;color:#8F86B3;width:100%;margin:0 0 10px}
+.r2-big-sum{font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9BCF2;margin:0}
+.r2-big-empty{font-size:11px;line-height:1.5;color:#8F86B3;margin:0}
+
+@media (max-width:640px){
+  .r2-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* Agent de signal externe — module unique, fond violet nuit (onglet Signaux du
+   compte). Classes propres (v48-radar) pour ne jamais toucher les classes
+   v48-sig / v48-section partagées avec la fiche Personne (person-detail.css). */
+.v48-radar{overflow:hidden;border:2px solid var(--night);border-radius:18px;background:#fff}
+.v48-radar-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 20px;background:linear-gradient(120deg,var(--night),var(--night2));color:#fff}
+.v48-radar-head-l{display:flex;align-items:flex-start;gap:12px;min-width:0}
+.v48-radar-ic{width:36px;height:36px;flex:none;display:grid;place-items:center;border-radius:10px;background:rgba(255,255,255,.12);color:#fff}
+.v48-radar-ic svg{width:19px;height:19px}
+.v48-radar-head h2{margin:0;font-family:'Epilogue',sans-serif;font-weight:800;font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:#fff}
+.v48-radar-scope{margin:4px 0 0;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;color:#C9BCF2;line-height:1.5;overflow-wrap:anywhere}
+.v48-radar-head-r{display:flex;align-items:center;gap:10px;flex:none}
+.v48-radar-count{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#B9B2CC;white-space:nowrap}
+.v48-radar-count b{color:#fff;font-weight:800}
+.v48-radar-status{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.2);border-radius:999px;background:rgba(255,255,255,.08);padding:5px 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#EDE9F7;cursor:pointer;white-space:nowrap}
+.v48-radar-status:hover{background:rgba(255,255,255,.14)}
+.v48-radar-status i{width:6px;height:6px;border-radius:50%;background:#C9BCF2}
+.v48-radar-status.on{background:rgba(46,168,106,.16);border-color:rgba(46,168,106,.35);color:#BFE9D3}
+.v48-radar-status.on i{background:#2EA86A;animation:v48-sync-pulse 2s infinite}
+.v48-radar-sync{display:flex;align-items:center;gap:7px;padding:9px 20px;background:var(--night2);color:rgba(237,233,247,.72);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.02em}
+.v48-radar-sync b{color:#EDE9F7}
+.v48-radar-sync i{width:6px;height:6px;flex:none;border-radius:50%;background:#2EA86A;animation:v48-sync-pulse 2s infinite}
+.v48-radar-sync.off i{background:rgba(255,255,255,.28);animation:none}
+.v48-radar-sync.off{color:rgba(237,233,247,.55)}
+.v48-radar-body{padding:16px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.v48-radar-empty{padding:22px 4px;text-align:center;color:#8b84a3;font-size:11.5px;line-height:1.55}
+/* Le signal qui compte */
+.v48-radar-top{display:flex;gap:14px;padding:16px;border:1.5px solid var(--sig-tone,#6E50C8);border-radius:14px;background:linear-gradient(135deg,color-mix(in srgb,var(--sig-tone,#6E50C8) 7%,#fff),#fff 60%)}
+.v48-radar-top-ic{width:42px;height:42px;flex:none;display:grid;place-items:center;border-radius:12px;background:color-mix(in srgb,var(--sig-tone,#6E50C8) 15%,#fff);color:var(--sig-tone,#6E50C8)}
+.v48-radar-top-ic svg{width:20px;height:20px}
+.v48-radar-top-body{flex:1;min-width:0}
+.v48-radar-top-kicker{margin:0 0 5px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--sig-tone,#6E50C8)}
+.v48-radar-top h3{margin:0;font-family:'Epilogue',sans-serif;font-weight:800;font-size:16px;line-height:1.32;color:var(--t1)}
+.v48-radar-top p{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:#5f5878}
+.v48-radar-top-foot{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--t3)}
+.v48-radar-top-cta{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--violet);text-decoration:none;white-space:nowrap}
+.v48-radar-top-cta:hover{text-decoration:underline}
+/* Autres signaux — liste légère */
+.v48-radar-list{display:flex;flex-direction:column}
+.v48-radar-row{display:flex;align-items:flex-start;gap:11px;padding:11px 2px;border-top:1px solid var(--line)}
+.v48-radar-row:first-child{border-top:none}
+.v48-radar-row-ic{width:26px;height:26px;margin-top:1px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--sig-tone,#8b84a3) 13%,#fff);color:var(--sig-tone,#8b84a3)}
+.v48-radar-row-ic svg{width:14px;height:14px}
+.v48-radar-row-body{flex:1;min-width:0}
+.v48-radar-row-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.v48-radar-row-head strong{font-family:'Epilogue',sans-serif;font-weight:700;font-size:12.5px;color:var(--t1)}
+.v48-radar-row-when{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--t3);white-space:nowrap}
+.v48-radar-row p{margin:3px 0 0;font-size:11px;line-height:1.5;color:#5f5878}
+.v48-radar-row-foot{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--t3)}
+@media(max-width:640px){
+  .v48-radar-head{flex-direction:column}
+  .v48-radar-head-r{width:100%;justify-content:space-between}
+  .v48-radar-top{flex-direction:column}
+  .v48-radar-top-cta{margin-left:0}
+  .v48-radar-row-when{margin-left:0;flex-basis:100%}
+}

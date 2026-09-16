@@ -65,7 +65,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   const [
     accountResult, peopleResult, signalsResult, meetingsResult, settingsResult,
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
-    memoryResult, factsResult, connectorsResult, feedbackResult, lockResult,
+    recommendationUserStateResult, memoryResult, factsResult, connectorsResult, feedbackResult, lockResult,
     strategicReadingResult,
   ] = await Promise.all([
     client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
@@ -78,6 +78,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     client.from('account_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('computed_at', { ascending: false }).limit(36),
     client.from('account_contact_roles').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('active', true),
     client.from('account_recommendations').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('priority', { ascending: false }).limit(30),
+    client.from('account_recommendation_user_state').select('recommendation_id').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', visionOwnerId).not('dismissed_at', 'is', null),
     client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(30),
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
@@ -103,6 +104,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   const scoreRows = rows(optional(scoreResult, 'Snapshots du score Compte', degradedReasons))
   const roleRows = rows(optional(rolesResult, 'Rôles des interlocuteurs', degradedReasons))
   const recommendationRows = rows(optional(recommendationsResult, 'Recommandations Compte', degradedReasons))
+  // Masquées pour MOI uniquement (× « Pas pour moi ») — account_recommendation_user_state,
+  // séparé du statut global de la ligne. Un rejet d'équipe passe par status='dismissed'
+  // (voir markRecommendationNotRelevant), jamais par ce mécanisme per-user.
+  const dismissedForMeIds = new Set(rows(optional(recommendationUserStateResult, 'Recommandations masquées', degradedReasons)).map((row) => String(row.recommendation_id)))
   const memoryRows = rows(optional(memoryResult, 'Mémoire Compte', degradedReasons))
   const factRows = rows(optional(factsResult, 'Firmographie sourcée', degradedReasons))
   const connectorRows = rows(optional(connectorsResult, 'Connecteurs', degradedReasons))
@@ -195,7 +200,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     }
   })
 
-  const recommendations: AccountRecommendation[] = recommendationRows.map((row) => ({
+  const recommendations: AccountRecommendation[] = recommendationRows.filter((row) => !dismissedForMeIds.has(String(row.id))).map((row) => ({
     id: String(row.id),
     category: text(row.category) ?? 'relationnel',
     priority: number(row.priority) ?? 0,
@@ -250,6 +255,9 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   const isInternalAccount = internalDomain !== '' && accountDomain !== '' && (accountDomain === internalDomain || accountDomain.endsWith('.' + internalDomain))
   const watchOn = bool(watch.enabled)
   const visibleSignals = (isInternalAccount || !watchOn) ? [] : signals
+  // Historique complet (hors comptes internes) même veille coupée — voir
+  // AccountDetailData.signalsHistory.
+  const signalsHistory = isInternalAccount ? [] : signals
   const visibleRecommendations = isInternalAccount ? [] : recommendations
 
   return {
@@ -320,6 +328,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     }).filter((source) => source.status === 'connected' || source.status === 'error' || source.interactionCount !== null),
     recommendations: visibleRecommendations,
     signals: visibleSignals,
+    signalsHistory,
     memoryEntries,
     firmographics,
     strategicReading,
@@ -583,12 +592,34 @@ export async function revokeAccountAccess(data: AccountDetailData, granteeUserId
   if (error) throw error
 }
 
-export async function updateRecommendationStatus(data: AccountDetailData, recommendationId: string, userId: string, status: 'completed' | 'dismissed' | 'postponed'): Promise<void> {
+export async function updateRecommendationStatus(data: AccountDetailData, recommendationId: string, userId: string, status: 'completed' | 'postponed'): Promise<void> {
   const now = new Date().toISOString()
   const values: Row = { status, updated_by: userId, updated_at: now }
   if (status === 'completed') values.completed_at = now
-  if (status === 'dismissed') values.dismissed_at = now
   const { error } = await getSupabase().from('account_recommendations').update(values).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
+  if (error) throw error
+}
+
+/** × « Pas pour moi » : masque la recommandation UNIQUEMENT pour l'utilisateur courant
+ *  (account_recommendation_user_state) — elle reste visible pour le reste de l'équipe.
+ *  Ne touche jamais account_recommendations.status (rejet global, voir markRecommendationNotRelevant). */
+export async function dismissRecommendationForMe(data: AccountDetailData, recommendationId: string, userId: string): Promise<void> {
+  const { error } = await getSupabase().from('account_recommendation_user_state').upsert({
+    recommendation_id: recommendationId, user_id: userId,
+    organization_id: data.account.workspaceId, company_id: data.account.id,
+    dismissed_at: new Date().toISOString(), dismiss_reason: 'not_relevant',
+  }, { onConflict: 'recommendation_id,user_id' })
+  if (error) throw error
+}
+
+/** « Non pertinent pour ce compte » : rejet d'ÉQUIPE, explicite. Seule action qui doit
+ *  faire passer une reco à un état terminal global (status='dismissed') — cf. le
+ *  correctif dédup score-batch (trigger account_rec_dedup_guard_trg), qui n'autorise le
+ *  retour d'une reco terminale que si un fait significatif postérieur existe. */
+export async function markRecommendationNotRelevant(data: AccountDetailData, recommendationId: string, userId: string): Promise<void> {
+  const { error } = await getSupabase().from('account_recommendations').update({
+    status: 'dismissed', dismissed_at: new Date().toISOString(), feedback_reason: 'not_relevant_for_account', updated_by: userId,
+  }).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
   if (error) throw error
 }
 

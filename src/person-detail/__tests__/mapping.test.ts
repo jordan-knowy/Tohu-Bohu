@@ -20,6 +20,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     legacyScores: [],
     legacyCareer: [],
     relationshipSnapshots: [],
+    dyadWeatherSnapshot: {},
     cognitiveProfile: {},
     behavioralSignals: [],
     recommendations: [],

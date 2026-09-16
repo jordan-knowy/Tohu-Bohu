@@ -52,6 +52,15 @@ create table public.account_facts (
           check (status in ('active','resolved','obsolete','superseded')),
   superseded_by uuid references public.account_facts(id) on delete set null,
 
+  -- Résolution SUGGÉRÉE (V1) : le moteur peut penser qu'un engagement est tenu,
+  -- mais NE bascule PAS status='resolved' tout seul. La suggestion est stockée,
+  -- la résolution réelle reste une action humaine (ou une auto-résolution
+  -- déterministe ajoutée plus tard). status ne devient 'resolved' que sur
+  -- confirmation ; ces 3 colonnes n'affectent jamais le lifecycle réel.
+  resolution_suggested   boolean not null default false,
+  resolution_suggested_at timestamptz,
+  resolution_confidence  numeric check (resolution_confidence between 0 and 100),
+
   -- ── TEMPORALITÉ (détection ≠ réalité) ──
   occurred_at    timestamptz,           -- date RÉELLE de l'événement  → base du delta
   first_seen_at  timestamptz not null default now(),  -- 1re détection Tohu
@@ -65,13 +74,22 @@ create table public.account_facts (
   owner_user_id      uuid references auth.users(id) on delete set null,      -- interne qui porte
   actor_role         text,              -- rôle joué (décideur, sponsor, bloqueur…)
 
-  -- ── ÉCHÉANCE (engagement / deadline) : structurée + imprécision assumée ──
-  due_at            timestamptz,
+  -- ── ÉCHÉANCE : structurée SANS jamais fabriquer de la précision ──
+  -- Une échéance floue garde sa granularité réelle : on stocke la FENÊTRE, pas
+  -- un point inventé. « d'ici la semaine prochaine » → window_start/end = cette
+  -- semaine, precision='week', is_inferred=true, due_at reste NULL (aucun point
+  -- exact n'existe). due_at n'est renseigné que pour precision exact/day.
+  due_text_original text,               -- verbatim de l'échéance (« d'ici vendredi »)
+  due_at            timestamptz,         -- point exact SEULEMENT si la source en donne un
+  due_window_start  timestamptz,         -- début de la fenêtre possible
+  due_window_end    timestamptz,         -- fin de la fenêtre possible → base du « en retard »
   due_at_precision  text check (due_at_precision in
                     ('exact','day','week','month','quarter','unknown')),
-  due_is_inferred   boolean not null default false,  -- « d'ici la semaine pro » = true
+  due_is_inferred   boolean not null default false,
   due_confidence    numeric check (due_confidence between 0 and 100),
-  -- « en retard » n'est JAMAIS stocké : calculé (voir vue account_facts_live).
+  -- Parsing déterministe d'abord ; LLM en fallback quand le déterministe échoue,
+  -- SANS jamais rendre la date plus précise que due_text_original.
+  -- « en retard » n'est JAMAIS stocké : calculé sur due_window_end (voir vue).
 
   -- ── OBJECTIF (fact_type='objective') : versionné, jamais imposé ──
   objective_source  text check (objective_source in ('user','crm','inferred')),
@@ -191,7 +209,35 @@ create unique index if not exists account_recommendations_dedup_open
   where status in ('open','postponed');   -- au plus 1 reco vivante par identité
 ```
 
-`feedback_type`/`feedback_reason` existent déjà → le × avec raison (`not_relevant`, `already_handled`, `wrong`, `do_not_remind`) est **déjà stockable**. La correction porte sur la **logique** (voir F : dédup qui respecte les états terminaux), pas sur le schéma.
+`feedback_type`/`feedback_reason` existent déjà → le rejet **global** avec raison est déjà stockable. La correction porte sur la **logique** (voir F : dédup qui respecte les états terminaux).
+
+**Feedback hybride (ajustement M1)** — l'état *réel* de la reco est global au compte ; l'interaction *individuelle* est par utilisateur. Un `×` d'une personne ne doit PAS supprimer la reco pour l'équipe :
+
+- **Global** (`account_recommendations.status`) : `completed` / `resolved` / `obsolete`, **et** un rejet d'équipe explicite `status='dismissed'` + `feedback_reason='not_relevant_for_account'` — réservé à l'action ncommée « Non pertinent pour ce compte ».
+- **Par utilisateur** (`account_recommendation_user_state`, ci-dessous) : `seen` / `acknowledged` / `dismissed` (= « masquer pour moi »). Un `×` par défaut agit **ici**, pas sur le statut global.
+
+```sql
+create table public.account_recommendation_user_state (
+  recommendation_id uuid not null references public.account_recommendations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  company_id        uuid not null references public.companies(id) on delete cascade,
+  seen_at           timestamptz,
+  acknowledged_at   timestamptz,
+  dismissed_at      timestamptz,          -- « masquer pour moi » (n'affecte pas l'équipe)
+  dismiss_reason    text check (dismiss_reason in
+                    ('not_relevant','already_handled','wrong','do_not_remind')),
+  updated_at        timestamptz not null default now(),
+  primary key (recommendation_id, user_id)
+);
+alter table public.account_recommendation_user_state enable row level security;
+create policy account_recommendation_user_state_rw on public.account_recommendation_user_state
+  for all to authenticated
+  using (user_id = auth.uid() and private.can_view_company(organization_id, company_id))
+  with check (user_id = auth.uid() and private.can_view_company(organization_id, company_id));
+```
+
+Lecture « Stratégie de compte » : reco visible si `status in (open,postponed)` **ET** pas `dismissed_at` par le viewer courant. Le retour d'une reco après un `×` individuel est ainsi impossible (masquage per-user), sans priver l'équipe.
 
 ### A.5 RPC utilisateur (écritures autorisées, SECURITY DEFINER)
 
@@ -283,9 +329,12 @@ function fImpact(f): number {
   return clamp01(0.6 * base + 0.4 * typeBoost)
 }
 function fUrgency(f, now): number {
-  if (!f.dueAt) return f.factType === 'deadline' ? 0.5 : 0.3
-  const days = (f.dueAt - now) / DAY
-  let u = days <= 0 ? 1                    // en retard = max
+  // Réfère à la FIN de fenêtre (dueWindowEnd), sinon au point exact, jamais à
+  // une précision fabriquée. Pas d'échéance → léger biais deadline.
+  const ref = f.dueWindowEnd ?? (f.dueAtPrecision === 'exact' || f.dueAtPrecision === 'day' ? f.dueAt : null)
+  if (!ref) return f.factType === 'deadline' ? 0.5 : 0.3
+  const days = (ref - now) / DAY
+  let u = days <= 0 ? 1                    // fenêtre passée = en retard = max
         : days <= 2 ? 0.9
         : days <= 7 ? 0.7
         : days <= 30 ? 0.4 : 0.2
@@ -361,7 +410,11 @@ Vue calculée partagée (jamais stockée) :
 ```sql
 create view public.account_facts_live as
 select f.*,
-  (f.status='active' and f.due_at is not null and f.due_at < now()
+  -- « en retard » = toute la fenêtre possible est passée (jamais un point inventé) :
+  -- on prend due_window_end, sinon due_at si précision exact/day.
+  (f.status='active'
+     and coalesce(f.due_window_end,
+                  case when f.due_at_precision in ('exact','day') then f.due_at end) < now()
      and f.due_at_precision <> 'unknown') as is_overdue,
   (select count(*) from account_fact_evidence e where e.fact_id=f.id) as evidence_count,
   exists (select 1 from account_fact_evidence e where e.fact_id=f.id and e.excerpt is not null) as has_verbatim
@@ -373,7 +426,7 @@ RPC unique `account_brain(p_company_id, p_since timestamptz default null)` renvo
 | Bloc | Question | Filtre / logique |
 |---|---|---|
 | **Ce que montrent les échanges** | Situation dominante | **Hybride** : squelette déterministe = objectif courant + phase score + faits dominants (plus haut ranking parmi risk/opportunity/blocker) ; habillage = `account_strategic_readings.synthese` (LLM borné, cache). « Pourquoi ? » déplie les faits + preuves qui l'étayent. |
-| **Depuis votre dernier échange** | Qu'ai-je manqué ? | `account_brain(company, since = t0)` où **t0 = dernière interaction utilisateur↔compte** (max meetings/messages du viewer). Faits avec `occurred_at > t0` (date **réelle**), triés par ranking. **1 en tête** + « Voir X autres ». Vide → « Aucun changement significatif depuis votre dernier échange sur les sources connectées. » |
+| **Depuis votre dernier échange** | Qu'ai-je manqué ? | **t0 = dernière interaction à laquelle LE VIEWER a réellement participé** (max meetings/messages où `auth.uid()` est présent). Faits avec `occurred_at > t0` (date **réelle**), triés ranking, **1 en tête** + « Voir X autres ». **Si le viewer n'a aucun échange personnel** : ne PAS utiliser silencieusement celui d'un collègue → afficher « Vous n'avez pas encore échangé avec ce compte » et, séparément, « Dernier échange de l'équipe : {date} par {membre} ». Vide (t0 existe, rien après) → « Aucun changement significatif depuis votre dernier échange sur les sources connectées. » |
 | **Signaux récents** | Qu'est-ce qui mérite mon attention ? | Faits `status='active'`, **non `ignored` par le viewer**, actionnables/à impact, triés par `rankFact(rel)`. Top 3–4 + « Voir X de plus ». Le nombre affiché = `priority` (0–100) avec breakdown au clic. `is_overdue` remonte en tête. |
 | **Stratégie de compte** | Que dois-je faire ? | `account_recommendations` `status in (open,postponed)`, triées `priority DESC`, **1–3** affichées. Chaque reco → `origin_fact_id` pour tracer. ✓ = completed (ne revient pas), × = dismissed + `feedback_reason`. |
 | **Historique & mémoire** | Comment en est-on arrivé là ? | Faits `fact_type in (milestone, decision, event, role)` **ou** `status in (resolved, obsolete)`, triés `occurred_at DESC`. Événements **structurants** uniquement (pas chaque mail). Un signal résolu **migre** ici (changement de statut, pas de copie). |
@@ -417,9 +470,9 @@ Backfill = fonction `backfill_account_facts(company_id?)` en **service role**, l
 
 ---
 
-## Points à confirmer avant M1
+## Arbitrages — TRANCHÉS (validés le 2026-09-14)
 
-1. **Feedback recommandation : global vs par-utilisateur ?** Proposé : **global** (un ✓ « dossier envoyé » vaut pour l'équipe), tandis que le *fait* a un état *par-utilisateur* (attention). OK ?
-2. **t0 « dernier échange » : par utilisateur ou par compte ?** Proposé : **par utilisateur** (le viewer), cohérent avec « depuis *mon* dernier échange ». OK ?
-3. **Résolution d'engagement automatique** (détection d'exécution) : à activer d'emblée, ou résolution **manuelle** seule au départ (plus sûr, moins de faux positifs) ? Proposé : manuel + « suggéré résolu » en M4.
-4. **Parsing des échéances floues** au backfill : règles déterministes (« semaine prochaine » → +7j precision='week' inferred=true) ou LLM ? Proposé : **déterministe** d'abord.
+1. **Feedback recommandation : hybride.** État réel (`completed/resolved/obsolete` + rejet d'équipe explicite `not_relevant_for_account`) = global ; `seen/acknowledged/dismissed` = par utilisateur (`account_recommendation_user_state`). Un `×` individuel masque pour soi, jamais pour l'équipe.
+2. **t0 = par utilisateur.** Dernière interaction où le viewer a réellement participé. Aucun échange perso → état affiché explicitement + dernier échange d'équipe montré séparément (jamais substitué en silence).
+3. **Résolution d'engagement : manuel + suggestion.** Le moteur stocke `resolution_suggested/at/confidence` mais ne bascule jamais `status='resolved'` tout seul en V1. Auto-résolutions déterministes = itération ultérieure.
+4. **Échéances floues : granularité préservée.** `due_text_original` + `due_window_start/end` + `due_at` (point seulement si exact/day) + `due_at_precision` + `due_is_inferred` + `due_confidence`. Déterministe d'abord, LLM en fallback, **jamais** plus précis que la source.

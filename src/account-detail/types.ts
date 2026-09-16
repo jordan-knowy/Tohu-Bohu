@@ -152,6 +152,10 @@ export interface AccountDetailData {
   }>
   recommendations: AccountRecommendation[]
   signals: AccountSignal[]
+  // Mêmes signaux que `signals`, mais jamais vidés quand la veille est coupée —
+  // sert uniquement l'onglet Signaux (§7 : garder l'historique déjà collecté même
+  // veille coupée), sans changer ce que voit l'onglet Relation via `signals`.
+  signalsHistory: AccountSignal[]
   memoryEntries: AccountMemoryEntry[]
   firmographics: AccountFirmographicFact[]
   strategicReading: StrategicReading | null

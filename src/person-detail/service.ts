@@ -35,6 +35,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
     nameSuggestionResult, mergeSuggestionsResult, participantCountResult,
     messageCountResult, authoredMessageCountResult, keyMomentsResult,
+    dyadWeatherResult,
   ] = await Promise.all([
     client.from('contacts').select('*,companies(*)').eq('organization_id', workspaceId).eq('id', personId).is('merged_into_contact_id', null).maybeSingle(),
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
@@ -62,6 +63,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId),
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).eq('direction', 'inbound'),
     client.from('person_key_moments').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('occurred_at', { ascending: false }).limit(12),
+    client.rpc('get_dyad_weather_snapshot', { p_contact_id: personId }),
   ])
 
   if (contactResult.error) {
@@ -113,6 +115,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     ? await client.from('profiles').select('id,full_name').in('id', [...profileIds])
     : { data: [] }
   const profileNames = new Map(rows(profileData).map((row) => [String(row.id), text(row.full_name) ?? 'Membre Tohu']))
+  const dyadWeatherSnapshot = object(optional(dyadWeatherResult, 'Score de dyade V6', degradedReasons))
 
   return buildPersonDetail({
     workspaceId,
@@ -127,6 +130,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     legacyScores,
     legacyCareer,
     relationshipSnapshots,
+    dyadWeatherSnapshot,
     cognitiveProfile: cognitiveProfiles[0] ?? {},
     behavioralSignals: rows(behavioralResult.data),
     recommendations,

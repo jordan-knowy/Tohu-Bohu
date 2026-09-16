@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent, ReactNode, SyntheticEvent } from 'react'
+import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { initials } from '../lib/auth'
 import { isReadingStale, readingSufficiency } from '../services/strategic-reading'
 import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/service'
-import { addAccountNote, generateAccountStrategicReading, setRecommendationAssignee, updateRecommendationStatus } from './service'
+import { addAccountNote, dismissRecommendationForMe, generateAccountStrategicReading, setRecommendationAssignee, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson } from './types'
+import { WeatherHero, WeatherSection, useAccountBrain } from './AccountWeatherV6'
+import { dismissAccountEngagementForMe, resolveAccountEngagement } from '../services/account-brain/accountBrain'
+import type { AccountBrainDTO, BrainEngagement } from '../services/account-brain/accountBrain'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const MONTH_MS = 2_629_746_000
@@ -15,6 +18,12 @@ function dateLabel(value: string | null): string {
   const d = new Date(value)
   return Number.isFinite(d.getTime()) ? new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' }).format(d) : 'À confirmer'
 }
+/** "avril 2024" — utilisé pour la tenue d'un owner, jamais une date fabriquée. */
+function monthYearLabel(value: string | null): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isFinite(d.getTime()) ? new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(d) : null
+}
 function relativeLabel(value: string | null): string {
   if (!value) return 'jamais'
   const d = new Date(value)
@@ -22,79 +31,13 @@ function relativeLabel(value: string | null): string {
   const days = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000))
   return days === 0 ? 'aujourd’hui' : days === 1 ? 'hier' : `il y a ${days} j`
 }
-function tenureLabel(value: string | null): string {
-  if (!value) return '—'
-  const start = new Date(value)
-  if (!Number.isFinite(start.getTime())) return '—'
-  const months = Math.max(0, Math.floor((Date.now() - start.getTime()) / MONTH_MS))
-  if (months < 12) return `${months} mois`
-  return `~${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(months / 12)} ans`
-}
 /** Bande NPS : promoteur ≥70 (vert), passif 50–69 (ambre), détracteur <50 (corail). */
 function band(score: number): string {
   return score >= 70 ? 'var(--sage)' : score >= 50 ? 'var(--amber)' : 'var(--coral)'
 }
 
-function quartile(sorted: number[], q: number): number {
-  const pos = (sorted.length - 1) * q
-  const base = Math.floor(pos)
-  const next = sorted[base + 1]
-  return Math.round(next === undefined ? sorted[base]! : sorted[base]! + (pos - base) * (next - sorted[base]!))
-}
-/** Fourchette réellement observée (Q1–Q3) sur l'historique — jamais inventée. */
-function observedScoreRange(scores: number[]): { q1: number; q3: number } | null {
-  const clean = scores.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
-  if (clean.length < 5) return null
-  const q1 = quartile(clean, 0.25)
-  const q3 = quartile(clean, 0.75)
-  return q3 > q1 ? { q1, q3 } : null
-}
-
 function Empty({ children }: { children: ReactNode }) {
   return <div className="acr-empty"><span>◇</span><p>{children}</p></div>
-}
-
-const MONTH_NAMES = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
-function monthLabel(key: number): string { const y = Math.floor(key / 12); const m = ((key % 12) + 12) % 12; return `${MONTH_NAMES[m]} ${String(y).slice(2)}` }
-type MonthBar = { label: string; score: number | null }
-
-/** Une barre par MOIS sur la fenêtre choisie (6/12/36) — score = moyenne des
- *  snapshots du mois, `null` = mois sans donnée (barre grise). C'est ce qui rend
- *  le toggle 6/12/36 réellement fonctionnel et différent d'un compte à l'autre.
- *  Regroupe par snapshotMonth (période explicite), jamais par computedAt — depuis
- *  la migration 20260910220000, computedAt est toujours la date technique réelle
- *  du calcul, plus un repère de période simulé. */
-function buildMonthlyBars(history: Array<{ score: number; snapshotMonth: string }>, windowMonths: number): MonthBar[] {
-  const byMonth = new Map<number, { sum: number; n: number }>()
-  for (const h of history) {
-    const [year, month] = h.snapshotMonth.split('-').map(Number)
-    if (!year || !month) continue
-    const key = year * 12 + (month - 1)
-    const e = byMonth.get(key) ?? { sum: 0, n: 0 }
-    e.sum += h.score; e.n++; byMonth.set(key, e)
-  }
-  const now = new Date()
-  const lastKey = now.getUTCFullYear() * 12 + now.getUTCMonth()
-  const bars: MonthBar[] = []
-  for (let i = windowMonths - 1; i >= 0; i--) {
-    const e = byMonth.get(lastKey - i)
-    bars.push({ label: monthLabel(lastKey - i), score: e ? Math.round(e.sum / e.n) : null })
-  }
-  return bars
-}
-
-type Tip = { left: number; top: number; above: boolean; content: ReactNode }
-function useTip() {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: SyntheticEvent, content: ReactNode) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const above = r.top > 160
-    const left = Math.min(Math.max(8, r.left + r.width / 2 - 100), (typeof window !== 'undefined' ? window.innerWidth : 1200) - 208)
-    setTip({ left, top: above ? r.top - 8 : r.bottom + 8, above, content })
-  }
-  const hide = () => setTip(null)
-  const node = tip ? createPortal(<div className="v48-tipx" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : 'none' }}>{tip.content}</div>, document.body) : null
-  return { show, hide, node }
 }
 
 // ── Pilule Connecteurs (dans la barre d'onglets) ────────────────────────────
@@ -167,139 +110,36 @@ export function AccountConnectorsPill({ sources }: { sources: AccountDetailData[
   )
 }
 
-// ── Santé du compte ─────────────────────────────────────────────────────────
-const PulseIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.4 12h4.2l2-5.2 3.4 10.4 2.2-5.2h5.4" /></svg>
 const PeopleIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="8.5" cy="8" r="3" /><path d="M3 19a5.5 5.5 0 0 1 11 0" /><path d="M16 5.4a3 3 0 0 1 0 5.2" /><path d="M17.6 19a5.6 5.6 0 0 0-2.3-4.5" /></svg>
 const StrategyIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="10.6" cy="13.4" r="7.4" /><circle cx="10.6" cy="13.4" r="3" /><path d="M13.2 10.8 20 4" /><path d="M16.4 4H20v3.6" /></svg>
 const HistoryIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.2" /><path d="M12 7.4V12l3.1 1.9" /></svg>
 
-function HealthSection({ data, currentUserName, onOpenModal }: { data: AccountDetailData; currentUserName: string; onOpenModal: () => void }) {
-  const [segMonths, setSegMonths] = useState(12)
-  const rel = data.relationship
-
-  const tip = useTip()
-  // Barres = santé mensuelle reconstruite, fenêtre PLEINE : 6/12/36 affiche
-  // toujours 6/12/36 barres (mois sans donnée = barre grise), les barres
-  // s'affinent automatiquement selon leur nombre (voir CSS .chart). Repli sur
-  // les snapshots account bruts si la RPC n'a rien renvoyé.
-  const bars = useMemo(() => {
-    const series = rel.monthlyHealth
-    if (series.length) {
-      return series.slice(-segMonths).map((m) => {
-        const [y, mo] = m.ym.split('-').map(Number)
-        return { label: monthLabel((y ?? 0) * 12 + ((mo ?? 1) - 1)), score: m.score }
-      })
-    }
-    return buildMonthlyBars(rel.history, segMonths)
-  }, [rel.monthlyHealth, rel.history, segMonths])
-  const scoreRange = useMemo(() => observedScoreRange(bars.map((b) => b.score).filter((s): s is number => s !== null)), [bars])
-  const real = bars.filter((b) => b.score !== null)
-  let lastRealIdx = -1
-  for (let i = 0; i < bars.length; i++) if (bars[i]!.score !== null) lastRealIdx = i
-  const windowDelta = real.length >= 2 ? (real[real.length - 1]!.score! - real[0]!.score!) : null
-  const barTip = (b: MonthBar) => <><p className="v48-tipx-t">Score du compte</p><p className="v48-tipx-d">{b.label} · {b.score === null ? <b>pas encore de données</b> : <><b>{b.score}</b>/100</>}</p></>
-
-  // Répartition par interlocuteur : contacts scorés, triés desc.
-  const contributors = useMemo(() => [...data.people].filter((p) => p.score !== null).sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 8), [data.people])
-
-  // Couverture interne : membres internes (owners des contacts) + leur score
-  // relationnel agrégé avec CE compte (moyenne de leurs contacts scorés ici).
-  const coverage = useMemo(() => {
-    const byOwner = new Map<string, number[]>()
-    for (const p of data.people) {
-      if (!p.ownerName || p.score === null) continue
-      byOwner.set(p.ownerName, [...(byOwner.get(p.ownerName) ?? []), p.score])
-    }
-    const me = (currentUserName || '').trim().toLowerCase()
-    return [...byOwner.entries()]
-      .map(([name, scores]) => ({ name, score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length), isMe: !!me && name.trim().toLowerCase() === me }))
-      .sort((a, b) => (b.isMe ? 1 : 0) - (a.isMe ? 1 : 0) || b.score - a.score)
-  }, [data.people, currentUserName])
-
-  return (
-    <section className="sec">
-      <div className="sec-h">{PulseIcon}<p className="sec-t">Santé du compte</p>
-        <button className="det" onClick={onOpenModal} aria-label="Comment le score est calculé">i</button>
-      </div>
-      <div className="sec-b">
-        <div className="cpt-top">
-          <p className="big">{rel.score ?? '—'}</p>
-          <p className="cpt-per">
-            <span>{segMonths} mois</span>
-            {windowDelta !== null && <span>{windowDelta >= 0 ? `↗ +${windowDelta}` : `↘ ${windowDelta}`} pts</span>}
-          </p>
-          <div className="seg">
-            {[6, 12, 36].map((m) => <span key={m} className={segMonths === m ? 'on' : ''} onClick={() => setSegMonths(m)}>{m} M</span>)}
-          </div>
-        </div>
-
-        {real.length >= 1 ? <>
-          <div className="chart" style={{ gap: bars.length > 24 ? 2 : bars.length > 10 ? 4 : 6 }}>{bars.map((b, i) => b.score === null
-            ? <i key={i} className="empty" style={{ height: '7%', background: '#E3DEF2' }} title={`${b.label} · pas encore de données`} />
-            : <i key={i} tabIndex={0}
-                style={{ height: `${Math.max(5, b.score)}%`, background: i === lastRealIdx ? 'linear-gradient(180deg,#C97A20,#DFA153)' : 'linear-gradient(180deg,#3FAEBE,#2896A8)' }}
-                onMouseEnter={(e) => tip.show(e, barTip(b))} onFocus={(e) => tip.show(e, barTip(b))} onMouseLeave={tip.hide} onBlur={tip.hide} />)}</div>
-          <div className="ch-x"><span>{bars[0]!.label}</span><span>{bars[bars.length - 1]!.label}</span></div>
-        </> : <Empty>L’évolution du score apparaîtra après plusieurs calculs persistés.</Empty>}
-        {tip.node}
-
-        <div className="cpt-mini">
-          <span><b>{tenureLabel(data.account.relationshipStartedAt)}</b> d’ancienneté</span>
-          <span><b>{rel.totalInteractions || '—'}</b> échanges</span>
-          <span><b>{data.people.length}</b> contacts</span>
-          {scoreRange && <span title="Fourchette réellement observée sur l’historique du score (Q1–Q3) — pas une prédiction.">fourchette <b>{scoreRange.q1}–{scoreRange.q3}</b></span>}
-        </div>
-        {windowDelta !== null && <span className={`evo ${windowDelta < 0 ? 'down' : 'up'}`}>{windowDelta < 0 ? '↘' : '↗'} {windowDelta >= 0 ? `+${windowDelta}` : windowDelta} pts <em>sur {segMonths} mois</em></span>}
-
-        <p className="xl">Répartition par interlocuteur</p>
-        {contributors.length ? <>
-          {contributors.map((p) => <div className="cnb" key={p.id}>
-            <span className="cnb-n">{p.name}</span>
-            <span className="cnb-t"><i className="cnb-z" style={{ left: '50%' }} /><i className="cnb-z" style={{ left: '70%' }} /><i className="cnb-f" style={{ width: `${p.score}%`, background: band(p.score ?? 0) }} /></span>
-            <span className="cnb-v" style={{ color: band(p.score ?? 0) }}>{p.score}</span>
-          </div>)}
-          <p className="cnl"><span><i style={{ background: 'var(--coral)' }} />Détracteur &le;50</span><span><i style={{ background: 'var(--amber)' }} />Passif 50–69</span><span><i style={{ background: 'var(--sage)' }} />Promoteur &ge;70</span></p>
-        </> : <Empty>Aucun score individuel mesurable pour ce compte.</Empty>}
-
-        <div className="lvs">
-          <p className="lvs-h"><i className="lvs-i" />Dernière synchronisation : <b>{relativeLabel(rel.computedAt)}</b></p>
-          <span className="lvs-bar" />
-        </div>
-
-        <div className="cvi">
-          <div className="cvi-h">{PeopleIcon}<p className="cvi-t">Couverture interne</p><span className="cvi-n">{coverage.length} membre{coverage.length > 1 ? 's' : ''}</span></div>
-          {coverage.length ? coverage.map((m) => <div className={`cvi-row ${m.isMe ? 'me' : ''}`} key={m.name}>
-            <span className="cvi-av">{m.isMe ? 'MOI' : initials(m.name)}</span>
-            <span className="cvi-nm">{m.isMe ? 'Vous' : m.name}</span>
-            <span className="cvi-sc" style={{ color: band(m.score) }}>{m.score}</span>
-          </div>) : <div className="cvi-row"><span className="cvi-nm" style={{ color: 'var(--pale)', fontWeight: 400 }}>Aucun membre interne rattaché aux contacts de ce compte.</span></div>}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Stratégie de compte (carrousel) ─────────────────────────────────────────
-const PAGE = 5
+// ── Ce qu'il faut faire ──────────────────────────────────────────────────────
+// Inbox unique du compte (§24) : fusionne les engagements réellement pris
+// (account_facts fact_type='commitment', via account_brain) et les mouvements
+// recommandés par Tohu (account_recommendations). Un seul système visuel, un
+// type par ligne (ENGAGEMENT vs MOUVEMENT), plus jamais deux blocs séparés.
 type Rec = AccountDetailData['recommendations'][number]
+type ActionEntry =
+  | { kind: 'mouvement'; id: string; rec: Rec }
+  | { kind: 'engagement'; id: string; eng: BrainEngagement }
 
-/** Habillage visuel par catégorie — la donnée reste un texte libre côté back
-    (account_recommendations.category), on ne mappe ici que le rendu. */
-const CATEGORY_META: Record<string, { label: string; tone: string }> = {
-  mouvement: { label: 'Mouvement', tone: 'violet' },
-  engagement: { label: 'Engagement', tone: 'sage' },
-  relance: { label: 'Relance', tone: 'amber' },
-  opportunite: { label: 'Opportunité', tone: 'sage' },
-  couverture: { label: 'Couverture', tone: 'teal' },
-  validation: { label: 'Validation', tone: 'teal' },
-  ownership: { label: 'Ownership', tone: 'violet' },
-  risque: { label: 'Risque', tone: 'coral' },
-  risque_churn: { label: 'Risque de churn', tone: 'coral' },
-  risque_concentration: { label: 'Concentration', tone: 'coral' },
-  lecture_strategique: { label: 'Lecture stratégique', tone: 'violet' },
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  email: 'Mail', meeting: 'Réunion', transcript: 'Transcription', document: 'Document',
+  crm: 'CRM', external: 'Signal externe', note: 'Note', signal: 'Signal',
 }
-function categoryMeta(category: string): { label: string; tone: string } {
-  return CATEGORY_META[category] ?? { label: category.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), tone: 'violet' }
+
+/** Échéance réelle → libellé court (§6/§20). Jamais de précision fabriquée :
+ *  seule une vraie date (due_window_end/due_at) produit un libellé chiffré. */
+function dueLabel(value: string | null, overdueHint: boolean | null): { label: string; overdue: boolean } | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (!Number.isFinite(d.getTime())) return null
+  const days = Math.round((d.getTime() - Date.now()) / 86_400_000)
+  const overdue = overdueHint ?? days < 0
+  if (overdue) return { label: `en retard de ${Math.max(1, Math.abs(days))} j`, overdue: true }
+  if (days === 0) return { label: 'échéance aujourd’hui', overdue: false }
+  return { label: `échéance dans ${days} j`, overdue: false }
 }
 
 /** Couleur stable par interlocuteur côté client (déduite de son id) — permet de
@@ -413,80 +253,187 @@ function RecOwnerAvatar({ rec, data, userId, refresh, members, loadMembers }: {
   )
 }
 
-// Une carte action = mouvement/engagement. Le « i » déplie la preuve (canal ·
-// date · pourquoi), comme sur la fiche personne (readme : preuves sur les deux fiches).
-function StrategyCard({ rec, data, userId, refresh, busy, act, members, loadMembers }: {
-  rec: Rec
+/** Avatar « porté par » d'un engagement — lecture seule (pas de réaffectation :
+ *  le moteur d'engagements n'expose pas cette mécanique, à la différence des
+ *  recommandations). Jamais d'owner inventé : contact/membre réels ou état
+ *  « non attribué » explicite. */
+function EngagementOwner({ eng, data, members }: { eng: BrainEngagement; data: AccountDetailData; members: WorkspaceMember[] | null }) {
+  const contact = eng.owner_contact_id ? data.people.find((p) => p.id === eng.owner_contact_id) ?? null : null
+  const member = !contact && eng.owner_user_id ? members?.find((m) => m.id === eng.owner_user_id) ?? null : null
+  if (contact) {
+    const tone = ownerTone(contact.id)
+    return <span className="mv-owner" style={{ borderColor: tone.border, color: tone.border, background: tone.bg }} title={`Porté par ${contact.name}`}>
+      {contact.avatarUrl ? <img src={contact.avatarUrl} alt="" /> : initials(contact.name)}
+    </span>
+  }
+  if (member) {
+    return <span className="mv-owner" title={`Porté par ${member.fullName}`}>
+      {member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : initials(member.fullName)}
+    </span>
+  }
+  return <span className="mv-owner unassigned" title="Owner non attribué">?</span>
+}
+
+// Une ligne = un mouvement (recommandation Tohu) ou un engagement réellement pris.
+// Le « i » déplie la ligne en place (fond lavande léger), comme sur la fiche
+// personne (readme : preuves sur les deux fiches) — plus de panneau séparé.
+function ActionRow({ item, data, userId, refresh, busy, open, onToggleOpen, onDone, onDismiss, members, loadMembers }: {
+  item: ActionEntry
   data: AccountDetailData
   userId: string
   refresh: () => Promise<void>
   busy: boolean
-  act: (status: 'completed' | 'dismissed') => void
+  open: boolean
+  onToggleOpen: () => void
+  onDone: () => void
+  onDismiss: () => void
   members: WorkspaceMember[] | null
   loadMembers: () => void
 }) {
-  const [proof, setProof] = useState(false)
-  const meta = categoryMeta(rec.category)
+  if (item.kind === 'mouvement') {
+    const rec = item.rec
+    const due = dueLabel(rec.dueAt, null)
+    return (
+      <article className={`acf-row ${open ? 'open' : ''}`}>
+        <span className="acf-type">Mouvement</span>
+        <div className="acf-c">
+          <div className="acf-h">
+            <p className="acf-t">{rec.title}</p>
+            <span className="acf-p">prio {rec.priority}</span>
+            {due && <span className={`acf-due ${due.overdue ? 'overdue' : ''}`}>{due.label}</span>}
+          </div>
+          <p className="acf-d">{rec.justification}</p>
+          {open && <div className="acf-detail">
+            {rec.provenance.observedAt ? <div className="acf-proof-item">
+              <p className="acf-proof-meta">{rec.provenance.sourceLabel}{rec.personName ? ` · ${rec.personName}` : ''} · {dateLabel(rec.provenance.observedAt)}</p>
+              <p className="acf-proof-q">{rec.justification || rec.recommendedAction || 'Déduit de la dynamique observée sur le compte.'}</p>
+            </div> : <p className="acf-empty-proof">Aucune preuve datée disponible pour cet élément.</p>}
+          </div>}
+        </div>
+        <div className="acf-b">
+          <RecOwnerAvatar rec={rec} data={data} userId={userId} refresh={refresh} members={members} loadMembers={loadMembers} />
+          <button type="button" className="acf-i" aria-expanded={open} title="D’où vient cette action ?" onClick={onToggleOpen}>i</button>
+          <button type="button" className="acf-ok" disabled={busy} title="Fait" onClick={onDone}>✓</button>
+          <button type="button" className="acf-no" disabled={busy} title="Pas pour moi (reste visible pour l’équipe)" onClick={onDismiss}>×</button>
+        </div>
+      </article>
+    )
+  }
+
+  const eng = item.eng
+  const due = dueLabel(eng.due_window_end, eng.is_overdue)
   return (
-    <article className="mv">
-      <span className={`mv-s ${meta.tone}`}>{meta.label}</span>
-      <div className="mv-c">
-        <div className="mv-h"><p className="mv-t">{rec.title}</p><span className="mv-p">prio {rec.priority}</span></div>
-        <p className="mv-d">{rec.justification}</p>
-        {rec.recommendedAction && <p className="mv-d"><b style={{ color: 'var(--ink)' }}>{rec.recommendedAction}</b></p>}
-        <p className="mv-src">↳ {rec.provenance.sourceLabel}{rec.personName ? ` · ${rec.personName}` : ''}</p>
-        {proof && <div className="mv-proof">
-          <div className="mv-proof-meta"><span>{rec.provenance.sourceLabel}</span>{rec.provenance.observedAt && <span>· {dateLabel(rec.provenance.observedAt)}</span>}{rec.provenance.confidence !== null && <span>· confiance {rec.provenance.confidence}%</span>}</div>
-          <p className="mv-proof-q"><span className="mv-proof-l">Pourquoi</span>{rec.justification || rec.recommendedAction || 'Déduit de la dynamique observée sur le compte.'}</p>
+    <article className={`acf-row ${open ? 'open' : ''}`}>
+      <span className="acf-type engagement">Engagement</span>
+      <div className="acf-c">
+        <div className="acf-h">
+          <p className="acf-t">{eng.title}</p>
+          <span className={`acf-due ${due?.overdue ? 'overdue' : ''}`}>{due?.label ?? 'échéance à confirmer'}</span>
+        </div>
+        {eng.detail && <p className="acf-d">{eng.detail}</p>}
+        {open && <div className="acf-detail">
+          {eng.evidence.length ? <div className="acf-proof">{eng.evidence.map((ev, i) => <div className="acf-proof-item" key={i}>
+              <p className="acf-proof-meta">{SOURCE_TYPE_LABEL[ev.source_type] ?? ev.source_type}{ev.occurred_at ? ` · ${dateLabel(ev.occurred_at)}` : ''}</p>
+              <p className="acf-proof-q">{ev.excerpt || 'Preuve sans extrait disponible.'}</p>
+            </div>)}</div>
+            : <p className="acf-empty-proof">Aucune preuve datée disponible pour cet élément.</p>}
         </div>}
       </div>
-      <div className="mv-b">
-        <RecOwnerAvatar rec={rec} data={data} userId={userId} refresh={refresh} members={members} loadMembers={loadMembers} />
-        <button className="mv-i" aria-expanded={proof} title="D’où vient cette action ?" onClick={() => setProof((v) => !v)}>i</button>
-        <button className="mv-ok" disabled={busy} title="Fait" onClick={() => act('completed')}>✓</button>
-        <button className="mv-no" disabled={busy} title="Écarter" onClick={() => act('dismissed')}>×</button>
+      <div className="acf-b">
+        <EngagementOwner eng={eng} data={data} members={members} />
+        <button type="button" className="acf-i" aria-expanded={open} title="D’où vient cet engagement ?" onClick={onToggleOpen}>i</button>
+        <button type="button" className="acf-ok" disabled={busy} title="Tenu" onClick={onDone}>✓</button>
+        <button type="button" className="acf-no" disabled={busy} title="Écarter (reste visible pour l’équipe)" onClick={onDismiss}>×</button>
       </div>
     </article>
   )
 }
 
-function StrategySection({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
-  const open = useMemo(() => data.recommendations.filter((r) => r.status === 'open' || r.status === 'postponed').sort((a, b) => b.priority - a.priority), [data.recommendations])
-  const [page, setPage] = useState(0)
+const ACTIONS_PAGE_SIZE = 4
+
+function ActionsSection({ data, userId, refresh, brain, organizationId }: {
+  data: AccountDetailData
+  userId: string
+  refresh: () => Promise<void>
+  brain: AccountBrainDTO | null
+  organizationId: string
+}) {
   const [busy, setBusy] = useState<string | null>(null)
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null)
-  const pages = Math.max(1, Math.ceil(open.length / PAGE))
-  const current = open.slice(page * PAGE, page * PAGE + PAGE)
-  const act = (id: string) => async (status: 'completed' | 'dismissed') => {
-    setBusy(id)
-    try { await updateRecommendationStatus(data, id, userId, status); await refresh() } finally { setBusy(null) }
-  }
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [page, setPage] = useState(0)
+
+  const openRecs = useMemo(() => [...data.recommendations].filter((r) => r.status === 'open' || r.status === 'postponed').sort((a, b) => b.priority - a.priority), [data.recommendations])
+  const engagements = useMemo(() => brain?.engagements ?? [], [brain])
+  // Ordre (§20) : réutilise les données réelles existantes (priorité Tohu, échéance
+  // des engagements) — pas de nouvel algorithme de scoring combiné. Les engagements
+  // en retard remontent en premier (donnée d'urgence déjà réelle), puis les
+  // mouvements par priorité décroissante, puis les engagements à échéance la plus proche.
+  const items: ActionEntry[] = useMemo(() => {
+    const overdue = engagements.filter((e) => e.is_overdue).sort((a, b) => new Date(a.due_window_end ?? 0).getTime() - new Date(b.due_window_end ?? 0).getTime())
+    const upcoming = engagements.filter((e) => !e.is_overdue).sort((a, b) => {
+      const ta = a.due_window_end ? new Date(a.due_window_end).getTime() : Infinity
+      const tb = b.due_window_end ? new Date(b.due_window_end).getTime() : Infinity
+      return ta - tb
+    })
+    return [
+      ...overdue.map((e): ActionEntry => ({ kind: 'engagement', id: e.id, eng: e })),
+      ...openRecs.map((r): ActionEntry => ({ kind: 'mouvement', id: r.id, rec: r })),
+      ...upcoming.map((e): ActionEntry => ({ kind: 'engagement', id: e.id, eng: e })),
+    ]
+  }, [engagements, openRecs])
+
   const loadMembers = () => { if (members === null) void fetchWorkspaceMembers(data.account.workspaceId).then(setMembers).catch(() => setMembers([])) }
+  // L'avatar « porté par » d'un engagement n'est jamais interactif (pas de popover
+  // à déclencher) : les membres doivent donc être chargés dès qu'un engagement
+  // référence un owner interne, pas seulement au clic comme pour les recommandations.
+  useEffect(() => { if (engagements.some((e) => e.owner_user_id)) loadMembers() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [engagements])
+  useEffect(() => { setPage(0) }, [items.length])
+
+  const pageCount = Math.max(1, Math.ceil(items.length / ACTIONS_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const shown = items.slice(safePage * ACTIONS_PAGE_SIZE, safePage * ACTIONS_PAGE_SIZE + ACTIONS_PAGE_SIZE)
+  const from = items.length === 0 ? 0 : safePage * ACTIONS_PAGE_SIZE + 1
+  const to = Math.min(items.length, safePage * ACTIONS_PAGE_SIZE + ACTIONS_PAGE_SIZE)
+
+  const run = (id: string, fn: () => Promise<void>) => { setBusy(id); void fn().then(refresh).finally(() => setBusy(null)) }
+  const keyOf = (item: ActionEntry) => `${item.kind}-${item.id}`
+
   return (
     <section className="sec">
-      <div className="sec-h">{StrategyIcon}<p className="sec-t">Stratégie de compte</p><span className="cnt"><b>{open.length}</b> action{open.length > 1 ? 's' : ''}</span></div>
+      <div className="sec-h">{StrategyIcon}<p className="sec-t">Ce qu’il faut faire</p><span className="cnt"><b>{items.length}</b> action{items.length > 1 ? 's' : ''}</span></div>
       <div className="sec-b">
-        {open.length ? <>
-          <div className="mvs">
-            {current.map((r) => <StrategyCard key={r.id} rec={r} data={data} userId={userId} refresh={refresh} busy={busy === r.id} act={(status) => void act(r.id)(status)} members={members} loadMembers={loadMembers} />)}
+        {items.length ? <>
+          <div className="acf-list">
+            {shown.map((item) => {
+              const key = keyOf(item)
+              return <ActionRow key={key} item={item} data={data} userId={userId} refresh={refresh}
+                busy={busy === item.id} open={openKey === key} onToggleOpen={() => setOpenKey((v) => (v === key ? null : key))}
+                onDone={() => item.kind === 'mouvement'
+                  ? run(item.id, () => updateRecommendationStatus(data, item.id, userId, 'completed'))
+                  : run(item.id, () => resolveAccountEngagement(organizationId, data.account.id, item.id, userId))}
+                onDismiss={() => item.kind === 'mouvement'
+                  ? run(item.id, () => dismissRecommendationForMe(data, item.id, userId))
+                  : run(item.id, () => dismissAccountEngagementForMe(organizationId, data.account.id, item.id, userId))}
+                members={members} loadMembers={loadMembers} />
+            })}
           </div>
-          {pages > 1 && <div className="mvp">
-            <button className="mvp-b" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>← Précédent</button>
-            <span className="mvp-i">{page * PAGE + 1}–{Math.min(open.length, page * PAGE + PAGE)} sur {open.length}</span>
-            <button className="mvp-b" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Suivant →</button>
+          {pageCount > 1 && <div className="acf-pager">
+            <button type="button" disabled={safePage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>← Précédent</button>
+            <span>{from}–{to} sur {items.length}</span>
+            <button type="button" disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>Suivant →</button>
           </div>}
-        </> : <Empty>Aucune recommandation stratégique ouverte n’est étayée actuellement.</Empty>}
+        </> : <Empty>Aucune action ouverte n’est identifiée pour ce compte actuellement.</Empty>}
       </div>
     </section>
   )
 }
 
-// ── Lecture stratégique (synthèse IA bornée aux données persistées) ─────────
-const ReadingIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><path d="M9 12h7M9 15.5h7M9 8.5h4" /></svg>
-
 /** Générée à l'ouverture de l'onglet si absente/périmée (>7j), jamais en boucle :
- *  même doctrine que la narrative de score relationnel (cache serveur 7 jours). */
-function StrategicReadingSection({ data, refresh }: { data: AccountDetailData; refresh: () => Promise<void> }) {
+ *  même doctrine que la narrative de score relationnel (cache serveur 7 jours).
+ *  Pas de bouton de régénération manuelle dans ce design — l'effet ci-dessous
+ *  couvre déjà génération initiale et rafraîchissement automatique. */
+function StrategicReadingSection({ data, refresh, brain }: { data: AccountDetailData; refresh: () => Promise<void>; brain: AccountBrainDTO | null }) {
   const reading = data.strategicReading
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -496,76 +443,118 @@ function StrategicReadingSection({ data, refresh }: { data: AccountDetailData; r
     contacts: data.people.length, signals: data.signals.length, interactions: data.relationship.totalInteractions, messages: 0,
   }), [data.people.length, data.signals.length, data.relationship.totalInteractions])
 
-  const run = async (force: boolean) => {
-    setGenerating(true); setError(null)
-    try { await generateAccountStrategicReading(data, force); await refresh() }
-    catch (err) { setError(err instanceof Error ? err.message : 'Génération impossible.') }
-    finally { setGenerating(false) }
-  }
-
   useEffect(() => {
     if (attempted.current || generating) return
     if (reading && !isReadingStale(reading.generatedAt, new Date())) return
     attempted.current = true
-    void run(false)
+    setGenerating(true); setError(null)
+    void generateAccountStrategicReading(data, false).then(refresh)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Génération impossible.'))
+      .finally(() => setGenerating(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reading?.generatedAt])
 
+  // Faits clés / alertes (§ maquette) : seul le risque le plus prioritaire (le
+  // premier renvoyé par la synthèse) porte le ton « alerte » rouge/corail — les
+  // autres risques, forces et prochaines actions restent en ton neutre
+  // violet/lavande sombre. Jamais toutes les observations négatives en rouge.
+  // Capé à 4 pills pour rester aéré, jamais la liste complète.
+  const pills = reading ? [
+    ...reading.risques.slice(0, 1).map((text) => ({ text, alert: true })),
+    ...reading.risques.slice(1).map((text) => ({ text, alert: false })),
+    ...reading.forces.map((text) => ({ text, alert: false })),
+    ...reading.prochainesActions.map((text) => ({ text, alert: false })),
+  ].slice(0, 4) : []
+
   return (
-    <section className="sec">
-      <div className="sec-h">{ReadingIcon}<p className="sec-t">Lecture stratégique</p>
-        {reading?.confidence !== null && reading?.confidence !== undefined && <span className="cnt">confiance <b>{reading.confidence}%</b></span>}
-      </div>
-      <div className="sec-b">
-        {reading ? <>
-          <p className="sread-synthese">{reading.synthese}</p>
-          {reading.forces.length > 0 && <><p className="sread-h ok">Forces</p><ul className="sread-list ok">{reading.forces.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
-          {reading.risques.length > 0 && <><p className="sread-h no">Risques</p><ul className="sread-list no">{reading.risques.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
-          {reading.prochainesActions.length > 0 && <><p className="sread-h next">Prochaines actions</p><ul className="sread-list next">{reading.prochainesActions.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
-          <p className="sread-meta">Généré {relativeLabel(reading.generatedAt)}{reading.model ? ` · ${reading.model}` : ''} · fondé sur {reading.sourceCounts.contacts} contact{reading.sourceCounts.contacts > 1 ? 's' : ''}, {reading.sourceCounts.signals} signal{reading.sourceCounts.signals > 1 ? 'aux' : ''}, {reading.sourceCounts.interactions + reading.sourceCounts.messages} échange{reading.sourceCounts.interactions + reading.sourceCounts.messages > 1 ? 's' : ''}</p>
-          <p className="sread-note">Généré <b>uniquement</b> à partir des moments, engagements et signaux déjà persistés pour ce compte — jamais du contenu des emails eux-mêmes (non conservé).</p>
-          <div className="sread-actions"><button className="mvp-b sread-btn" disabled={generating} onClick={() => void run(true)}>{generating ? 'Régénération…' : 'Régénérer'}</button></div>
-        </> : generating ? <Empty>Génération de la lecture stratégique…</Empty>
-        : !counts.sufficient ? <>
-          <div className="sread-missing">{counts.missing.map((item, i) => <span key={i}>Il manque {item}.</span>)}</div>
-          <Empty>Lecture en construction — pas encore assez de matière persistée pour ce compte.</Empty>
-        </> : <>
-          <Empty>{error ?? 'Lecture en construction.'}</Empty>
-          <div className="sread-actions"><button className="mvp-b sread-btn" disabled={generating} onClick={() => void run(true)}>Générer</button></div>
-        </>}
+    <section className="r2card">
+      <div className={`r2card-b ${brain?.weather?.status === 'available' ? 'has-hero' : ''}`}>
+        <div className="r2card-l">
+          <p className="r2card-lbl">Où on en est · {dateLabel(reading?.generatedAt ?? data.generatedAt)}</p>
+          {reading ? <>
+            <p className="r2card-synth">{reading.synthese}</p>
+            {pills.length > 0 && <div className="r2card-pills">{pills.map((p, i) => <span key={i} className={`r2card-pill ${p.alert ? 'alert' : ''}`} title={p.text}>{p.text}</span>)}</div>}
+          </> : generating ? <p className="r2card-empty">Génération de la lecture stratégique…</p>
+          : !counts.sufficient ? <p className="r2card-empty">Données insuffisantes pour établir une synthèse fiable.</p>
+          : <p className="r2card-empty">{error ?? 'Lecture en construction.'}</p>}
+        </div>
+        <WeatherHero brain={brain} />
       </div>
     </section>
   )
 }
 
 // ── Historique & mémoire ─────────────────────────────────────────────────────
-type Moment = { id: string; date: string | null; impact: 'renf' | 'frict' | 'jalon' | 'neut'; label: string; title: string; meta: string | null }
-const IMPACT_LABEL: Record<Moment['impact'], string> = { renf: 'Renforce', frict: 'Friction', jalon: 'Jalon', neut: 'Neutre' }
+type Moment = { id: string; date: string | null; impact: 'renf' | 'frict' | 'jalon' | 'neut'; label: string; title: string; meta: string | null; avatarLabel: string | null }
+const IMPACT_LABEL: Record<Moment['impact'], string> = { renf: 'Renforce', frict: 'Friction', jalon: 'Jalon', neut: 'Contexte' }
+const BRAIN_IMPACT_TO_MOMENT: Record<string, Moment['impact']> = { friction: 'frict', reinforce: 'renf', milestone: 'jalon', neutral: 'neut' }
 
-function momentsFrom(data: AccountDetailData): Moment[] {
+function momentsFrom(data: AccountDetailData, brain: AccountBrainDTO | null): Moment[] {
   const fromSignals: Moment[] = data.signals.map((s) => {
     const text = `${s.type} ${s.title} ${s.summary ?? ''}`.toLowerCase()
     const impact: Moment['impact'] = /risqu|churn|friction|retard|silence|perte|départ|insatisf/.test(text) ? 'frict'
       : /gagn|sign|renouv|expansion|avancé|accord|livr/.test(text) ? 'renf' : 'jalon'
-    return { id: `sig-${s.id}`, date: s.provenance.observedAt, impact, label: s.title, title: s.title, meta: s.summary ?? s.impact ?? s.provenance.sourceLabel }
+    const person = s.personId ? data.people.find((p) => p.id === s.personId) ?? null : null
+    return { id: `sig-${s.id}`, date: s.provenance.observedAt, impact, label: s.title, title: s.title, meta: s.summary ?? s.impact ?? s.provenance.sourceLabel, avatarLabel: person ? initials(person.name) : null }
   })
-  const fromMemory: Moment[] = data.memoryEntries.map((m) => ({ id: `mem-${m.id}`, date: m.createdAt, impact: 'neut', label: m.content, title: m.content, meta: `${m.entryType} · ${m.authorName}` }))
-  return [...fromSignals, ...fromMemory].filter((m) => m.date).sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
+  const fromMemory: Moment[] = data.memoryEntries.map((m) => ({ id: `mem-${m.id}`, date: m.createdAt, impact: 'neut', label: m.content, title: m.content, meta: `${m.entryType} · ${m.authorName}`, avatarLabel: initials(m.authorName) }))
+  // Engagements tenus/écartés (account_brain.history) : un engagement RESOLVED
+  // retiré de « Ce qu'il faut faire » réapparaît ici comme moment réel — jamais
+  // un événement fabriqué pour combler la timeline.
+  const fromBrain: Moment[] = (brain?.history ?? []).map((h) => ({
+    id: `fact-${h.id}`, date: h.occurred_at, impact: BRAIN_IMPACT_TO_MOMENT[h.impact ?? ''] ?? 'neut',
+    label: h.title, title: h.title, meta: h.status === 'resolved' ? 'Engagement tenu' : h.status, avatarLabel: null,
+  }))
+  return [...fromSignals, ...fromMemory, ...fromBrain].filter((m) => m.date).sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
 }
 
-function HistorySection({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
+const FILTERABLE_IMPACTS: Moment['impact'][] = ['renf', 'frict']
+const CloseIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+
+function MomentCard({ moment, onDismiss }: { moment: Moment; onDismiss?: () => void }) {
+  return <div className={`kmi ${moment.impact}`}>
+    {onDismiss && <button type="button" className="kmi-x" title="Écarter ce moment" aria-label="Écarter ce moment de l’historique" onClick={onDismiss}>{CloseIcon}</button>}
+    <span className="kmi-d">{dateLabel(moment.date)}</span>
+    <span className="kmi-p" aria-hidden="true" />
+    <div className="kmi-c"><p className="kmi-t">{moment.title}</p>{moment.meta && <p className="kmi-s">{moment.meta}</p>}</div>
+    {moment.avatarLabel && <span className="kmi-av" title={moment.avatarLabel}>{moment.avatarLabel}</span>}
+    <span className="kmi-e">{IMPACT_LABEL[moment.impact]}</span>
+  </div>
+}
+
+function HistorySection({ data, userId, refresh, brain }: { data: AccountDetailData; userId: string; refresh: () => Promise<void>; brain: AccountBrainDTO | null }) {
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [filter, setFilter] = useState<'all' | Moment['impact']>('all')
+  // Écarter un moment : pas de colonne d'archivage côté company_signals/mémoire
+  // aujourd'hui, donc masquage pour la session seulement (même doctrine que
+  // HistoryCard côté fiche Personne, voir person-detail/sections2.tsx).
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
 
+  // « Qui a porté la relation » : liste des owners réellement rattachés aux
+  // contacts du compte, le dernier de la liste = owner actuel. Pas de table
+  // de passation datée en base — la période affichée reste donc « à confirmer »
+  // dès qu'il y a eu plus d'un owner, jamais une date inventée (§9).
   const owners = useMemo(() => {
     const list = [...new Set(data.people.map((p) => p.ownerName).filter((x): x is string => !!x))]
     if (data.account.primaryOwnerName && !list.includes(data.account.primaryOwnerName)) list.push(data.account.primaryOwnerName)
     return list
   }, [data.people, data.account.primaryOwnerName])
+  const currentOwner = owners.length ? owners[owners.length - 1]! : null
+  const passationCount = Math.max(0, owners.length - 1)
+  const tenureSubtitle = currentOwner
+    ? owners.length <= 1
+      ? monthYearLabel(data.account.relationshipStartedAt) ? `depuis ${monthYearLabel(data.account.relationshipStartedAt)} · seul porteur` : 'seul porteur'
+      : `${owners.length} porteurs successifs`
+    : null
 
-  const moments = useMemo(() => momentsFrom(data), [data])
-  const shown = expanded ? moments : moments.slice(0, 5)
+  const moments = useMemo(() => momentsFrom(data, brain), [data, brain])
+  const visible = useMemo(() => moments.filter((m) => !dismissedIds.has(m.id)), [moments, dismissedIds])
+  const filtered = filter === 'all' ? visible : visible.filter((m) => m.impact === filter)
+  const shown = expanded ? filtered : filtered.slice(0, 5)
+  const rest = filtered.length - shown.length
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -576,101 +565,126 @@ function HistorySection({ data, userId, refresh }: { data: AccountDetailData; us
 
   return (
     <section className="sec">
-      <div className="sec-h"><span className="hm-i">{HistoryIcon}</span><p className="sec-t">Historique &amp; mémoire du compte</p><span className="memc">{data.memoryEntries.length} entrée{data.memoryEntries.length > 1 ? 's' : ''} en mémoire</span></div>
-      <div className="sec-b">
-        {owners.length > 0 && <div className="rl">
-          <p className="rl-l">Qui a porté la relation</p>
-          <div className="rl-t">
-            {owners.map((o, i) => <div className="rl-s" key={o} style={{ display: 'contents' }}>
-              <div className={`rl-s ${i === owners.length - 1 ? 'cur' : ''}`}><span className="rl-a">{initials(o)}</span><div className="rl-c"><p className="rl-n">{o}</p></div></div>
-              {i < owners.length - 1 && <span className="rl-r" />}
-            </div>)}
+      <div className="sec-h">
+        <span className="hm-i">{HistoryIcon}</span><p className="sec-t">Historique &amp; mémoire du compte</p>
+        <span className="memc">{data.memoryEntries.length} engagement{data.memoryEntries.length > 1 ? 's' : ''} en mémoire</span>
+        <button type="button" className="hm-collapse" aria-expanded={!collapsed} onClick={() => setCollapsed((v) => !v)}>{collapsed ? 'Déplier ↓' : 'Replier ↑'}</button>
+      </div>
+      {!collapsed && <div className="sec-b">
+        {currentOwner && <div className="rl">
+          <span className="rl-a">{initials(currentOwner)}</span>
+          <div className="rl-c">
+            <p className="rl-n">{currentOwner}<span className="rl-dot" aria-hidden="true" /></p>
+            {tenureSubtitle && <p className="rl-p">{tenureSubtitle}</p>}
           </div>
-          <span className="rl-k">{owners.length > 1 ? `${owners.length - 1} passation${owners.length - 1 > 1 ? 's' : ''}` : 'Owner unique'}</span>
+          <span className="rl-k">{passationCount} passation{passationCount > 1 ? 's' : ''}</span>
         </div>}
 
-        <div className="hm-s">
-          <div className="hm-k"><p className="hm-kv">{dateLabel(data.account.relationshipStartedAt)}</p><p className="hm-kl">Premier échange</p></div>
-          <div className="hm-k"><p className="hm-kv">{data.relationship.totalInteractions || '—'}</p><p className="hm-kl">Échanges au total</p></div>
-          <div className="hm-k"><p className="hm-kv">{data.people.length}</p><p className="hm-kl">Interlocuteurs actifs</p></div>
-        </div>
-
-        <p className="km-l">L’histoire du compte {moments.length > 0 && <span className="km-n">{moments.length}</span>}</p>
-        {shown.length ? <div className="tl2">
-          {shown.map((m) => <div className={`tlr ${m.impact === 'frict' ? 'frict' : ''}`} key={m.id}>
-            <span className="tlr-d">{dateLabel(m.date)}</span>
-            <span className="tlr-n"><i className={m.impact} /></span>
-            <div><p className="tlr-t">{m.title}</p>{m.meta && <p className="tlr-m">{m.meta}</p>}</div>
-            <span className={`eff ${m.impact}`}>{IMPACT_LABEL[m.impact]}</span>
-          </div>)}
-          {moments.length > 5 && <button className="mvp-b" style={{ margin: '14px auto 0', display: 'block' }} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Réduire' : `En savoir + (${moments.length - 5})`}</button>}
-        </div> : <Empty>L’histoire du compte se construira à partir des signaux, notes et interactions persistés.</Empty>}
+        <p className="km-l">Ce qui s’est passé — événements étiquetés {visible.length > 0 && <span className="km-n">{visible.length}</span>}</p>
+        {moments.length > 0 && <div className="hm-flt" role="tablist" aria-label="Filtrer les moments par type">
+          <button type="button" role="tab" aria-selected={filter === 'all'} className={`mvp-b ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>Tout</button>
+          {FILTERABLE_IMPACTS.map((impact) => <button key={impact} type="button" role="tab" aria-selected={filter === impact} className={`mvp-b ${filter === impact ? 'on' : ''}`} onClick={() => setFilter(impact)}>{IMPACT_LABEL[impact]}</button>)}
+        </div>}
+        {filtered.length ? <>
+          <div className="km">
+            {shown.map((m) => <MomentCard key={m.id} moment={m} onDismiss={m.id.startsWith('sig-') ? () => setDismissedIds((ids) => new Set(ids).add(m.id)) : undefined} />)}
+          </div>
+          {rest > 0 && <button className="mvp-b" style={{ margin: '14px auto 0', display: 'block' }} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Réduire' : `En savoir + (${rest})`}</button>}
+        </> : <Empty>{moments.length ? 'Aucun moment de ce type.' : 'L’histoire du compte se construira à partir des signaux, notes et interactions persistés.'}</Empty>}
 
         <form onSubmit={(e) => void submit(e)}>
           <textarea className="hm-x" value={content} onChange={(e) => setContent(e.target.value)} placeholder="Ex : Christèle part en congés début mai, passer par Tanguy sur les OS." />
           <div className="hm-r"><button className="hm-p" disabled={saving || !content.trim()}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
         </form>
+      </div>}
+    </section>
+  )
+}
+
+// ── Organigramme (Personnes) ─────────────────────────────────────────────────
+// Rôle d'interlocuteur → libellé maquette (Décideur, Filtre, Prescripteur, Utilisateur…).
+const ROLE_LABELS: Record<string, string> = {
+  decision_maker: 'Décideur', decideur: 'Décideur', economic_buyer: 'Décideur',
+  gatekeeper: 'Filtre · Gatekeeper', filtre: 'Filtre · Gatekeeper',
+  influencer: 'Prescripteur · Influenceur', prescripteur: 'Prescripteur · Influenceur', prescriber: 'Prescripteur · Influenceur',
+  user: 'Utilisateur', utilisateur: 'Utilisateur', end_user: 'Utilisateur',
+  champion: 'Champion', sponsor: 'Sponsor', buyer: 'Acheteur', technical: 'Référent technique',
+}
+function roleLabel(person: AccountPerson): string {
+  const raw = person.decisionRole || person.relationshipRole || person.organizationalRole
+  if (!raw) return 'À confirmer'
+  return ROLE_LABELS[raw.toLowerCase()] ?? raw.replaceAll('_', ' ')
+}
+// Couleur vive du badge de rôle — un ton par famille, indépendant du score
+// relationnel (qui colore déjà la bordure de la carte via --person-tone). Le
+// scoring V6 utilise Décideur/Influenceur/Utilisateur/Filtre : on ne force pas
+// Sponsor/Champion dans ce mapping sans décision produit explicite (§19).
+const ROLE_TONES: Record<string, string> = {
+  decision_maker: 'var(--teal)', decideur: 'var(--teal)', economic_buyer: 'var(--teal)',
+  gatekeeper: 'var(--coral)', filtre: 'var(--coral)',
+  influencer: 'var(--violet)', prescripteur: 'var(--violet)', prescriber: 'var(--violet)',
+  user: 'var(--sage)', utilisateur: 'var(--sage)', end_user: 'var(--sage)',
+  champion: 'var(--violet)', sponsor: 'var(--teal)', buyer: 'var(--amber)', technical: 'var(--t3)',
+}
+function roleTone(person: AccountPerson): string {
+  const raw = person.decisionRole || person.relationshipRole || person.organizationalRole
+  return raw ? ROLE_TONES[raw.toLowerCase()] ?? 'var(--t3)' : 'var(--t3)'
+}
+
+function StakeholderSection({ people, navigate }: { people: AccountPerson[]; navigate: (path: string) => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const sorted = useMemo(() => [...people].sort((a, b) => (b.exchangeShare ?? -1) - (a.exchangeShare ?? -1)), [people])
+  const shown = expanded ? sorted : sorted.slice(0, 4)
+  const rest = sorted.length - shown.length
+  return (
+    <section className="sec">
+      <div className="sec-h">{PeopleIcon}<p className="sec-t">Organigramme</p><span className="cnt"><b>{sorted.length}</b> interlocuteur{sorted.length > 1 ? 's' : ''}</span></div>
+      <div className="sec-b">
+        {!sorted.length ? <Empty>Aucun interlocuteur suffisamment identifié pour ce compte.</Empty> : <>
+          <div className="og-grid">{shown.map((person) => {
+            const tone = roleTone(person)
+            return <button type="button" className="og-t" key={person.id} onClick={() => navigate(`/app/people/${person.id}`)} style={{ '--rc': tone } as CSSProperties}>
+              <span className="og-r">{roleLabel(person)}</span>
+              <div className="og-row"><p className="nm">{person.name}</p><span className="v" style={{ color: person.score === null ? 'var(--pale)' : band(person.score) }}>{person.score ?? '—'}</span></div>
+              <p className="og-sh">{person.exchangeShare === null ? 'part à confirmer' : <>~<b>{person.exchangeShare}%</b> des échanges</>}</p>
+              {person.jobTitle && <p className="og-dl">{person.jobTitle}</p>}
+            </button>
+          })}</div>
+          {rest > 0 && <button type="button" className="mvp-b" style={{ margin: '14px auto 0', display: 'block' }} onClick={() => setExpanded(true)}>Voir {rest} interlocuteur{rest > 1 ? 's' : ''} de plus ▾</button>}
+          {expanded && sorted.length > 4 && <button type="button" className="mvp-b" style={{ margin: '14px auto 0', display: 'block' }} onClick={() => setExpanded(false)}>Réduire ▴</button>}
+        </>}
       </div>
     </section>
   )
 }
 
-// ── Modale explicative du score ─────────────────────────────────────────────
-function ScoreModal({ data, onClose }: { data: AccountDetailData; onClose: () => void }) {
-  const rel = data.relationship
-  // Les 3 vraies composantes pondérées du score (0,55 + 0,25 + 0,20, voir score-batch) —
-  // null si le snapshot est antérieur à leur ajout ou si aucun contact n'était engagé
-  // ce mois-là (absence de mesure, jamais un 0 fabriqué).
-  const rows: Array<{ label: string; weight: string; value: number | null; desc: string }> = [
-    { label: 'Engagement', weight: '55%', value: rel.engagementComponent, desc: 'Moyenne pondérée des scores des contacts réellement engagés ce mois-ci (poids selon leur volume d’échanges).' },
-    { label: 'Couverture contacts', weight: '25%', value: rel.contactCoverage, desc: 'Part des interlocuteurs du compte réellement couverts par un échange suivi.' },
-    { label: 'Récence', weight: '20%', value: rel.recencyComponent, desc: 'Fraîcheur de la dernière interaction sur le compte (demi-vie 90 jours).' },
-  ]
-  const riskFactors: Array<{ label: string; value: number | null; desc: string }> = [
-    { label: 'Couverture décideur', value: rel.decisionMakerCoverage, desc: 'Présence d’un lien avec le(s) décideur(s) identifié(s) du compte.' },
-    { label: 'Répartition (anti-concentration)', value: rel.concentrationRisk === null ? null : Math.max(0, 100 - rel.concentrationRisk), desc: 'Un compte porté par un seul contact est plus fragile (risque de départ).' },
-  ]
-  return createPortal(
-    <div className="acr-mask" onClick={onClose}>
-      <div className="acr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="mo-h"><p className="mo-t">Comment le score du compte est calculé</p><button className="mo-x" onClick={onClose} aria-label="Fermer">×</button></div>
-        <div className="mo-b">
-          <p className="mo-i">Le compte n’est <b>pas une simple somme de dyades</b> : le score agrège les personnes réellement engagées avec ce compte, pas une moyenne brute. Score global : <b>{rel.score ?? '—'}</b>{rel.confidence !== null ? ` · fiabilité ${rel.confidence}%` : ''}.</p>
-          {rows.map((r) => <div className="mo-s" key={r.label}>
-            <div className="mo-hd"><p className="mo-l">{r.label} <small>· {r.weight}</small></p><p className="mo-v">{r.value ?? '—'}<small>/100</small></p></div>
-            <span className="mo-g"><i style={{ width: `${r.value ?? 0}%` }} /></span>
-            <p className="mo-d">{r.desc}{r.value === null ? ' Pas encore mesuré ce mois-ci.' : ''}</p>
-          </div>)}
-          <p className="mo-sl">Facteurs de risque affichés à part — pas dans le calcul du score</p>
-          {riskFactors.map((r) => <div className="mo-s" key={r.label}>
-            <div className="mo-hd"><p className="mo-l">{r.label}</p><p className="mo-v">{r.value ?? '—'}<small>/100</small></p></div>
-            <span className="mo-g"><i style={{ width: `${r.value ?? 0}%` }} /></span>
-            <p className="mo-d">{r.desc}</p>
-          </div>)}
-          <p className="mo-f">Le revenu n’entre jamais dans le calcul — c’est la variable à prédire. Dérivé de {rel.totalInteractions} échange{rel.totalInteractions > 1 ? 's' : ''} · {data.sources.map((s) => s.label).join(' + ') || 'sources à confirmer'} · calculé {dateLabel(data.generatedAt)}.</p>
-        </div>
-      </div>
-    </div>, document.body)
-}
-
 // ── Vue Relation ─────────────────────────────────────────────────────────────
-export function AccountRelationView({ data, userId, currentUserName, refresh, navigate: _navigate }: {
+export function AccountRelationView({ data, userId, currentUserName, refresh, navigate, organizationId, v6Enabled }: {
   data: AccountDetailData
   userId: string
   currentUserName: string
   refresh: () => Promise<void>
   navigate: (path: string) => void
+  organizationId: string
+  v6Enabled: boolean
 }) {
-  const [modal, setModal] = useState(false)
+  const brain = useAccountBrain(organizationId, data.account.id, v6Enabled)
+  // Ordre narratif (brief refonte fiche Compte) : où on en est → météo → ce qui
+  // a changé récemment → organigramme → ce qu'il faut faire (engagements +
+  // mouvements fusionnés, §24) → mémoire relationnelle. Une seule colonne — la
+  // hiérarchie vient de l'ordre de lecture, pas d'une grille de dashboard. Les
+  // sections V6 (météo/changement récent/engagements) ne s'affichent que
+  // derrière le flag scoring_v6_ui et seulement une fois account_brain chargé —
+  // jamais un état intermédiaire fabriqué pendant le chargement ; sans le
+  // flag, « Ce qu'il faut faire » ne montre que les mouvements Tohu (les
+  // engagements ne viennent que de account_brain).
   return (
     <div className="acr">
-      <div className="cols">
-        <HealthSection data={data} currentUserName={currentUserName} onOpenModal={() => setModal(true)} />
-        <StrategySection data={data} userId={userId} refresh={refresh} />
-      </div>
-      <StrategicReadingSection data={data} refresh={refresh} />
-      <HistorySection data={data} userId={userId} refresh={refresh} />
-      {modal && <ScoreModal data={data} onClose={() => setModal(false)} />}
+      <StrategicReadingSection data={data} refresh={refresh} brain={v6Enabled ? brain : null} />
+      {v6Enabled && brain && <WeatherSection brain={brain} />}
+      <StakeholderSection people={data.people} navigate={navigate} />
+      <ActionsSection data={data} userId={userId} refresh={refresh} brain={v6Enabled ? brain : null} organizationId={organizationId} />
+      <HistorySection data={data} userId={userId} refresh={refresh} brain={v6Enabled ? brain : null} />
     </div>
   )
 }

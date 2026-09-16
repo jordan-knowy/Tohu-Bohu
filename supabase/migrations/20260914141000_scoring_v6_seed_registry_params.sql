@@ -1,0 +1,41 @@
+insert into scoring.marker_registry (registry_version, marker_id, scope, axis_or_dial, tier, pts_spec, sign, vol_base, manipulable, cost, detection_rule) values
+('reg-v6.0','C01','person','confiance','important',20,1,1,'non','important',null),
+('reg-v6.0','C02','person','confiance','faible',6,1,0.6,'oui','faible',null),
+('reg-v6.0','C03','person','confiance','moyen',10,1,1,'oui','moyen',null),
+('reg-v6.0','C04','person','confiance','moyen',14,1,1,'oui','moyen',null),
+('reg-v6.0','C05','person','confiance','important',18,1,1,'non','important',null),
+('reg-v6.0','S01','person','satisfaction','moyen',-14,-1,1,'non','moyen',null),
+('reg-v6.0','S02','person','satisfaction','important',-16,-1,1,'non','important',null),
+('reg-v6.0','S03','person','satisfaction','moyen',-12,-1,1,'non','moyen',null),
+('reg-v6.0','S04','person','satisfaction','faible',-8,-1,1,'non','faible',null),
+('reg-v6.0','S05','person','satisfaction','faible',-8,-1,1,'oui','faible',null),
+('reg-v6.0','S06','person','satisfaction','important',-14,-1,1,'non','important',null),
+('reg-v6.0','S07','person','satisfaction','critique',-30,-1,1,'non','critique','Satisfaction ≤ 20 après calcul'),
+('reg-v6.0','S08','person','satisfaction','moyen',12,1,1,'difficile','moyen',null),
+('reg-v6.0','E01','person','engagement','important',20,1,1,'non','important',null),
+('reg-v6.0','E02','person','engagement','important',18,1,1,'non','important',null),
+('reg-v6.0','E03','person','engagement','moyen',10,1,0.6,'oui','moyen',null),
+('reg-v6.0','E04','person','engagement','important',18,1,1,'difficile','important',null),
+('reg-v6.0','E05','person','engagement','faible',6,0,0.3,'oui','faible',null),
+('reg-v6.0','R01','person','reciprocite','important',16,0,1,'non','important','toujours contre la baseline de la dyade — jamais un seuil universel'),
+('reg-v6.0','R02','person','reciprocite','moyen',14,0,1,'difficile','moyen','la relance ne compte pas positivement'),
+('reg-v6.0','A01','person','ancrage','important',16,0,1,'non','important',null),
+('reg-v6.0','A02','person','ancrage','moyen',14,0,1,'non','moyen',null),
+('reg-v6.0','X01','out_of_score',null,'neutre',0,0,0,'non','neutre','canal non instrumenté → baisse la fiabilité, jamais un point'),
+('reg-v6.0','X02','out_of_score',null,'neutre',0,0,0,'non','neutre','rupture typée → force le statut Rompu'),
+('reg-v6.0','X03','out_of_score',null,'neutre',0,0,0,'non','neutre','rupture de rituel subie → engagements/contexte'),
+('reg-v6.0','K01','account','d_dynamique','important',-20,-1,1,'non','important','contrat signé sans flux ; si ouvert > 12 mois → Dynamique ≤ 15'),
+('reg-v6.0','K02','account','d_dynamique','important',-25,-1,1,'non','important','créance échue ; escalade Critique (-40 SPEC) si > 90 j — le détecteur fixe le tier applicable'),
+('reg-v6.0','K03','account','d_satisfaction','important',-20,-1,1,'non','important','demande formelle sans réponse ; par demande × répétition'),
+('reg-v6.0','K04','account','d_dynamique','moyen',-15,-1,1,'non','moyen','livrable contractuel en retard ; compte aussi comme engagement glissé'),
+('reg-v6.0','K05','account','d_ancrage','important',-20,-1,1,'non','important','porteur parti sans passation ; levé à la réattribution'),
+('reg-v6.0','K06','account','d_satisfaction','critique',-40,-1,1,'non','critique','rétention de livrable ; Satisfaction ≤ 20 tant qu’ouvert'),
+('reg-v6.0','K07','account','d_satisfaction','faible',-10,-1,1,'non','faible','incident ; escalade Important (-25 SPEC) si non résolu sous 7 j'),
+('reg-v6.0','K08','account','d_ancrage','moyen',-15,-1,1,'non','moyen','contact vers adresse morte ; par occurrence × répétition'),
+('reg-v6.0','K09','account','d_couverture','neutre',0,0,1,'non','neutre','décideur entré par escalade ; 0 point, état « couvert par escalade »')
+on conflict (registry_version, marker_id) do nothing;
+
+insert into scoring.scoring_params (params_version, mode, tiers, repetition, decay, axis_weights, dial_weights, authority, anchoring, dynamics, thresholds, implementation_status, calibration_status) values
+('params-v6.0-palier','palier','{"faible":{"pos":6,"neg":-8},"moyen":{"pos":12,"neg":-14},"important":{"pos":20,"neg":-20},"critique":{"pos":0,"neg":-30},"neutre":{"pos":0,"neg":0}}'::jsonb,'{"occ1":1,"occ2to3":1.4,"occ4plus":1.7}'::jsonb,'[1,0.7,0.5,0.35,0.25,0.2,0.15,0.1]'::jsonb,'{"confiance":0.25,"satisfaction":0.25,"engagement":0.2,"reciprocite":0.2,"ancrage":0.1}'::jsonb,'{"Client/Prospect":{"d_satisfaction":0.25,"d_confiance_recip":0.2,"d_couverture":0.2,"d_equilibre":0.15,"d_ancrage":0.1,"d_dynamique":0.1},"Fournisseur":{"d_satisfaction":0.3,"d_confiance_recip":0.25,"d_couverture":0.05,"d_equilibre":0.05,"d_ancrage":0.15,"d_dynamique":0.2},"Partenaire":{"d_satisfaction":0.15,"d_confiance_recip":0.25,"d_couverture":0.15,"d_equilibre":0.15,"d_ancrage":0.1,"d_dynamique":0.2},"Investisseur":{"d_satisfaction":0.15,"d_confiance_recip":0.3,"d_couverture":0.2,"d_equilibre":0.05,"d_ancrage":0.2,"d_dynamique":0.1},"Interne":{"d_satisfaction":0.2,"d_confiance_recip":0.3,"d_couverture":0.05,"d_equilibre":0.05,"d_ancrage":0.3,"d_dynamique":0.1}}'::jsonb,'{"decideur":1,"influenceur":0.6,"utilisateur":0.3,"filtre":0.2}'::jsonb,'{"0":0,"1":25,"2":60,"threePlus":100}'::jsonb,'{"weights":{"pente":0.3,"silence":0.4,"solde":0.3},"penteAnchors":{"deltaHigh":5,"vHigh":100,"deltaMid":0,"vMid":50,"deltaLow":-10,"vLow":0},"silenceAnchors":{"r1":1,"v1":100,"r2":2,"v2":50,"r3":3,"v3":0},"solde":{"base":50,"step":10},"k01CapMonths":12,"k01Cap":15,"k06Cap":20}'::jsonb,'{"note":"seuils P4/P5/P7 + fiabilité — voir SCORING_V6_S0_DESIGN.md"}'::jsonb,'current_reference','provisional'),
+('params-v6.0-spec','spec','{"faible":{"pos":6,"neg":-8},"moyen":{"pos":12,"neg":-14},"important":{"pos":20,"neg":-20},"critique":{"pos":0,"neg":-30},"neutre":{"pos":0,"neg":0}}'::jsonb,'{"occ1":1,"occ2to3":1.4,"occ4plus":1.7}'::jsonb,'[1,0.7,0.5,0.35,0.25,0.2,0.15,0.1]'::jsonb,'{"confiance":0.25,"satisfaction":0.25,"engagement":0.2,"reciprocite":0.2,"ancrage":0.1}'::jsonb,'{"Client/Prospect":{"d_satisfaction":0.25,"d_confiance_recip":0.2,"d_couverture":0.2,"d_equilibre":0.15,"d_ancrage":0.1,"d_dynamique":0.1},"Fournisseur":{"d_satisfaction":0.3,"d_confiance_recip":0.25,"d_couverture":0.05,"d_equilibre":0.05,"d_ancrage":0.15,"d_dynamique":0.2},"Partenaire":{"d_satisfaction":0.15,"d_confiance_recip":0.25,"d_couverture":0.15,"d_equilibre":0.15,"d_ancrage":0.1,"d_dynamique":0.2},"Investisseur":{"d_satisfaction":0.15,"d_confiance_recip":0.3,"d_couverture":0.2,"d_equilibre":0.05,"d_ancrage":0.2,"d_dynamique":0.1},"Interne":{"d_satisfaction":0.2,"d_confiance_recip":0.3,"d_couverture":0.05,"d_equilibre":0.05,"d_ancrage":0.3,"d_dynamique":0.1}}'::jsonb,'{"decideur":1,"influenceur":0.6,"utilisateur":0.3,"filtre":0.2}'::jsonb,'{"0":0,"1":25,"2":60,"threePlus":100}'::jsonb,'{"weights":{"pente":0.3,"silence":0.4,"solde":0.3},"penteAnchors":{"deltaHigh":5,"vHigh":100,"deltaMid":0,"vMid":50,"deltaLow":-10,"vLow":0},"silenceAnchors":{"r1":1,"v1":100,"r2":2,"v2":50,"r3":3,"v3":0},"solde":{"base":50,"step":10},"k01CapMonths":12,"k01Cap":15,"k06Cap":20}'::jsonb,'{"note":"seuils P4/P5/P7 + fiabilité — voir SCORING_V6_S0_DESIGN.md"}'::jsonb,'proposed','tested')
+on conflict (params_version) do nothing;
