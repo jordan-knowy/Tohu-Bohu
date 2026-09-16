@@ -67,6 +67,7 @@ function kModifiers(kEvents: AccountKEvent[], params: ScoringParams, registry: M
     list.push({
       markerId: ke.markerId, pointsEffectifs: pts, occurrences: ke.occurrences ?? 1, repetitionMultiplier: rep, contribution,
       evidenceRef: ke.evidenceRef || null, observedAt: ke.observedAt || null,
+      evidenceText: ke.evidenceText ?? null, isVerbatim: ke.isVerbatim ?? false,
     })
     byDial.set(entry.dial, list)
   }
@@ -110,7 +111,9 @@ export function calculateAccountWeatherCore(
     let value: number | null = null
     let cappedBy: string | null = null
     if (sumTargets > 0) {
-      const sumCovered = targets.filter((t) => t.covered).reduce((s, t) => s + t.authority, 0)
+      // Niveau relationnel réel 0..1 si fourni (0=aucune interaction … 1=relation active/récente) ;
+      // rétro-compatible : sans relationalLevel, on retombe sur le binaire covered (0 ou 1).
+      const sumCovered = targets.reduce((s, t) => s + t.authority * (t.relationalLevel ?? (t.covered ? 1 : 0)), 0)
       base = 100 * sumCovered / sumTargets
       let v = base + (input.coverage.rcsChangeUnreflected ? params.coverage.malusRcsUnreflected : 0)
       const deciderWithoutDyad = targets.some((t) => t.isDecider && !t.covered)

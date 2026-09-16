@@ -46,19 +46,30 @@ async function classify(text: string, apiKey: string, model: string): Promise<{ 
   try { return JSON.parse(String(data.choices?.[0]?.message?.content ?? '{}')) } catch { return null }
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
-  const body = await req.json().catch(() => ({}))
-  const organizationId = typeof body.organizationId === 'string' ? body.organizationId : null
-  const companyId = typeof body.companyId === 'string' ? body.companyId : null
-  const limit = Math.min(Number(body.limit) || 40, 100)
-  if (!organizationId) return json({ error: 'organizationId requis' }, 400)
-  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
-  if (!apiKey) return json({ error: 'OPENROUTER_API_KEY non configurée' }, 500)
-  const model = Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
+// Cron secret : même mécanique que score-batch-account-v6 (x-cron-secret contre
+// public.app_secrets, ou service_role JWT) — accepté en plus de l'appel manuel
+// authentifié existant, pour permettre l'invocation automatique généralisée.
+async function isAuthorized(req: Request, supabase: ReturnType<typeof createClient>): Promise<boolean> {
+  const cronHeader = req.headers.get('x-cron-secret')
+  if (cronHeader) {
+    const { data: sec } = await supabase.from('app_secrets').select('value').eq('name', 'monitor_cron').maybeSingle()
+    if (sec?.value && sec.value === cronHeader) return true
+  }
+  const authHeader = req.headers.get('Authorization') ?? ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  const segments = token.split('.')
+  if (segments.length === 3) {
+    try {
+      const payload = JSON.parse(atob(segments[1].replace(/-/g, '+').replace(/_/g, '/')))
+      if (payload?.role === 'service_role') return true
+    } catch { /* token non décodable : ignoré */ }
+  }
+  return false
+}
 
+async function classifyOrganization(
+  supabase: ReturnType<typeof createClient>, organizationId: string, companyId: string | null, limit: number, apiKey: string, model: string,
+) {
   // Extraits : moments (summary, pas verbatim) + engagements (source_excerpt = verbatim)
   const [{ data: moments }, { data: commitments }] = await Promise.all([
     supabase.from('person_key_moments').select('id, contact_id, occurred_at, summary, contacts!inner(company_id, organization_id)')
@@ -78,7 +89,12 @@ Deno.serve(async (req) => {
     items.push({ id: String(e.id), contactId: String(e.contact_id), companyId: co, text: String(e.source_excerpt), observedAt: (e.source_occurred_at ?? e.observed_at) as string, hasVerbatim: true })
   }
 
-  let accepted = 0, candidates = 0, noMarker = 0, inserted = 0
+  // scoring.marker_event vit dans un schéma non exposé à PostgREST (comme pour
+  // score-batch-account-v6) : écriture exclusivement via la RPC public.*
+  // SECURITY DEFINER, jamais .schema('scoring').from(...) qui échoue en
+  // PGRST106 (schéma non exposé) — silencieusement, si l'erreur n'est pas lue.
+  let accepted = 0, candidates = 0, noMarker = 0
+  const events: Array<Record<string, unknown>> = []
   for (const it of items) {
     const r = await classify(it.text, apiKey, model)
     const id = (r?.marker_id ?? '').trim()
@@ -88,15 +104,61 @@ Deno.serve(async (req) => {
     let isCandidate = confidence < ACCEPT
     if (entry.requiresVerbatim && !it.hasVerbatim) isCandidate = true
     isCandidate ? candidates++ : accepted++
-    const { error } = await supabase.schema('scoring').from('marker_event').insert({
-      organization_id: organizationId, registry_version: 'reg-v6.0', marker_id: id, scope: 'person',
-      contact_id: it.contactId, account_id: it.companyId, observed_at: it.observedAt, sense: entry.sense,
+    events.push({
+      marker_id: id, contact_id: it.contactId, account_id: it.companyId, observed_at: it.observedAt, sense: entry.sense,
       measure: { confidence, rationale: String(r?.rationale ?? '').slice(0, 240) }, source: 'classifier:extract',
       evidence_ref: it.id, evidence_text: it.text.slice(0, 500), detector_version: VERSION, is_candidate: isCandidate,
+      // is_verbatim : source_excerpt (commitment, hasVerbatim=true) = extrait garanti fidèle ;
+      // person_key_moments.summary (hasVerbatim=false) = paraphrase LLM, jamais présentée comme verbatim.
+      is_verbatim: it.hasVerbatim,
       dedup_key: `sem:${id}:${it.id}`,
     })
-    if (!error) inserted++
-    else if (error.code !== '23505') console.error('marker insert', error.message) // 23505 = déjà présent (idempotent)
   }
-  return json({ analyzed: items.length, accepted, candidates, no_marker: noMarker, inserted })
+  let inserted = 0
+  if (events.length > 0) {
+    const { data, error } = await supabase.rpc('upsert_person_marker_events', { p_organization_id: organizationId, p_events: events })
+    if (error) console.error('upsert_person_marker_events', error.message)
+    else inserted = Number(data) || 0
+  }
+  return { analyzed: items.length, accepted, candidates, no_marker: noMarker, inserted }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+  const body = await req.json().catch(() => ({}))
+  const organizationId = typeof body.organizationId === 'string' ? body.organizationId : null
+  const companyId = typeof body.companyId === 'string' ? body.companyId : null
+  const limit = Math.min(Number(body.limit) || 40, 100)
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+  if (!apiKey) return json({ error: 'OPENROUTER_API_KEY non configurée' }, 500)
+  const model = Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
+
+  // organizationId explicite : appel manuel ciblé (comportement historique, inchangé).
+  if (organizationId) {
+    const result = await classifyOrganization(supabase, organizationId, companyId, limit, apiKey, model)
+    return json(result)
+  }
+
+  // Sans organizationId : invocation généralisée (cron), même mécanique d'auth
+  // que score-batch-account-v6 — toutes les organisations, une à une.
+  if (!(await isAuthorized(req, supabase))) return json({ error: 'Forbidden' }, 403)
+  const { data: orgs, error: orgsErr } = await supabase.from('organizations').select('id')
+  if (orgsErr) return json({ error: orgsErr.message }, 500)
+
+  let orgsProcessed = 0
+  const totals = { analyzed: 0, accepted: 0, candidates: 0, no_marker: 0, inserted: 0 }
+  const errors: Array<{ organizationId: string; message: string }> = []
+  for (const org of (orgs ?? []) as Array<{ id: string }>) {
+    try {
+      const r = await classifyOrganization(supabase, String(org.id), null, limit, apiKey, model)
+      totals.analyzed += r.analyzed; totals.accepted += r.accepted; totals.candidates += r.candidates
+      totals.no_marker += r.no_marker; totals.inserted += r.inserted
+      orgsProcessed++
+    } catch (err) {
+      errors.push({ organizationId: String(org.id), message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  return json({ orgsProcessed, ...totals, errors })
 })

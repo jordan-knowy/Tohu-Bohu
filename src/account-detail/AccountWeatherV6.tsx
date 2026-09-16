@@ -11,7 +11,7 @@ import { displayRule } from '../services/scoring/snapshots'
 import { PARAMS_V6_PALIER, REGISTRY_V6 } from '../services/scoring/registry-v6'
 import type { DialContribution, DialId, DialResult } from '../services/scoring/types'
 import type { ReactNode } from 'react'
-import { EvidenceKindBadge, SourceBadge, type EvidenceKind } from '../components/Evidence'
+import { EvidenceItem, EvidenceKindBadge, SourceBadge, type EvidenceKind } from '../components/Evidence'
 
 function relDate(v: string | null | undefined): string {
   if (!v) return '—'
@@ -204,6 +204,10 @@ function WeatherDetail({ dial, result, isWeakest }: { dial: DialId; result: Dial
             <div>
               <p className="r2-det-pt">{m.markerId}{m.observedAt ? ` · ${relDate(m.observedAt)}` : ''}</p>
               <p className="r2-det-pm">{markerLabel(m.markerId)}{m.occurrences > 1 ? ` — ${m.occurrences} occurrences` : ''}</p>
+              {m.evidenceText && <EvidenceItem
+                kind={m.isVerbatim ? 'fact' : 'inferred'}
+                text={m.isVerbatim ? `« ${m.evidenceText} »` : `Résumé : ${m.evidenceText}`}
+              />}
             </div>
           </li>)}</ul>
         : <p className="r2-det-x muted">Aucune preuve datée disponible pour cette dimension.</p>}

@@ -117,6 +117,46 @@ describe('mécanisme — plafonds K et résolution', () => {
   })
 })
 
+describe('mécanisme — Couverture : niveau relationnel continu (relationalLevel)', () => {
+  it('rétro-compatible : sans relationalLevel, covered=true équivaut à relationalLevel=1', () => {
+    const withCovered = run(REFERENCE).dials.d_couverture.value
+    const withLevel = run({
+      ...REFERENCE,
+      coverage: { targets: [
+        { role: 'utilisateur', authority: 0.3, covered: true, isDecider: false, relationalLevel: 1 },
+        { role: 'decideur', authority: 1.0, covered: false, isDecider: true, relationalLevel: 0 },
+      ] },
+    }).dials.d_couverture.value
+    expect(withLevel).toBe(withCovered)
+  })
+  it('un niveau relationnel intermédiaire (0.5) pèse moins qu’un niveau plein (1.0)', () => {
+    const base = { role: 'utilisateur', authority: 0.3, covered: true, isDecider: false }
+    const full = run({ ...REFERENCE, coverage: { targets: [{ ...base, relationalLevel: 1 }] } }).dials.d_couverture.value!
+    const partial = run({ ...REFERENCE, coverage: { targets: [{ ...base, relationalLevel: 0.5 }] } }).dials.d_couverture.value!
+    expect(partial).toBeLessThan(full)
+    expect(partial).toBe(50)
+  })
+  it('relationalLevel=0 (aucune interaction réelle) équivaut à non couvert', () => {
+    const target = { role: 'utilisateur', authority: 0.3, covered: false, isDecider: false, relationalLevel: 0 }
+    expect(run({ ...REFERENCE, coverage: { targets: [target] } }).dials.d_couverture.value).toBe(0)
+  })
+})
+
+describe('mécanisme — citation verbatim (evidenceText/isVerbatim) jusqu’aux Preuves', () => {
+  it('un K conserve sa citation et son statut verbatim pour l’UI « Preuves »', () => {
+    const r = run({ ...REFERENCE, kEvents: [kEv('K04', { evidenceText: 'Le livrable promis pour vendredi n’est toujours pas arrivé.', isVerbatim: true })] })
+    const k04 = r.dials.d_dynamique.modifiers.find((m) => m.markerId === 'K04')!
+    expect(k04.evidenceText).toBe('Le livrable promis pour vendredi n’est toujours pas arrivé.')
+    expect(k04.isVerbatim).toBe(true)
+  })
+  it('sans evidenceText fourni, le modificateur reste exploitable (null, jamais inventé)', () => {
+    const r = run(REFERENCE)
+    const k04 = r.dials.d_dynamique.modifiers.find((m) => m.markerId === 'K04')!
+    expect(k04.evidenceText).toBeNull()
+    expect(k04.isVerbatim).toBe(false)
+  })
+})
+
 describe('invariant — déterminisme + versions', () => {
   it('même entrée → même sortie ; versions rapportées', () => {
     expect(run(REFERENCE)).toEqual(run(REFERENCE))

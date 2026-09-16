@@ -31,12 +31,42 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { calculateAccountWeatherCore } from '../_shared/scoring-v6/calculateAccountWeatherCore.ts'
 import { buildDyadScoreSnapshot } from '../_shared/scoring-v6/snapshots.ts'
 import { PARAMS_V6_PALIER, REGISTRY_V6 } from '../_shared/scoring-v6/registry-v6.ts'
-import type { AccountDyadInput, AccountWeatherInput, MarkerEvent } from '../_shared/scoring-v6/types.ts'
+import type { AccountDyadInput, AccountWeatherInput, CoverageTarget, DialContribution, MarkerEvent } from '../_shared/scoring-v6/types.ts'
 
 // Aucun rôle qualifié aujourd'hui (account_contact_roles vide) : profil
 // "standard" par défaut — jamais "execution", qui est l'exception documentée
 // du registre V6, pas la règle générale.
 const UNQUALIFIED_ROLE = { label: 'Non qualifié', volontariteProfile: 'standard' as const }
+
+// decision_role (texte libre saisi côté UI, cf. AccountRelationView.tsx::ROLE_LABELS)
+// → clé d'autorité du registre V6 (decideur/influenceur/utilisateur/filtre).
+// Repli acté (décision produit) : tout contact non qualifié = Utilisateur (0.3),
+// jamais un rôle plus fort inventé. Les rôles qualifiés manuellement priment.
+const AUTHORITY_KEY: Record<string, string> = {
+  decision_maker: 'decideur', decideur: 'decideur', economic_buyer: 'decideur', buyer: 'decideur',
+  gatekeeper: 'filtre', filtre: 'filtre',
+  influencer: 'influenceur', prescripteur: 'influenceur', prescriber: 'influenceur', sponsor: 'influenceur', champion: 'influenceur',
+  user: 'utilisateur', utilisateur: 'utilisateur', end_user: 'utilisateur', technical: 'utilisateur',
+}
+function authorityKeyFromRole(decisionRole: string | null | undefined): string {
+  const v = (decisionRole ?? '').trim().toLowerCase()
+  return AUTHORITY_KEY[v] ?? 'utilisateur'
+}
+
+// Niveau relationnel réel (Couverture) à partir du volume de messages réellement
+// échangé avec ce contact — jamais un chiffre inventé. Paliers : 0 = aucun
+// échange ; 0.5 = interaction directe réelle mais isolée (<3 messages, pas de
+// récurrence mensuelle) ; 0.75 = plusieurs échanges substantiels (≥3) ; 1.0 =
+// en plus récent (≤60j) et récurrent (≥2 mois distincts de contact).
+// Limite connue et assumée : la CC n'est pas captée (C02 blocked), donc le
+// palier 0.25 (présence passive/CC) n'est jamais atteint ici.
+function relationalLevelFromMessages(times: number[], now: number): number {
+  if (times.length === 0) return 0
+  const distinctMonths = new Set(times.map((t) => monthStartUTC(new Date(t).toISOString()))).size
+  if (times.length < 3) return 0.5
+  const daysSinceLast = Math.round((now - times[times.length - 1]!) / DAY_MS)
+  return distinctMonths >= 2 && daysSinceLast <= 60 ? 1 : 0.75
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -130,14 +160,18 @@ Deno.serve(async (req) => {
       // une migration) : lu/écrit via des RPC public.* SECURITY DEFINER, même
       // schéma d'accès que public.account_brain — voir migration
       // account_weather_v6_scoring_schema_rpcs.
-      const [contactsRes, kEventsRes, factsRes] = await Promise.all([
+      const [contactsRes, kEventsRes, factsRes, rolesRes] = await Promise.all([
         supabase.from('contacts').select('id, owner_user_id').eq('company_id', companyId).is('merged_into_contact_id', null),
         supabase.rpc('get_account_k_marker_events', { p_company_id: companyId }),
         supabase.from('account_facts_live').select('status, resolved_at, is_overdue, occurred_at')
           .eq('company_id', companyId).eq('fact_type', 'commitment').gte('occurred_at', engagementCutoff),
+        supabase.from('account_contact_roles').select('contact_id, decision_role').eq('company_id', companyId).eq('active', true),
       ])
       const contacts = (contactsRes.data ?? []) as Array<{ id: string; owner_user_id: string | null }>
       const contactIds = contacts.map((c) => c.id)
+      // Rôle qualifié manuellement (UI existante) s'il existe, sinon repli Utilisateur (cf. authorityKeyFromRole).
+      const roleByContact = new Map<string, string | null>()
+      for (const r of (rolesRes.data ?? []) as Array<{ contact_id: string; decision_role: string | null }>) roleByContact.set(r.contact_id, r.decision_role)
 
       let messages: Array<{ contact_id: string; sent_at: string }> = []
       let meetingTimes: string[] = []
@@ -166,8 +200,13 @@ Deno.serve(async (req) => {
       // diarizationQuality fixées à 1 (non mesurables aujourd'hui, cf. audit
       // detectors.ts) — seul le volume réel de marqueurs fait varier la fiabilité.
       const activeDyads: AccountDyadInput[] = []
+      const allPersonEvents: MarkerEvent[] = [] // pour les preuves affichées (Confiance/Satisfaction), jamais utilisé dans le calcul
+      const messagesByContact = new Map<string, number[]>()
+      for (const msg of messages) messagesByContact.set(msg.contact_id, [...(messagesByContact.get(msg.contact_id) ?? []), new Date(msg.sent_at).getTime()])
+      for (const times of messagesByContact.values()) times.sort((a, b) => a - b)
+
       for (const contactId of contactIds) {
-        const contactMessages = messages.filter((m) => m.contact_id === contactId).map((m) => new Date(m.sent_at).getTime()).sort((a, b) => a - b)
+        const contactMessages = messagesByContact.get(contactId) ?? []
         if (contactMessages.length === 0) continue
         const ageDays = Math.max(0, Math.round((now.getTime() - contactMessages[0]!) / DAY_MS))
         const episodes = contactMessages.length
@@ -176,8 +215,12 @@ Deno.serve(async (req) => {
         const contactCadenceMedian = median(contactGaps)
 
         const { data: eventRows } = await supabase.rpc('get_person_marker_events', { p_contact_id: contactId })
-        const events: MarkerEvent[] = ((eventRows ?? []) as Array<{ marker_id: string; sense: number; observed_at: string; evidence_ref: string }>)
-          .map((e) => ({ markerId: e.marker_id, sense: (e.sense >= 0 ? 1 : -1) as -1 | 1, observedAt: e.observed_at, evidenceRef: e.evidence_ref }))
+        const events: MarkerEvent[] = ((eventRows ?? []) as Array<{ marker_id: string; sense: number; observed_at: string; evidence_ref: string; evidence_text?: string | null; is_verbatim?: boolean }>)
+          .map((e) => ({
+            markerId: e.marker_id, sense: (e.sense >= 0 ? 1 : -1) as -1 | 1, observedAt: e.observed_at, evidenceRef: e.evidence_ref,
+            evidenceText: e.evidence_text ?? null, isVerbatim: e.is_verbatim ?? false,
+          }))
+        allPersonEvents.push(...events)
 
         const snapshot = buildDyadScoreSnapshot({
           markerEvents: events, role: UNQUALIFIED_ROLE, at: nowIso,
@@ -196,7 +239,8 @@ Deno.serve(async (req) => {
         if (dyadErr) throw new Error(`dyad ${contactId}: ${dyadErr.message}`)
 
         if (!snapshot.coldStart && snapshot.core) {
-          activeDyads.push({ contactId, authority: 1, satisfaction: snapshot.core.axes.satisfaction.value, confiance: snapshot.core.axes.confiance.value, reciprocite: snapshot.core.axes.reciprocite.value })
+          const authority = PARAMS_V6_PALIER.authority[authorityKeyFromRole(roleByContact.get(contactId))] ?? PARAMS_V6_PALIER.authority.utilisateur!
+          activeDyads.push({ contactId, authority, satisfaction: snapshot.core.axes.satisfaction.value, confiance: snapshot.core.axes.confiance.value, reciprocite: snapshot.core.axes.reciprocite.value })
         }
       }
 
@@ -215,29 +259,39 @@ Deno.serve(async (req) => {
       const engagementsHeld = facts.filter((f) => f.resolved_at && !f.is_overdue).length
       const engagementsSlipped = facts.filter((f) => f.is_overdue).length
 
-      // ── kEvents : marqueurs compte réels (vides aujourd'hui, honnête) —
-      // agrégés par marker_id (occurrences = nb de lignes non résolues ; K01 :
-      // ancienneté en mois depuis la 1ère occurrence non résolue, pour le
-      // plafond "ouvert > 12 mois"). evidence_ref/observed_at proviennent de
-      // scoring.marker_event (même table que get_person_marker_events, qui
-      // expose déjà evidence_ref) — on les conserve pour la traçabilité
-      // « Preuves » de la Météo, jamais utilisés dans le calcul lui-même.
-      const kRows = (kEventsRes.data ?? []) as Array<{ marker_id: string; observed_at: string; evidence_ref?: string | null }>
-      const byMarker = new Map<string, Array<{ observedAt: string; evidenceRef: string | null }>>()
-      for (const k of kRows) byMarker.set(k.marker_id, [...(byMarker.get(k.marker_id) ?? []), { observedAt: k.observed_at, evidenceRef: k.evidence_ref ?? null }])
+      // ── kEvents : marqueurs compte réels — agrégés par marker_id
+      // (occurrences = nb de lignes non résolues ; K01 : ancienneté en mois
+      // depuis la 1ère occurrence non résolue, pour le plafond "ouvert > 12
+      // mois"). evidence_ref/evidence_text/observed_at proviennent de
+      // scoring.marker_event — conservés pour la traçabilité « Preuves » de
+      // la Météo, jamais utilisés dans le calcul lui-même.
+      const kRows = (kEventsRes.data ?? []) as Array<{ marker_id: string; observed_at: string; evidence_ref?: string | null; evidence_text?: string | null; is_verbatim?: boolean }>
+      const byMarker = new Map<string, Array<{ observedAt: string; evidenceRef: string | null; evidenceText: string | null; isVerbatim: boolean }>>()
+      for (const k of kRows) byMarker.set(k.marker_id, [...(byMarker.get(k.marker_id) ?? []), { observedAt: k.observed_at, evidenceRef: k.evidence_ref ?? null, evidenceText: k.evidence_text ?? null, isVerbatim: k.is_verbatim ?? false }])
       const kEvents = [...byMarker.entries()].map(([markerId, occs]) => {
         const earliest = occs.reduce((a, b) => (a.observedAt < b.observedAt ? a : b))
         const openMonths = markerId === 'K01' ? Math.floor((now.getTime() - new Date(earliest.observedAt).getTime()) / (DAY_MS * 30.44)) : undefined
-        return { markerId, observedAt: earliest.observedAt, resolvedAt: null, occurrences: occs.length, openMonths, evidenceRef: earliest.evidenceRef ?? '' }
+        return { markerId, observedAt: earliest.observedAt, resolvedAt: null, occurrences: occs.length, openMonths, evidenceRef: earliest.evidenceRef ?? '', evidenceText: earliest.evidenceText, isVerbatim: earliest.isVerbatim }
+      })
+
+      // ── coverage.targets : rôle qualifié (account_contact_roles) sinon repli
+      // Utilisateur (0.3, décision produit actée) × niveau relationnel réel
+      // dérivé du volume de messages (relationalLevelFromMessages). Porte sur
+      // TOUS les contacts du compte, pas seulement les dyades actives — un
+      // décideur jamais contacté doit faire baisser la Couverture.
+      const coverageTargets: CoverageTarget[] = contacts.map((c) => {
+        const authKey = authorityKeyFromRole(roleByContact.get(c.id))
+        const relationalLevel = relationalLevelFromMessages(messagesByContact.get(c.id) ?? [], now.getTime())
+        return { role: authKey, authority: PARAMS_V6_PALIER.authority[authKey] ?? PARAMS_V6_PALIER.authority.utilisateur!, covered: relationalLevel > 0, isDecider: authKey === 'decideur', relationalLevel }
       })
 
       // Aucun historique réel du tout : ne pas écrire de snapshot (rien à mesurer).
-      if (allTimes.length === 0 && kEvents.length === 0 && carriers === 0) { processed++; continue }
+      if (allTimes.length === 0 && kEvents.length === 0 && carriers === 0 && coverageTargets.length === 0) { processed++; continue }
 
       const input: AccountWeatherInput = {
         relationType: toDialRelationType(settings?.relationship_status ?? null, row.account_type ?? null),
         activeDyads,
-        coverage: { targets: [] }, // account_contact_roles vide aujourd'hui — cadran couverture reste null
+        coverage: { targets: coverageTargets },
         equilibreShares,
         carriers,
         kEvents,
@@ -245,6 +299,25 @@ Deno.serve(async (req) => {
         at: nowIso,
       }
       const result = calculateAccountWeatherCore(input, PARAMS_V6_PALIER, REGISTRY_V6)
+
+      // ── Preuves affichage Confiance/Satisfaction : les marqueurs personne
+      // (C../R.. → Confiance, S.. → Satisfaction) qui ont réellement produit
+      // les valeurs de dyade agrégées dans activeDyads. Purement pour le
+      // panneau « Preuves » de l'UI — n'entre dans AUCUN calcul (le score du
+      // cadran est déjà figé par wavg(activeDyads) ci-dessus).
+      const evidenceModifiers = (axes: Array<'confiance' | 'reciprocite' | 'satisfaction'>): DialContribution[] =>
+        allPersonEvents
+          .filter((e) => { const entry = REGISTRY_V6.markers[e.markerId]; return entry && !entry.deprecatedAt && entry.axis && axes.includes(entry.axis as any) })
+          .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+          .slice(0, 15)
+          .map((e) => ({
+            markerId: e.markerId, pointsEffectifs: 0, occurrences: 1, repetitionMultiplier: 1,
+            contribution: REGISTRY_V6.markers[e.markerId]?.sign || e.sense,
+            evidenceRef: e.evidenceRef || null, observedAt: e.observedAt || null,
+            evidenceText: e.evidenceText ?? null, isVerbatim: e.isVerbatim ?? false,
+          }))
+      result.dials.d_confiance_recip.modifiers = evidenceModifiers(['confiance', 'reciprocite'])
+      result.dials.d_satisfaction.modifiers = [...result.dials.d_satisfaction.modifiers, ...evidenceModifiers(['satisfaction'])]
 
       const { data: prevScore } = await supabase.rpc('get_account_prev_weather_score', {
         p_company_id: companyId, p_snapshot_month: previousMonth,

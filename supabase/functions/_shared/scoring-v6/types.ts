@@ -77,7 +77,7 @@ export interface AccountDyadInput {
   confiance: number
   reciprocite: number
 }
-export interface CoverageTarget { role: string; authority: number; covered: boolean; isDecider: boolean }
+export interface CoverageTarget { role: string; authority: number; covered: boolean; isDecider: boolean; relationalLevel?: number }
 export interface AccountKEvent {
   markerId: string
   occurrences?: number
@@ -85,6 +85,8 @@ export interface AccountKEvent {
   openMonths?: number
   observedAt: string
   evidenceRef: string
+  evidenceText?: string | null
+  isVerbatim?: boolean
 }
 export interface AccountDynamicsInput {
   delta30OtherDials: number
@@ -112,6 +114,8 @@ export interface DialContribution {
   contribution: number
   evidenceRef: string | null
   observedAt: string | null
+  evidenceText?: string | null
+  isVerbatim?: boolean
 }
 export interface DialResult {
   dial: DialId
@@ -140,6 +144,8 @@ export interface MarkerEvent {
   sense: -1 | 1
   observedAt: string
   evidenceRef: string
+  evidenceText?: string | null
+  isVerbatim?: boolean
 }
 
 export interface MarkerContribution {

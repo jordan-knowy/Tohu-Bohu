@@ -90,7 +90,11 @@ export interface AccountDyadInput {
   confiance: number             // axe C
   reciprocite: number           // axe R
 }
-export interface CoverageTarget { role: string; authority: number; covered: boolean; isDecider: boolean }
+/** relationalLevel : niveau relationnel réel 0..1 (0=aucune interaction,
+ *  0.5=interaction directe réelle, 0.75=plusieurs échanges substantiels,
+ *  1=relation active/récente/récurrente). Optionnel pour rétro-compatibilité :
+ *  si absent, dérivé de `covered` (true→1, false→0) — aucun test existant cassé. */
+export interface CoverageTarget { role: string; authority: number; covered: boolean; isDecider: boolean; relationalLevel?: number }
 /** K appliqué (occurrence compte). Seuls les non résolus (resolvedAt null) pèsent. */
 export interface AccountKEvent {
   markerId: string
@@ -99,6 +103,8 @@ export interface AccountKEvent {
   openMonths?: number           // pour K01 (> 12 mois → plafond Dynamique)
   observedAt: string
   evidenceRef: string
+  evidenceText?: string | null  // citation/extrait — jamais utilisé dans le calcul, uniquement pour « Preuves »
+  isVerbatim?: boolean          // true si evidenceText est un extrait garanti fidèle (pas une paraphrase LLM)
 }
 export interface AccountDynamicsInput {
   delta30OtherDials: number     // Δ 30j de la moyenne des 5 autres cadrans
@@ -126,6 +132,8 @@ export interface DialContribution {
   contribution: number
   evidenceRef: string | null    // traçabilité de l'occurrence (la plus ancienne si agrégée) — pour l'UI « Preuves »
   observedAt: string | null     // idem, date — jamais utilisé dans le calcul, uniquement pour l'explicabilité
+  evidenceText?: string | null  // citation/extrait — jamais utilisé dans le calcul, uniquement pour « Preuves »
+  isVerbatim?: boolean          // true si evidenceText est un extrait garanti fidèle (pas une paraphrase LLM)
 }
 export interface DialResult {
   dial: DialId
@@ -158,6 +166,8 @@ export interface MarkerEvent {
   sense: -1 | 1                 // sens mesuré ; pour un marqueur fixe-signe, ignoré (on prend entry.sign)
   observedAt: string            // conservé pour l'explicabilité ; JAMAIS utilisé pour pondérer
   evidenceRef: string           // traçabilité ; le core ne l'utilise pas dans le calcul
+  evidenceText?: string | null  // citation/extrait — jamais utilisé dans le calcul, uniquement pour « Preuves »
+  isVerbatim?: boolean          // true si evidenceText est un extrait garanti fidèle (pas une paraphrase LLM)
 }
 
 /** Détail intermédiaire d'une contribution — permet de répondre « Pourquoi 82 ? »
