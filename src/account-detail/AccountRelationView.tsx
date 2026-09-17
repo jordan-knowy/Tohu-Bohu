@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { initials } from '../lib/auth'
-import { isReadingStale, readingSufficiency } from '../services/strategic-reading'
 import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/service'
-import { addAccountNote, dismissRecommendationForMe, generateAccountStrategicReading, setRecommendationAssignee, updateRecommendationStatus } from './service'
+import { addAccountNote, dismissRecommendationForMe, setRecommendationAssignee, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson } from './types'
 import { WeatherHero, WeatherSection, useAccountBrain } from './AccountWeatherV6'
 import { dismissAccountEngagementForMe, resolveAccountEngagement } from '../services/account-brain/accountBrain'
@@ -117,7 +116,7 @@ const HistoryIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 // ── Ce qu'il faut faire ──────────────────────────────────────────────────────
 // Inbox unique du compte (§24) : fusionne les engagements réellement pris
 // (account_facts fact_type='commitment', via account_brain) et les mouvements
-// recommandés par Tohu (account_recommendations). Un seul système visuel, un
+// recommandés par Tohu. Un seul système visuel, un
 // type par ligne (ENGAGEMENT vs MOUVEMENT), plus jamais deux blocs séparés.
 type Rec = AccountDetailData['recommendations'][number]
 type ActionEntry =
@@ -429,54 +428,16 @@ function ActionsSection({ data, userId, refresh, brain, organizationId }: {
   )
 }
 
-/** Générée à l'ouverture de l'onglet si absente/périmée (>7j), jamais en boucle :
- *  même doctrine que la narrative de score relationnel (cache serveur 7 jours).
- *  Pas de bouton de régénération manuelle dans ce design — l'effet ci-dessous
- *  couvre déjà génération initiale et rafraîchissement automatique. */
-function StrategicReadingSection({ data, refresh, brain }: { data: AccountDetailData; refresh: () => Promise<void>; brain: AccountBrainDTO | null }) {
-  const reading = data.strategicReading
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const attempted = useRef(false)
-
-  const counts = useMemo(() => readingSufficiency({
-    contacts: data.people.length, signals: data.signals.length, interactions: data.relationship.totalInteractions, messages: 0,
-  }), [data.people.length, data.signals.length, data.relationship.totalInteractions])
-
-  useEffect(() => {
-    if (attempted.current || generating) return
-    if (reading && !isReadingStale(reading.generatedAt, new Date())) return
-    attempted.current = true
-    setGenerating(true); setError(null)
-    void generateAccountStrategicReading(data, false).then(refresh)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Génération impossible.'))
-      .finally(() => setGenerating(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reading?.generatedAt])
-
-  // Faits clés / alertes (§ maquette) : seul le risque le plus prioritaire (le
-  // premier renvoyé par la synthèse) porte le ton « alerte » rouge/corail — les
-  // autres risques, forces et prochaines actions restent en ton neutre
-  // violet/lavande sombre. Jamais toutes les observations négatives en rouge.
-  // Capé à 4 pills pour rester aéré, jamais la liste complète.
-  const pills = reading ? [
-    ...reading.risques.slice(0, 1).map((text) => ({ text, alert: true })),
-    ...reading.risques.slice(1).map((text) => ({ text, alert: false })),
-    ...reading.forces.map((text) => ({ text, alert: false })),
-    ...reading.prochainesActions.map((text) => ({ text, alert: false })),
-  ].slice(0, 4) : []
-
+function StrategicReadingSection({ data, brain }: { data: AccountDetailData; brain: AccountBrainDTO | null }) {
+  const weather = brain?.weather
   return (
     <section className="r2card">
       <div className={`r2card-b ${brain?.weather?.status === 'available' ? 'has-hero' : ''}`}>
         <div className="r2card-l">
-          <p className="r2card-lbl">Où on en est · {dateLabel(reading?.generatedAt ?? data.generatedAt)}</p>
-          {reading ? <>
-            <p className="r2card-synth">{reading.synthese}</p>
-            {pills.length > 0 && <div className="r2card-pills">{pills.map((p, i) => <span key={i} className={`r2card-pill ${p.alert ? 'alert' : ''}`} title={p.text}>{p.text}</span>)}</div>}
-          </> : generating ? <p className="r2card-empty">Génération de la lecture stratégique…</p>
-          : !counts.sufficient ? <p className="r2card-empty">Données insuffisantes pour établir une synthèse fiable.</p>
-          : <p className="r2card-empty">{error ?? 'Lecture en construction.'}</p>}
+          <p className="r2card-lbl">État relationnel V6 · {dateLabel(data.relationship.computedAt ?? data.generatedAt)}</p>
+          {weather?.status === 'available'
+            ? <p className="r2card-synth">État calculé à partir des seules preuves admissibles. Les interprétations et recommandations restent suspendues jusqu’à la calibration humaine.</p>
+            : <p className="r2card-empty">Données insuffisantes pour établir un état relationnel fiable.</p>}
         </div>
         <WeatherHero brain={brain} />
       </div>
@@ -680,7 +641,7 @@ export function AccountRelationView({ data, userId, currentUserName, refresh, na
   // engagements ne viennent que de account_brain).
   return (
     <div className="acr">
-      <StrategicReadingSection data={data} refresh={refresh} brain={v6Enabled ? brain : null} />
+      <StrategicReadingSection data={data} brain={v6Enabled ? brain : null} />
       {v6Enabled && brain && <WeatherSection brain={brain} />}
       <StakeholderSection people={data.people} navigate={navigate} />
       <ActionsSection data={data} userId={userId} refresh={refresh} brain={v6Enabled ? brain : null} organizationId={organizationId} />

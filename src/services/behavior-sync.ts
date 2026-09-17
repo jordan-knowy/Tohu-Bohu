@@ -46,7 +46,7 @@ export async function triggerManualCognitiveAnalysis(organizationId: string, use
   const [{ data: connectors, error: connectorsError }, { data: contacts, error: contactsError }] = await Promise.all([
     client.from('connectors').select('provider')
       .eq('organization_id', organizationId).eq('user_id', userId).eq('status', 'connected').in('provider', ['google', 'microsoft']),
-    client.from('contacts').select('id, cognitive_profiles(trust_score)')
+    client.from('contacts').select('id, cognitive_profiles(updated_at)')
       .eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(2000),
   ])
   if (connectorsError) throw connectorsError
@@ -59,7 +59,7 @@ export async function triggerManualCognitiveAnalysis(organizationId: string, use
   const prioritized = (contacts ?? [])
     .map((row) => {
       const profiles = row.cognitive_profiles as unknown
-      const measured = Array.isArray(profiles) && profiles.some((p) => (p as { trust_score?: number | null })?.trust_score != null)
+      const measured = Array.isArray(profiles) && profiles.some((p) => (p as { updated_at?: string | null })?.updated_at != null)
       return { id: String(row.id), measured }
     })
     .sort((a, b) => Number(a.measured) - Number(b.measured))

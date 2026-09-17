@@ -7,8 +7,7 @@
 //   - INSEE Sirene (unité légale) : forme juridique, code NAF, effectif.
 //   - INPI RNE : dirigeants (nom, rôle).
 // Chaque fait est INSÉRÉ (jamais mis à jour en place) dans account_firmographic_facts
-// avec une provenance datée et un lien vers l'annuaire officiel — même convention que
-// account_strategic_readings (une ligne par génération, le front lit la plus récente).
+// avec une provenance datée et un lien vers l'annuaire officiel.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {

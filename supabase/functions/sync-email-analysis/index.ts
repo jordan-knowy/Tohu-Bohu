@@ -1555,7 +1555,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
  *  pertinence du backfill complet — le volume attendu par tick est faible,
  *  chaque nouveau message reçoit directement le traitement complet. Ne fait
  *  pas de ré-analyse comportementale (coûteuse en LLM) à chaque tick : ça
- *  reste porté par le cycle habituel (score-batch / prochain backfill). */
+ *  reste porté par le prochain backfill comportemental. */
 async function runIncrementalSync(params: SyncParams): Promise<Record<string, unknown>> {
   const { supabase, organizationId, provider, actingUserId, actingUserEmail, connector } = params
   try {

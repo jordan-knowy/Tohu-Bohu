@@ -85,16 +85,15 @@ describe('buildAccountRows — agrégation de scores persistés', () => {
   })
 })
 
-describe('latestContactScore — profil moteur puis historique', () => {
-  it('préfère cognitive_profiles, retombe sur contact_score_history', () => {
+describe('latestContactScore — historique V6 canonique', () => {
+  it('lit le dernier snapshot disponible, sans repli', () => {
     const history = new Map([['c1', [{ score: 55, snapshot_date: '2026-07-01' }]]])
-    expect(latestContactScore({ id: 'c1', cognitive_profiles: [{ engagement_score: 70, updated_at: '2026-07-02' }] }, history)).toBe(70)
     expect(latestContactScore({ id: 'c1' }, history)).toBe(55)
     expect(latestContactScore({ id: 'c2' }, history)).toBeNull()
   })
 })
 
-describe('buildAccountScoreSeries — même source (account_relationship_score_snapshots) que la carte et le tableau', () => {
+describe('buildAccountScoreSeries — même source V6 canonique que la carte et le tableau', () => {
   const names = new Map([['a', 'Ac Toulouse'], ['b', 'Limayrac']])
   const active = new Set(['a', 'b'])
 
@@ -170,7 +169,7 @@ describe('cohérence carte ↔ graphique ↔ variations (même source, même pé
   it('le dernier point du graphique = la moyenne des mêmes derniers scores comptes que la carte', () => {
     const names = new Map([['a', 'Ac Toulouse'], ['b', 'Gre Enr'], ['c', 'Limayrac']])
     const active = new Set(['a', 'b', 'c'])
-    // Mêmes lignes account_relationship_score_snapshots que celles utilisées par
+    // Mêmes lignes V6 canoniques que celles utilisées par
     // getAccountsOverview pour construire `accounts[].score` (globalScore).
     const rows = [
       { company_id: 'a', score: 59, snapshot_month: '2026-07-01' },

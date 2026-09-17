@@ -1,5 +1,4 @@
 import { getSupabase } from '../lib/supabase'
-import { mapStrategicReading, type StrategicReading } from '../services/strategic-reading'
 import type {
   AccountDetailData,
   AccountFirmographicFact,
@@ -33,10 +32,6 @@ function provenance(row: Row, defaults: Partial<Provenance> = {}): Provenance {
   }
 }
 
-function latestNested(value: unknown, dateKey: string): Row {
-  return rows(value).sort((a, b) => String(b[dateKey] ?? '').localeCompare(String(a[dateKey] ?? '')))[0] ?? {}
-}
-
 function optional(result: QueryResult, label: string, degraded: string[]): unknown {
   if (!result.error) return result.data
   if (['42P01', '42703', 'PGRST200', 'PGRST204'].includes(result.error.code ?? '') || /does not exist|schema cache/i.test(result.error.message ?? '')) {
@@ -66,10 +61,9 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     accountResult, peopleResult, signalsResult, meetingsResult, settingsResult,
     preferenceResult, watchResult, scoreResult, rolesResult, recommendationsResult,
     recommendationUserStateResult, memoryResult, factsResult, connectorsResult, feedbackResult, lockResult,
-    strategicReadingResult,
   ] = await Promise.all([
     client.from('companies').select('*').eq('organization_id', workspaceId).eq('id', accountId).eq('is_tracked', true).maybeSingle(),
-    client.from('contacts').select('*,relationship_snapshots(engagement_score,phase,last_contact_at,snapshot_date),cognitive_profiles(global_confidence,updated_at)').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
+    client.from('contacts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(500),
     client.from('company_signals').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(30),
     client.from('meetings').select('id,platform,starts_at').eq('organization_id', workspaceId).eq('company_id', accountId).eq('owner_user_id', visionOwnerId).order('starts_at', { ascending: false }).limit(500),
     client.from('account_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
@@ -78,13 +72,12 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     client.rpc('account_brain', { p_organization_id: workspaceId, p_company_id: accountId, p_user_id: visionOwnerId }),
     client.from('account_contact_roles').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('active', true),
     Promise.resolve({ data: [], error: null }),
-    client.from('account_recommendation_user_state').select('recommendation_id').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', visionOwnerId).not('dismissed_at', 'is', null),
+    Promise.resolve({ data: [], error: null }),
     client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(30),
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
     client.from('connectors').select('provider,status,last_synced_at,metadata').eq('organization_id', workspaceId).eq('user_id', visionOwnerId),
     client.from('signal_feedback').select('signal_id,verdict').eq('organization_id', workspaceId),
     client.from('resource_lock').select('locked_by,created_at').eq('organization_id', workspaceId).eq('subject_type', 'company').eq('subject_id', accountId).eq('lock_state', 'active').maybeSingle(),
-    client.from('account_strategic_readings').select('content, confidence, source_counts, model, generated_at').eq('organization_id', workspaceId).eq('company_id', accountId).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (accountResult.error) throw new Error(accountResult.error.message)
@@ -124,7 +117,6 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   const feedbackRows = rows(optional(feedbackResult, 'Validation des signaux', degradedReasons))
   const legacyLockRow = object(optional(lockResult, 'Verrou', degradedReasons))
   const lockRow = String(legacyLockRow.locked_by ?? '') === visionOwnerId ? legacyLockRow : {}
-  const strategicReading = mapStrategicReading(optional(strategicReadingResult, 'Lecture stratégique', degradedReasons) as Row | null)
   const roleByContact = new Map(roleRows.map((row) => [String(row.contact_id), row]))
   const dyadByContact = new Map(rows(brainState.dyads).map((row) => [String(row.contactId), row]))
   const feedbackBySignal = new Map(feedbackRows.map((row) => [String(row.signal_id), text(row.verdict)]))
@@ -148,9 +140,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   })
 
   const people: AccountPerson[] = rows(peopleResult.data).map((row) => {
-    const snapshot = latestNested(row.relationship_snapshots, 'snapshot_date')
-    const cognitive = latestNested(row.cognitive_profiles, 'updated_at')
     const role = roleByContact.get(String(row.id)) ?? {}
+    const dyad = object(dyadByContact.get(String(row.id)))
     return {
       id: String(row.id),
       name: text(row.full_name) ?? 'Contact',
@@ -160,10 +151,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
       organizationalRole: text(role.organizational_role),
       decisionRole: text(role.decision_role),
       relationshipRole: text(role.relationship_role),
-      score: number(object(dyadByContact.get(String(row.id))).score),
-      phase: text(snapshot.phase),
-      confidence: number(cognitive.global_confidence) ?? number(role.confidence),
-      lastInteractionAt: text(snapshot.last_contact_at),
+      score: number(dyad.score),
+      phase: null,
+      confidence: number(dyad.reliability) !== null ? number(dyad.reliability)! * 100 : number(role.confidence),
+      lastInteractionAt: rows(dyad.evidence).map((event) => text(event.eventTime)).filter((value): value is string => value !== null).sort().at(-1) ?? null,
       exchangeShare: number(role.exchange_share),
       // `account_contact_roles.internal_owner_user_id` reste vide tant que la
       // qualification manuelle des rôles n'a pas été faite : le vrai owner
@@ -314,8 +305,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
       contactCoverage: number(latestScore.contact_coverage),
       decisionMakerCoverage: number(latestScore.decision_maker_coverage),
       concentrationRisk: number(latestScore.concentration_risk),
-      // Composantes réelles du score (0,55 engagement + 0,25 couverture + 0,20 récence,
-      // voir score-batch) — null pour les snapshots antérieurs à leur ajout, jamais inventées.
+      // Composantes absentes du contrat V6 courant : elles restent null.
       engagementComponent: number(latestScore.engagement_component),
       recencyComponent: number(latestScore.recency_component),
       history: scoreRows.flatMap((row) => number(row.score) !== null && text(row.computed_at) && text(row.snapshot_month)
@@ -339,7 +329,6 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     signalsHistory,
     memoryEntries,
     firmographics,
-    strategicReading,
   }
 }
 
@@ -360,21 +349,6 @@ export async function triggerAccountEnrichment(companyId: string): Promise<Accou
   if (error) throw await invokeError(error, 'Déclenchement de l’enrichissement impossible.')
   if (data?.error) throw new Error(String(data.error))
   return data as AccountEnrichmentResult
-}
-
-/** Génère (ou renvoie la version en cache, <7 jours) la lecture stratégique du
- *  compte — voir supabase/functions/account-strategic-reading. `force` ignore
- *  le cache serveur (bouton « Régénérer »). Lève avec un message utilisateur
- *  explicite quand la matière est insuffisante (422 côté fonction). */
-export async function generateAccountStrategicReading(data: AccountDetailData, force = false): Promise<StrategicReading> {
-  const { data: response, error } = await getSupabase().functions.invoke('account-strategic-reading', {
-    body: { organizationId: data.account.workspaceId, companyId: data.account.id, force },
-  })
-  if (error) throw await invokeError(error, 'Génération de la lecture stratégique impossible.')
-  if (response?.error) throw new Error(String(response.error))
-  const reading = mapStrategicReading(response as Row)
-  if (!reading) throw new Error('Réponse de génération invalide.')
-  return reading
 }
 
 /** Identité légale du compte (SIREN saisi/confirmé par un humain) — voir
@@ -429,10 +403,7 @@ export async function setAccountArchived(data: AccountDetailData, userId: string
   // Le pipeline V6 planifié reconstruira les snapshots canoniques.
 }
 
-/** Confirme/change la catégorie du compte (Prospect/Client/Partenaire/...) —
- *  toujours marquée 'manual' : le moteur relationnel (score-batch) ne retouche
- *  plus jamais ce champ une fois qu'un humain l'a choisi, même si l'IA suggère
- *  autre chose lors d'une prochaine analyse. */
+/** Confirme/change manuellement la catégorie du compte. */
 export async function setAccountRelationType(data: AccountDetailData, userId: string, relationType: string): Promise<void> {
   const { error } = await getSupabase().from('account_settings').upsert({
     organization_id: data.account.workspaceId,
@@ -600,34 +571,20 @@ export async function revokeAccountAccess(data: AccountDetailData, granteeUserId
 }
 
 export async function updateRecommendationStatus(data: AccountDetailData, recommendationId: string, userId: string, status: 'completed' | 'postponed'): Promise<void> {
-  const now = new Date().toISOString()
-  const values: Row = { status, updated_by: userId, updated_at: now }
-  if (status === 'completed') values.completed_at = now
-  const { error } = await getSupabase().from('account_recommendations').update(values).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
-  if (error) throw error
+  void data; void recommendationId; void userId; void status
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
-/** × « Pas pour moi » : masque la recommandation UNIQUEMENT pour l'utilisateur courant
- *  (account_recommendation_user_state) — elle reste visible pour le reste de l'équipe.
- *  Ne touche jamais account_recommendations.status (rejet global, voir markRecommendationNotRelevant). */
+/** Action suspendue tant que la calibration humaine n'est pas gelée. */
 export async function dismissRecommendationForMe(data: AccountDetailData, recommendationId: string, userId: string): Promise<void> {
-  const { error } = await getSupabase().from('account_recommendation_user_state').upsert({
-    recommendation_id: recommendationId, user_id: userId,
-    organization_id: data.account.workspaceId, company_id: data.account.id,
-    dismissed_at: new Date().toISOString(), dismiss_reason: 'not_relevant',
-  }, { onConflict: 'recommendation_id,user_id' })
-  if (error) throw error
+  void data; void recommendationId; void userId
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
-/** « Non pertinent pour ce compte » : rejet d'ÉQUIPE, explicite. Seule action qui doit
- *  faire passer une reco à un état terminal global (status='dismissed') — cf. le
- *  correctif dédup score-batch (trigger account_rec_dedup_guard_trg), qui n'autorise le
- *  retour d'une reco terminale que si un fait significatif postérieur existe. */
+/** Action suspendue tant que la calibration humaine n'est pas gelée. */
 export async function markRecommendationNotRelevant(data: AccountDetailData, recommendationId: string, userId: string): Promise<void> {
-  const { error } = await getSupabase().from('account_recommendations').update({
-    status: 'dismissed', dismissed_at: new Date().toISOString(), feedback_reason: 'not_relevant_for_account', updated_by: userId,
-  }).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
-  if (error) throw error
+  void data; void recommendationId; void userId
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
 /** Réaffecte « qui porte » une action de Stratégie de compte : soit un membre
@@ -636,13 +593,8 @@ export async function markRecommendationNotRelevant(data: AccountDetailData, rec
  *  toujours remis à null. `null, null` remet l'action sur l'owner par défaut
  *  de la fiche (aucune réaffectation explicite). */
 export async function setRecommendationAssignee(data: AccountDetailData, recommendationId: string, userId: string, assignee: { userId: string | null; contactId: string | null }): Promise<void> {
-  const { error } = await getSupabase().from('account_recommendations').update({
-    assigned_to: assignee.userId,
-    assigned_contact_id: assignee.contactId,
-    updated_by: userId,
-    updated_at: new Date().toISOString(),
-  }).eq('organization_id', data.account.workspaceId).eq('company_id', data.account.id).eq('id', recommendationId)
-  if (error) throw error
+  void data; void recommendationId; void userId; void assignee
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
 export async function addAccountNote(data: AccountDetailData, userId: string, content: string, entryType = 'note'): Promise<void> {

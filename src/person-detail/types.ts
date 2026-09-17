@@ -347,7 +347,7 @@ export interface PersonDetailData {
     /** Preuves textuelles produites par l'analyse, quand le moteur en a identifié. */
     dimensionEvidence: { confiance: string[]; satisfaction: string[] }
     markerEvidence: Array<{ markerId: string; observedAt: string; text: string; sourceRef: string | null; source: string }>
-    /** Phrase déterministe générée depuis les 5 axes (voir score-batch), jamais un simple "score/100". */
+    /** Phrase déterministe générée depuis les axes, jamais un simple "score/100". */
     axisInterpretation: string | null
   }
 

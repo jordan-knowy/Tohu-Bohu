@@ -137,41 +137,17 @@ function mapJob(row: DbRow): HomeSyncJob {
   }
 }
 
-type SnapshotRow = { engagement_score: number | null; phase: string | null; snapshot_date: string | null; last_contact_at: string | null }
+type SnapshotRow = { score: number | null; phase: string | null; snapshot_date: string | null; last_contact_at: string | null }
 
 function contactSnapshots(row: DbRow): SnapshotRow[] {
   const state = record(row.v6_state)
-  if (Object.keys(state).length) {
-    const lastContactAt = rows(state.evidence).map((event) => str(event.eventTime)).filter((value): value is string => value !== null).sort().at(-1) ?? null
-    return [{ engagement_score: num(state.score), phase: null, snapshot_date: str(state.observedAt)?.slice(0, 10) ?? null, last_contact_at: lastContactAt }]
-  }
-  const snapshots = rows(row.relationship_snapshots)
-    .map((snapshot) => ({
-      engagement_score: num(snapshot.engagement_score),
-      phase: str(snapshot.phase),
-      snapshot_date: str(snapshot.snapshot_date),
-      last_contact_at: str(snapshot.last_contact_at),
-    }))
-    .sort((a, b) => String(b.snapshot_date ?? '').localeCompare(String(a.snapshot_date ?? '')))
-  if (snapshots.length) return snapshots
-  // Repli sur le score persisté du moteur (cognitive_profiles) quand aucun
-  // snapshot relationnel n'existe — toujours une valeur calculée backend.
-  return rows(row.cognitive_profiles)
-    .map((profile) => ({
-      engagement_score: num(profile.engagement_score),
-      phase: str(profile.score_phase),
-      snapshot_date: str(profile.updated_at)?.slice(0, 10) ?? null,
-      last_contact_at: null,
-    }))
-    .filter((profile) => profile.engagement_score !== null)
-    .sort((a, b) => String(b.snapshot_date ?? '').localeCompare(String(a.snapshot_date ?? '')))
+  if (!Object.keys(state).length) return []
+  const lastContactAt = rows(state.evidence).map((event) => str(event.eventTime)).filter((value): value is string => value !== null).sort().at(-1) ?? null
+  return [{ score: num(state.score), phase: null, snapshot_date: str(state.observedAt)?.slice(0, 10) ?? null, last_contact_at: lastContactAt }]
 }
 
 /**
- * Construit les comptes « scorables » : score de compte persisté par
- * score-batch (account_relationship_score_snapshots — même source que la
- * fiche compte) ou, à défaut, moyenne des derniers engagement_score
- * persistés de ses contacts — jamais de formule nouvelle.
+ * Construit les comptes « scorables » depuis les seuls états V6 canoniques.
  */
 export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], trackingColumnAvailable: boolean, now: Date, accountScores: Map<string, number> = new Map()): ScoredAccount[] {
   const byCompany = new Map<string, DbRow[]>()
@@ -191,15 +167,15 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
       const snapshots = contactSnapshots(contact)
       const latest = snapshots[0]
       if (!latest) continue
-      if (latest.engagement_score !== null) latestScores.push(latest.engagement_score)
+      if (latest.score !== null) latestScores.push(latest.score)
       if (latest.phase) phase ??= latest.phase
       if (latest.last_contact_at && (!lastContactAt || latest.last_contact_at > lastContactAt)) lastContactAt = latest.last_contact_at
       const previous = snapshots.find((snapshot) => {
         const age = daysSince(snapshot.snapshot_date, now)
         return age !== null && age >= 25
       })
-      if (latest.engagement_score !== null && previous?.engagement_score != null) {
-        previousScores.push(latest.engagement_score - previous.engagement_score)
+      if (latest.score !== null && previous?.score != null) {
+        previousScores.push(latest.score - previous.score)
       }
     }
     const ownScore = accountScores.get(String(company.id)) ?? null
@@ -208,7 +184,7 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
       name: String(company.name ?? 'Compte'),
       industry: str(company.industry),
       score: ownScore,
-      confidence: num(context.confidence_score ?? company.account_type_confidence),
+      confidence: null,
       lastInteractionAt: lastContactAt,
       contactCount: linked.length,
       phase,
@@ -221,7 +197,7 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
 /**
  * Relations actives (bloc 6) : nombre de PERSONNES (pas de comptes) ayant eu
  * au moins une interaction humaine réelle — email ou réunion, cf.
- * `last_contact_at` calculé par score-batch à partir de
+ * la date du dernier événement admissible calculée à partir de
  * communication_messages/meetings, jamais une formule parallèle, jamais un
  * repli sur last_monitored_at — au cours des 30 derniers jours. Interne ou
  * externe indifféremment : un collègue avec une fiche Personne suivie compte
@@ -252,13 +228,13 @@ export function buildTeamMembers(memberships: DbRow[], profiles: DbRow[], contac
     for (const contact of owned) {
       const snapshots = contactSnapshots(contact)
       const latest = snapshots[0]
-      if (latest?.engagement_score !== null && latest?.engagement_score !== undefined) scores.push(latest.engagement_score)
+      if (latest?.score !== null && latest?.score !== undefined) scores.push(latest.score)
       const previous = snapshots.find((snapshot) => {
         const age = daysSince(snapshot.snapshot_date, now)
         return age !== null && age >= 25
       })
-      if (latest?.engagement_score !== null && latest?.engagement_score !== undefined && previous?.engagement_score !== null && previous?.engagement_score !== undefined) {
-        deltas.push(latest.engagement_score - previous.engagement_score)
+      if (latest?.score !== null && latest?.score !== undefined && previous?.score !== null && previous?.score !== undefined) {
+        deltas.push(latest.score - previous.score)
       }
     }
     const accountIds = new Set(owned.map((contact) => str(contact.company_id)).filter((value): value is string => value !== null))
@@ -443,7 +419,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeQuery<DbRow[]>(client.from('insight_feedback').select('insight_id,feedback_type').eq('organization_id', organizationId).eq('user_id', userId).limit(200), 'table insight_feedback', degradedReasons),
     // Un compte/une personne archivé(e) doit sortir du score global à l'instant
     // même (pas seulement au prochain passage du moteur backend) : lu ici en
-    // temps réel, indépendamment de account_relationship_score_snapshots.
+    // temps réel, indépendamment du prochain calcul canonique.
     safeQuery<DbRow[]>(client.from('account_settings').select('company_id').eq('organization_id', organizationId).not('archived_at', 'is', null), 'table account_settings', degradedReasons),
     safeQuery<DbRow[]>(client.from('person_settings').select('contact_id').eq('organization_id', organizationId).not('archived_at', 'is', null), 'table person_settings', degradedReasons),
   ])

@@ -48,7 +48,7 @@ function identitySummary(data: AccountDetailData): string {
 const ACCOUNT_RELATION_TYPES = Object.keys(RELATION_COLORS)
 
 /** Chip « Relation » — éditable, marquée « Suggéré par Tohu » tant qu'aucun
- *  humain n'a confirmé la catégorisation automatique (score-batch aggregateAccountRelation). */
+ *  humain n'a confirmé la catégorisation. */
 export function RelationChip({ data, userId, refresh }: { data: AccountDetailData; userId: string; refresh: () => Promise<void> }) {
   const account = data.account
   const [open, setOpen] = useState(false)

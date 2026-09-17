@@ -3,8 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeWithClients } from '../_shared/scoring-v6/authorization.ts'
 import { allRows,checked,listDyads,scoreLedger } from '../_shared/scoring-v6/pipeline.ts'
 import { PARAMS_V6_PALIER,REGISTRY_V6 } from '../_shared/scoring-v6/registry-v6.ts'
-import { buildCanonicalAccountState, type AccountHistoryPoint } from '../_shared/scoring-v6/account-state.ts'
-import type { RelationalState } from '../_shared/scoring-v6/foundation.ts'
+import { ACCOUNT_SCORING_VERSION, buildCanonicalAccountState, type AccountHistoryPoint } from '../_shared/scoring-v6/account-state.ts'
+import { SCORING_VERSION, type RelationalState } from '../_shared/scoring-v6/foundation.ts'
 import type { CoverageTarget } from '../_shared/scoring-v6/types.ts'
 const json=(b:unknown,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'Content-Type':'application/json'}})
 const roleKey=(...values:Array<string|null|undefined>)=>{
@@ -78,15 +78,24 @@ Deno.serve(async(req)=>{
   if(req.method!=='POST')return json({error:'Method not allowed'},405)
   const key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),url=Deno.env.get('SUPABASE_URL') ?? ''
   const db=createClient(url,key ?? ''),user=createClient(url,Deno.env.get('SUPABASE_ANON_KEY') ?? '',{global:{headers:{Authorization:req.headers.get('Authorization') ?? ''}}})
+  const traceId=crypto.randomUUID(),startedAt=Date.now()
+  let runId:string|null=null
   try {
     const principal=await authorizeWithClients(req,{},db,user,key)
     if(principal.kind!=='service')return json({error:'Forbidden'},403)
+    runId=await checked<string>(db.rpc('v6_pipeline_run_start',{p_worker:'score-batch-account-v6',p_trace_id:traceId,p_versions:{dyad_scoring:SCORING_VERSION,account_scoring:ACCOUNT_SCORING_VERSION,params:PARAMS_V6_PALIER.version,registry:REGISTRY_V6.version}}))
     const body=await req.json().catch(()=>({})),at=new Date().toISOString()
     const cursor=await checked<any>(db.rpc('v6_foundation_checkpoint',{p_worker:'score'}))
     const rows=await listDyads(db,body.after ?? cursor.after ?? null)
     for(const row of rows)await scoreLedger(db,row,at,PARAMS_V6_PALIER,REGISTRY_V6)
     const accounts=await scoreAccounts(db,rows,at)
     await checked(db.rpc('v6_foundation_checkpoint',{p_worker:'score',p_cursor:{after:rows.length===25?rows.at(-1).id:null}}))
-    return json({processed:rows.length,next_after:rows.length===25?rows.at(-1).id:null,mode:'v6_canonical',accounts})
-  }catch(e){const error=e instanceof Error?e.message:String(e);return json({error},error==='UNAUTHORIZED'?401:error==='FORBIDDEN'?403:500)}
+    const status=accounts.errors.length?'partial':'succeeded'
+    await checked(db.rpc('v6_pipeline_run_finish',{p_run_id:runId,p_status:status,p_duration_ms:Date.now()-startedAt,p_counts:{dyads_processed:rows.length,accounts_processed:accounts.processed,accounts_scored:accounts.scored,account_errors:accounts.errors.length}}))
+    return json({trace_id:traceId,processed:rows.length,next_after:rows.length===25?rows.at(-1).id:null,mode:'v6_canonical',accounts})
+  }catch(e){
+    const error=e instanceof Error?e.message:String(e)
+    if(runId)await db.rpc('v6_pipeline_run_finish',{p_run_id:runId,p_status:'failed',p_duration_ms:Date.now()-startedAt,p_counts:{},p_error_code:'V6_PIPELINE_FAILED',p_error_message:error}).catch(()=>undefined)
+    return json({trace_id:traceId,error},error==='UNAUTHORIZED'?401:error==='FORBIDDEN'?403:500)
+  }
 })

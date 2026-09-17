@@ -29,8 +29,8 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
   if (!activeVision) throw new Error('PERSON_FORBIDDEN')
 
   const [
-    contactResult, settingsResult, userSettingsResult, summaryResult, snapshotsResult,
-    legacyScoresResult, legacyCareerResult, relationshipResult, cognitiveResult, behavioralResult,
+    contactResult, settingsResult, userSettingsResult, summaryResult,
+    importedCareerResult, cognitiveResult, behavioralResult,
     recommendationsResult, detailsResult, careerResult, memoryResult,
     participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
     nameSuggestionResult, mergeSuggestionsResult, participantCountResult,
@@ -41,14 +41,10 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
     client.from('person_user_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('user_id', userId).maybeSingle(),
     client.from('person_summaries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
-    client.from('person_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('computed_at', { ascending: false }).limit(48),
-    // Snapshots quotidiens produits par le cron backend : 36 mois ≈ 1100 lignes.
-    client.from('contact_score_history').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('user_id', visionOwnerId).order('snapshot_date', { ascending: false }).limit(1200),
     client.from('contact_career_path').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('start_date', { ascending: false }).limit(40),
-    client.from('relationship_snapshots').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('snapshot_date', { ascending: false }).limit(48),
     client.from('cognitive_profiles').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('updated_at', { ascending: false }).limit(1),
     client.from('behavioral_signals').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('observed_at', { ascending: false }).limit(60),
-    client.from('person_recommendations').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('priority', { ascending: false }).limit(30),
+    Promise.resolve({ data: [], error: null }),
     client.from('person_contact_details').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('created_at', { ascending: true }),
     client.from('person_career_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('started_at', { ascending: false }).limit(40),
     client.from('person_memory_entries').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(40),
@@ -81,10 +77,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
   }
   const userSettings = object(optional(userSettingsResult, 'Favori et veille Personne', degradedReasons))
   const summaryRow = object(optional(summaryResult, 'Synthèse Personne', degradedReasons))
-  const scoreSnapshots = rows(optional(snapshotsResult, 'Snapshots du score Personne', degradedReasons))
-  const legacyScores = rows(optional(legacyScoresResult, 'Historique de score hérité', degradedReasons))
-  const legacyCareer = rows(optional(legacyCareerResult, 'Parcours importé', degradedReasons))
-  const relationshipSnapshots = rows(optional(relationshipResult, 'Snapshots relationnels', degradedReasons))
+  const importedCareer = rows(optional(importedCareerResult, 'Parcours importé', degradedReasons))
   const cognitiveProfiles = rows(optional(cognitiveResult, 'Profil cognitif', degradedReasons))
   const recommendations = rows(optional(recommendationsResult, 'Recommandations Personne', degradedReasons))
   const contactDetails = rows(optional(detailsResult, 'Coordonnées Personne', degradedReasons))
@@ -117,7 +110,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     : { data: [] }
   const profileNames = new Map(rows(profileData).map((row) => [String(row.id), text(row.full_name) ?? 'Membre Tohu']))
   const personBrain = object(optional(dyadWeatherResult, 'État relationnel V6', degradedReasons))
-  const dyadWeatherSnapshot = object(personBrain.state)
+  const dyadWeatherSnapshot: Row = { ...object(personBrain.state), history: rows(personBrain.history) }
 
   return buildPersonDetail({
     workspaceId,
@@ -128,10 +121,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     settings,
     userSettings,
     summaryRow,
-    scoreSnapshots,
-    legacyScores,
-    legacyCareer,
-    relationshipSnapshots,
+    importedCareer,
     dyadWeatherSnapshot,
     markerEvents: rows(dyadWeatherSnapshot.contributions),
     cognitiveProfile: cognitiveProfiles[0] ?? {},
@@ -543,26 +533,13 @@ export async function setPersonArchived(data: PersonDetailData, userId: string, 
 }
 
 export async function updatePersonRecommendationStatus(data: PersonDetailData, recommendationId: string, userId: string, status: PersonRecommendationStatus, dueAt?: string): Promise<void> {
-  const now = new Date().toISOString()
-  const values: Row = { status, updated_by: userId, updated_at: now }
-  if (status === 'completed') { values.completed_at = now; values.completed_by = userId }
-  if (status === 'dismissed') { values.dismissed_at = now; values.dismissed_by = userId }
-  if (status === 'postponed' && dueAt) values.due_at = dueAt
-  const { error } = await getSupabase().from('person_recommendations').update(values)
-    .eq('organization_id', data.person.workspaceId).eq('contact_id', data.person.id).eq('id', recommendationId)
-  if (error) throw error
+  void data; void recommendationId; void userId; void status; void dueAt
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
 export async function savePersonRecommendationFeedback(data: PersonDetailData, recommendationId: string, userId: string, feedbackType: 'useful' | 'incorrect', reason?: string): Promise<void> {
-  const { error } = await getSupabase().from('person_recommendations').update({
-    feedback_type: feedbackType,
-    feedback_reason: reason ?? null,
-    feedback_by: userId,
-    feedback_at: new Date().toISOString(),
-    updated_by: userId,
-    updated_at: new Date().toISOString(),
-  }).eq('organization_id', data.person.workspaceId).eq('contact_id', data.person.id).eq('id', recommendationId)
-  if (error) throw error
+  void data; void recommendationId; void userId; void feedbackType; void reason
+  throw new Error('Recommandations suspendues jusqu’à la calibration humaine.')
 }
 
 export function validateContactDetail(type: PersonContactDetail['type'], value: string): string | null {

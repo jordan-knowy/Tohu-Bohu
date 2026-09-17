@@ -246,26 +246,8 @@ export function monthKey(value: string): string {
   return value.slice(0, 7)
 }
 
-/** Score historique : n'utilise que des lignes réellement persistées.
- *  Deux shapes possibles selon la source héritée : contact_score_history
- *  (`score`) ou relationship_snapshots (`engagement_score`). */
-export function legacyScore(row: Row): number | null {
-  return num(row.score) ?? num(row.engagement_score)
-}
-
-export function legacyDate(row: Row): string | null {
-  return text(row.snapshot_date) ?? text(row.computed_at) ?? text(row.captured_at) ?? text(row.created_at)
-}
-
-/** Agrège les snapshots par mois (dernier snapshot du mois), triés croissant.
- *  Fusionne les deux sources plutôt que de choisir l'une ou l'autre en bloc :
- *  la table officielle (canonical, `person_relationship_score_snapshots`) est
- *  prioritaire pour les mois qu'elle couvre, l'historique hérité (legacy,
- *  `contact_score_history`) comble les mois plus anciens qu'elle ne couvre pas
- *  encore. Sans ça, dès que canonical avait ne serait-ce qu'une ligne (même
- *  récente), tout l'historique legacy — parfois plusieurs mois réels — était
- *  ignoré et la courbe s'effondrait à un seul mois. */
-export function buildScoreHistory(canonical: Row[], legacy: Row[]): PersonScorePoint[] {
+/** Agrège les snapshots V6 canoniques par mois, sans reconstituer les trous. */
+export function buildScoreHistory(snapshots: Row[]): PersonScorePoint[] {
   const byMonth = new Map<string, PersonScorePoint>()
 
   const toPoint = (row: Row, score: number): PersonScorePoint => ({
@@ -276,17 +258,8 @@ export function buildScoreHistory(canonical: Row[], legacy: Row[]): PersonScoreP
     confidence: num(row.confidence),
   })
 
-  const legacySorted = [...legacy]
-    .map((row) => ({ row, date: legacyDate(row), score: legacyScore(row) }))
-    .filter((item): item is { row: Row; date: string; score: number } => item.date !== null && item.score !== null)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  for (const item of legacySorted) {
-    const key = monthKey(item.date)
-    byMonth.set(key, { ...toPoint(item.row, item.score), monthKey: key })
-  }
-
-  const canonicalSorted = [...canonical]
-    .map((row) => ({ row, date: text(row.computed_at), score: num(row.score) }))
+  const canonicalSorted = [...snapshots]
+    .map((row) => ({ row, date: text(row.at) ?? text(row.observedAt) ?? text(row.computedAt), score: num(row.score) }))
     .filter((item): item is { row: Row; date: string; score: number } => item.date !== null && item.score !== null)
     .sort((a, b) => a.date.localeCompare(b.date))
   for (const item of canonicalSorted) {
@@ -485,8 +458,8 @@ export function buildEnrichmentProfile(contact: Row): PersonEnrichmentProfile | 
   }
 }
 
-/** contact_career_path (héritée) → shape person_career_entries, statut « probable ». */
-export function legacyCareerRows(rows_: Row[]): Row[] {
+/** Source de parcours importée → shape person_career_entries, statut « probable ». */
+export function importedCareerRows(rows_: Row[]): Row[] {
   return rows_.map((row) => ({
     id: String(row.id),
     entry_type: 'experience',
@@ -650,15 +623,8 @@ export type PersonDetailRaw = {
   settings: Row
   userSettings: Row
   summaryRow: Row
-  scoreSnapshots: Row[]
-  legacyScores: Row[]
-  legacyCareer: Row[]
-  relationshipSnapshots: Row[]
-  // Dernier snapshot de dyade V6 (scoring.score_snapshot, entity_type='dyad',
-  // via get_dyad_weather_snapshot) — {} si aucun (cold-start ou pas encore
-  // traité par le batch). Sert de source PRIORITAIRE au score principal quand
-  // il n'est pas cold-start et que le verdict est autorisé (mêmes règles P5/P7
-  // que la Météo du compte) ; sinon repli sur la chaîne legacy existante.
+  importedCareer: Row[]
+  // Dernier état dyadique canonique renvoyé par person_brain.
   dyadWeatherSnapshot: Row
   markerEvents: Row[]
   cognitiveProfile: Row
@@ -688,18 +654,11 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const feedback = new Map(raw.feedback.map((row) => [String(row.signal_id), text(row.verdict)]))
   const signals = buildSignals(raw.behavioralSignals, feedback)
   const memoryEntries = buildMemoryEntries(raw.memoryEntries, raw.profileNames)
-  const careerEntries = buildCareerEntries(raw.careerEntries.length ? raw.careerEntries : legacyCareerRows(raw.legacyCareer))
-
-  const canonical = [...raw.scoreSnapshots].sort((a, b) => String(a.computed_at ?? '').localeCompare(String(b.computed_at ?? '')))
-  const latestSnapshot = canonical.at(-1) ?? {}
-  const relationshipSnapshot = latestOf(raw.relationshipSnapshots, 'snapshot_date')
-  // Historique hérité réel : contact_score_history porte score + phase + dimensions par contact.
-  const latestHistory = latestOf(raw.legacyScores, 'snapshot_date')
-  const legacyHistory = raw.legacyScores.length ? raw.legacyScores : raw.relationshipSnapshots
-  const scoreHistory = V6_PRODUCT_AUTHORITY ? [] : buildScoreHistory(canonical, legacyHistory)
+  const careerEntries = buildCareerEntries(raw.careerEntries.length ? raw.careerEntries : importedCareerRows(raw.importedCareer))
 
   // Canonical V6 state is the sole authority. Missing evidence remains null.
   const dyad = raw.dyadWeatherSnapshot
+  const scoreHistory = buildScoreHistory(rows(dyad.history))
   const dyadAxes = object(dyad.axes)
   const admissibility = object(dyad.admissibility)
   const dyadUsable = V6_PRODUCT_AUTHORITY && text(dyad.status) !== null && text(dyad.status) !== 'cold_start' && bool(admissibility.verdict) && num(dyad.score) !== null
@@ -796,14 +755,10 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       emailInteractions: messageCount,
       meetingInteractions: meetingCount,
       firstInteractionAt: allDates[0] ?? null,
-      lastInteractionAt: allDates.at(-1) ?? text(relationshipSnapshot.last_contact_at),
-      // Ancienneté factuelle (jours) : uniquement disponible depuis relationship-score-v3+
-      // (voir score-batch) — null pour les snapshots plus anciens, jamais inventée.
+      lastInteractionAt: allDates.at(-1) ?? null,
+      // Ancienneté factuelle indisponible dans le contrat V6 courant.
       relationshipAgeDays: null,
-      // Score PERSONNE 5 axes (relationship-score-v4). Confiance/Satisfaction :
-      // valeur composite utilisée dans le calcul (défaut neutre 50 tant qu'aucune
-      // analyse IA n'existe) — `*Measured` distingue ce cas du signal IA réel
-      // (cognitive_profiles.trust_score/satisfaction_score, jamais fabriqué).
+      // Axes V6 : les drapeaux indiquent si une preuve admissible a été observée.
       dimensions: {
         ...dimensionValues,
         ancrageCarriers: null,

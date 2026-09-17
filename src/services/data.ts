@@ -11,8 +11,6 @@ export type Account = {
   industry: string | null
   location: string | null
   status: EntityStatus
-  relationship_score: number | null
-  confidence_score: number | null
   last_interaction_at: string | null
   notes: string | null
   created_at: string
@@ -31,8 +29,6 @@ export type Person = {
   avatar_url: string | null
   location: string | null
   status: EntityStatus
-  relationship_score: number | null
-  confidence_score: number | null
   last_interaction_at: string | null
   notes: string | null
   created_at: string
@@ -121,9 +117,7 @@ function mapAccount(row: DbRow): Account {
     industry: nullableString(row.industry),
     location: nullableString(context.location),
     status: entityStatus(context.status),
-    relationship_score: nullableNumber(context.relationship_score),
-    confidence_score: nullableNumber(context.confidence_score ?? row.account_type_confidence),
-    last_interaction_at: nullableString(context.last_interaction_at ?? row.last_monitored_at),
+    last_interaction_at: nullableString(row.last_monitored_at),
     notes: nullableString(context.notes),
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(row.updated_at ?? row.created_at ?? new Date().toISOString()),
@@ -137,7 +131,6 @@ function latest(rows: unknown, dateKey: string): DbRow {
 
 function mapPerson(row: DbRow): Person {
   const company = firstRecord(row.companies)
-  const snapshot = latest(row.relationship_snapshots, 'snapshot_date')
   const cognitive = latest(row.cognitive_profiles, 'updated_at')
   const enrichment = record(row.enrichment_data)
   return {
@@ -152,9 +145,7 @@ function mapPerson(row: DbRow): Person {
     avatar_url: nullableString(row.avatar_url),
     location: nullableString(row.location),
     status: entityStatus(enrichment.status),
-    relationship_score: nullableNumber(snapshot.engagement_score ?? cognitive.engagement_score),
-    confidence_score: nullableNumber(cognitive.global_confidence),
-    last_interaction_at: nullableString(snapshot.last_contact_at),
+    last_interaction_at: null,
     notes: nullableString(cognitive.executive_summary ?? cognitive.summary ?? row.web_bio),
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(row.updated_at ?? row.created_at ?? new Date().toISOString()),
@@ -173,7 +164,7 @@ function sortEntities<T extends Account | Person>(rows: T[], sort: string): T[] 
   })
 }
 
-const contactSelect = '*,companies(name),relationship_snapshots(engagement_score,last_contact_at,phase,snapshot_date),cognitive_profiles(global_confidence,summary,executive_summary,engagement_score,updated_at)'
+const contactSelect = '*,companies(name),cognitive_profiles(global_confidence,summary,executive_summary,updated_at)'
 
 type WorkspaceMembership = { organization_id?: unknown; role?: unknown; created_at?: unknown }
 

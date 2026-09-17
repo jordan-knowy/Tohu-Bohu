@@ -1,5 +1,3 @@
-import type { StrategicReading } from '../services/strategic-reading'
-
 export type Provenance = {
   sourceType: string
   sourceId: string | null
@@ -95,7 +93,7 @@ export interface AccountDetailData {
     accountType: string | null
     relationshipStatus: string | null
     // 'manual' = choisi par un humain (jamais retouché par le moteur) ; 'suggested' =
-    // proposé par le moteur relationnel à partir des échanges réels (voir score-batch
+    // proposé par le moteur relationnel à partir des échanges réels
     // aggregateAccountRelation) ; null = aucune valeur ou colonne pas encore migrée.
     relationshipStatusSource: string | null
     relationshipStartedAt: string | null
@@ -158,5 +156,4 @@ export interface AccountDetailData {
   signalsHistory: AccountSignal[]
   memoryEntries: AccountMemoryEntry[]
   firmographics: AccountFirmographicFact[]
-  strategicReading: StrategicReading | null
 }

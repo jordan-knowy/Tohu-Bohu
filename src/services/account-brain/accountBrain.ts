@@ -102,9 +102,7 @@ export async function fetchAccountBrain(organizationId: string, companyId: strin
   return data as AccountBrainDTO
 }
 
-/** ✓ « Fait » sur un engagement actif — statut terminal global (tenu), comme
- *  updateRecommendationStatus côté account_recommendations. Reste en base,
- *  ressort de account_facts.history (fact_type='commitment' + status='resolved'). */
+/** ✓ « Fait » sur un engagement actif — statut terminal global (tenu). */
 export async function resolveAccountEngagement(organizationId: string, companyId: string, factId: string, userId: string): Promise<void> {
   const { getSupabase } = await import('../../lib/supabase')
   const now = new Date().toISOString()
@@ -124,23 +122,4 @@ export async function dismissAccountEngagementForMe(organizationId: string, comp
     ignored_at: new Date().toISOString(), ignore_reason: 'not_relevant',
   }, { onConflict: 'fact_id,user_id' })
   if (error) throw error
-}
-
-/** Dernier snapshot de dyade V6 par contact du compte — pour « Santé du compte »
- * (répartition par interlocuteur / couverture interne). Un contact absent du
- * résultat n'a simplement pas encore été traité par le batch ; `score: null`
- * = dyade cold-start (P5) — les deux cas s'affichent « à confirmer », jamais
- * un score inventé. */
-export interface AccountDyadSnapshotSummary {
-  contact_id: string
-  score: number | null
-  reliability: number | null
-  verdict_allowed: boolean | null
-  status: string | null
-}
-export async function fetchAccountDyadSnapshots(companyId: string): Promise<AccountDyadSnapshotSummary[]> {
-  const { getSupabase } = await import('../../lib/supabase')
-  const { data, error } = await getSupabase().rpc('get_account_dyad_snapshots', { p_company_id: companyId })
-  if (error) throw error
-  return (data as AccountDyadSnapshotSummary[]) ?? []
 }

@@ -102,11 +102,9 @@ async function runBriefs(supabase: SupabaseClient, traceId: string) {
       const [participantsRes, companyScoreRes, companyRecosRes, companySignalsRes] = await Promise.all([
         supabase.from('meeting_participants').select('contact_id,display_name,role_in_meeting').eq('meeting_id', meeting.id).not('contact_id', 'is', null),
         meeting.company_id
-          ? supabase.from('account_relationship_score_snapshots').select('score,phase,computed_at').eq('company_id', meeting.company_id).order('computed_at', { ascending: false }).limit(1).maybeSingle()
+          ? supabase.rpc('account_brain', { p_organization_id: meeting.organization_id, p_company_id: meeting.company_id })
           : Promise.resolve({ data: null as { score: number; phase: string | null } | null }),
-        meeting.company_id
-          ? supabase.from('account_recommendations').select('title,justification,priority').eq('company_id', meeting.company_id).eq('status', 'open').order('priority', { ascending: false }).limit(2)
-          : Promise.resolve({ data: [] as Array<{ title: string; justification: string }> }),
+        Promise.resolve({ data: [] as Array<{ title: string; justification: string }> }),
         meeting.company_id
           ? supabase.from('company_signals').select('title,summary,observed_at').eq('company_id', meeting.company_id).order('observed_at', { ascending: false }).limit(2)
           : Promise.resolve({ data: [] as Array<{ title: string; summary: string | null; observed_at: string }> }),
@@ -115,21 +113,21 @@ async function runBriefs(supabase: SupabaseClient, traceId: string) {
       const participants = (participantsRes.data ?? []) as Array<{ contact_id: string; display_name: string | null; role_in_meeting: string | null }>;
       const contactIds = participants.map((p) => p.contact_id).filter((id): id is string => Boolean(id));
 
-      const [contactsRes, scoresRes, recosRes] = await Promise.all([
+      const [contactsRes, personBrains] = await Promise.all([
         contactIds.length ? supabase.from('contacts').select('id,full_name').in('id', contactIds) : Promise.resolve({ data: [] as Array<{ id: string; full_name: string }> }),
-        contactIds.length ? supabase.from('contact_score_history').select('contact_id,score,phase,snapshot_date').in('contact_id', contactIds).order('snapshot_date', { ascending: false }) : Promise.resolve({ data: [] as Array<{ contact_id: string; score: number; phase: string | null }> }),
-        contactIds.length ? supabase.from('person_recommendations').select('contact_id,title').in('contact_id', contactIds).eq('status', 'open').order('priority', { ascending: false }) : Promise.resolve({ data: [] as Array<{ contact_id: string; title: string }> }),
+        Promise.all(contactIds.map(async (contactId) => {
+          const { data } = await supabase.rpc('person_brain', { p_organization_id: meeting.organization_id, p_contact_id: contactId })
+          return { contactId, brain: data as any }
+        })),
       ]);
 
       const namesByContact = new Map((contactsRes.data ?? []).map((c) => [c.id, c.full_name]));
       const latestScoreByContact = new Map<string, { score: number; phase: string | null }>();
-      for (const row of (scoresRes.data ?? [])) {
-        if (!latestScoreByContact.has(row.contact_id)) latestScoreByContact.set(row.contact_id, { score: row.score, phase: row.phase });
+      for (const row of personBrains) {
+        const score = Number(row.brain?.score)
+        if (Number.isFinite(score)) latestScoreByContact.set(row.contactId, { score, phase: null })
       }
       const recoByContact = new Map<string, string>();
-      for (const row of (recosRes.data ?? [])) {
-        if (!recoByContact.has(row.contact_id)) recoByContact.set(row.contact_id, row.title);
-      }
 
       const participantBlocks = participants.map((p) => {
         const scoreRow = latestScoreByContact.get(p.contact_id);
@@ -144,7 +142,10 @@ async function runBriefs(supabase: SupabaseClient, traceId: string) {
         };
       });
 
-      const companyScore = companyScoreRes.data as { score: number; phase: string | null } | null;
+      const companyBrain = companyScoreRes.data as any
+      const companyScore = companyBrain?.weather?.status === 'available'
+        ? { score: Number(companyBrain.weather.score), phase: null as string | null }
+        : null
       const companyRecos = (companyRecosRes.data ?? []) as Array<{ title: string; justification: string }>;
       const companySignals = (companySignalsRes.data ?? []) as Array<{ title: string; summary: string | null; observed_at: string }>;
       const hasCompanyData = meeting.company_id !== null && (companyScore !== null || companyRecos.length > 0 || companySignals.length > 0);
@@ -235,14 +236,17 @@ async function runDigest(supabase: SupabaseClient, traceId: string) {
 
     const dayAgo = new Date(now.getTime() - 24 * 3_600_000).toISOString();
     const [scoresRes, companySignalsRes, behavioralSignalsRes] = await Promise.all([
-      supabase.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', pref.organization_id).order('computed_at', { ascending: false }).limit(2000),
+      supabase.rpc('v6_account_overview', { p_organization_id: pref.organization_id }),
       supabase.from('company_signals').select('id').eq('organization_id', pref.organization_id).gte('observed_at', dayAgo),
       supabase.from('behavioral_signals').select('id').eq('organization_id', pref.organization_id).gte('observed_at', dayAgo),
     ]);
 
     const latestByCompany = new Map<string, number>();
-    for (const row of (scoresRes.data ?? []) as Array<{ company_id: string; score: number }>) {
-      if (!latestByCompany.has(row.company_id)) latestByCompany.set(row.company_id, row.score);
+    for (const row of (scoresRes.data ?? []) as Array<{ company_id: string; payload: { score?: number | null } }>) {
+      const rawScore = row.payload?.score;
+      if (typeof rawScore === 'number' && Number.isFinite(rawScore) && !latestByCompany.has(row.company_id)) {
+        latestByCompany.set(row.company_id, rawScore);
+      }
     }
     let fragile = 0, intermediate = 0, strong = 0;
     for (const score of latestByCompany.values()) {

@@ -30,7 +30,7 @@ export async function assembleDigest(supabase: any, organizationId: string, dash
   const [{ data: companies }, { data: contacts }, { data: snaps }, { data: meetings }, { data: commitments }, { data: moments }, { data: signals }] = await Promise.all([
     supabase.from('companies').select('id,name').eq('organization_id', organizationId).eq('is_tracked', true),
     supabase.from('contacts').select('id,full_name,company_id').eq('organization_id', organizationId).is('merged_into_contact_id', null),
-    supabase.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', organizationId).order('computed_at', { ascending: false }).limit(4000),
+    supabase.rpc('v6_account_portfolio_history', { p_organization_id: organizationId, p_months: 3 }),
     supabase.from('meetings').select('id,title,starts_at,company_id,company').eq('organization_id', organizationId).gte('starts_at', now.toISOString()).lte('starts_at', in7.toISOString()).order('starts_at', { ascending: true }).limit(8),
     supabase.from('person_memory_entries').select('content,resolved_at,created_at,observed_at,contact_id').eq('organization_id', organizationId).eq('entry_type', 'commitment').limit(500),
     supabase.from('person_key_moments').select('title,impact,occurred_at,contact_id').eq('organization_id', organizationId).gte('occurred_at', weekAgo.toISOString()).order('occurred_at', { ascending: false }).limit(4),
@@ -45,7 +45,7 @@ export async function assembleDigest(supabase: any, organizationId: string, dash
   const byCompany = new Map<string, Array<{ score: number; at: number }>>()
   for (const s of (snaps ?? [])) {
     const cid = s.company_id; if (!cid || !companyName.has(cid)) continue
-    const arr = byCompany.get(cid) ?? []; arr.push({ score: Number(s.score), at: new Date(s.computed_at).getTime() }); byCompany.set(cid, arr)
+    const arr = byCompany.get(cid) ?? []; arr.push({ score: Number(s.score), at: new Date(s.observed_at).getTime() }); byCompany.set(cid, arr)
   }
   const accountDeltas: Array<{ name: string; score: number; delta: number }> = []
   let sumLatest = 0, sumBaseline = 0, nScored = 0

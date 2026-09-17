@@ -2,8 +2,7 @@
  * Règles métier de la Home — module pur, sans accès réseau, testé unitairement.
  *
  * La Home ne recalcule aucun score relationnel : elle consomme les scores
- * persistés (companies.public_context.relationship_score,
- * relationship_snapshots.engagement_score). Ce module ne fait que :
+ * persistés par les snapshots V6 canoniques. Ce module ne fait que :
  *
  * 1. classer les comptes « À risque » (multi-facteurs, pas l'inverse du score) ;
  * 2. dériver les actions du jour depuis des faits persistés (signaux, silences,

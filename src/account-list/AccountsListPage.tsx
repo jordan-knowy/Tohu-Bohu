@@ -88,7 +88,7 @@ function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview;
         <span className="dxp-g-t">Évolution du scoring relationnel</span>
         <span className="dxp-info" tabIndex={0}>i<span className="dxp-info-t">
           <b>Scoring relationnel (0–100)</b><br />
-          Même métrique que la carte et le tableau : moyenne des scores relationnels de <b>compte</b> persistés par le moteur backend (account_relationship_score_snapshots), un point par mois civil réellement enregistré. Un compte sans snapshot ce mois-là est absent du point, jamais reconstitué à partir de son score actuel.
+          Même métrique que la carte et le tableau : moyenne des scores relationnels de <b>compte</b> persistés par le moteur V6 canonique, un point par mois civil réellement enregistré. Un compte sans snapshot ce mois-là est absent du point, jamais reconstitué à partir de son score actuel.
         </span></span>
         <span className="dxp-g-s">santé agrégée des comptes · {range} mois</span>
         <div className="dxa-range" role="tablist" aria-label="Période du graphique">
@@ -116,7 +116,7 @@ function ScoreBoard({ overview, range, setRange }: { overview: AccountsOverview;
         </svg>}
       {hover && series[hover.index] && series[hover.index]!.score !== null && (() => {
         // Snapshot temporel réel du mois survolé — jamais l'état actuel du portefeuille
-        // (overview.accounts) : chaque compte listé ici a un score account_relationship_score_snapshots
+        // (overview.accounts) : chaque compte listé ici a un snapshot V6 canonique
         // réellement enregistré pour CE mois, pas une valeur reportée ou live.
         const point = series[hover.index]!
         // Comparaison au mois civil immédiatement précédent uniquement (jamais un mois

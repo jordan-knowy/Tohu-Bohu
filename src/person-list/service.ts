@@ -21,29 +21,6 @@ const object = (value: unknown): Row => value && typeof value === 'object' && !A
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(object) : []
 const text = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value : null
 
-// Le projet Supabase plafonne chaque requête PostgREST à 1000 lignes côté
-// serveur (db-max-rows), quel que soit le .limit() demandé côté client. Pour
-// contact_score_history (historique réel, peut dépasser 1000 lignes dès
-// quelques mois de recul), on pagine explicitement via .range() pour ne
-// jamais perdre silencieusement les mois les plus anciens.
-async function fetchAllPages(
-  build: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: QueryResult['error'] }>,
-  pageSize = 1000,
-  maxRows = 20000,
-): Promise<QueryResult> {
-  const out: unknown[] = []
-  let from = 0
-  while (from < maxRows) {
-    const { data, error } = await build(from, from + pageSize - 1)
-    if (error) return { data: null, error }
-    const page = data ?? []
-    out.push(...page)
-    if (page.length < pageSize) break
-    from += pageSize
-  }
-  return { data: out, error: null }
-}
-
 export type PeopleOverview = {
   workspaceId: string
   generatedAt: string

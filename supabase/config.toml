@@ -51,9 +51,6 @@ verify_jwt = true
 [functions.monitor-contacts]
 verify_jwt = true
 
-[functions.score-batch]
-verify_jwt = true
-
 [functions.billing-account]
 verify_jwt = true
 
@@ -106,9 +103,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.send-weekly-digest]
-verify_jwt = true
-
-[functions.account-strategic-reading]
 verify_jwt = true
 
 [functions.send-alerts]

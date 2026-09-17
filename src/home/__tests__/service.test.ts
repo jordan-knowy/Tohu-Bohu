@@ -7,7 +7,7 @@ const NOW = new Date('2026-07-15T12:00:00Z')
 describe('buildScoredAccounts — consommation des scores persistés (pas de formule parallèle)', () => {
   it('utilise uniquement le score V6 canonique fourni', () => {
     const [result] = buildScoredAccounts(
-      [{ id: 'a', name: 'Oxalis', public_context: { relationship_score: 72 }, is_tracked: true }],
+      [{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }],
       [],
       true,
       NOW,
@@ -16,42 +16,36 @@ describe('buildScoredAccounts — consommation des scores persistés (pas de for
     expect(result?.score).toBe(72)
     expect(result?.tracked).toBe(true)
   })
-  it("n'agrège pas les anciens scores contacts quand le compte n'a pas d'état V6", () => {
+  it("n'agrège pas les contacts quand le compte n'a pas d'état V6", () => {
     const contacts = [
-      { id: 'c1', company_id: 'a', relationship_snapshots: [{ engagement_score: 80, snapshot_date: '2026-07-10', phase: null, last_contact_at: '2026-07-10' }] },
-      { id: 'c2', company_id: 'a', relationship_snapshots: [{ engagement_score: 60, snapshot_date: '2026-07-09', phase: null, last_contact_at: '2026-07-01' }] },
+      { id: 'c1', company_id: 'a', v6_state: { score: 80, observedAt: '2026-07-10', evidence: [{ eventTime: '2026-07-10' }] } },
+      { id: 'c2', company_id: 'a', v6_state: { score: 60, observedAt: '2026-07-09', evidence: [{ eventTime: '2026-07-01' }] } },
     ]
     const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], contacts, true, NOW)
     expect(result?.score).toBeNull()
     expect(result?.contactCount).toBe(2)
     expect(result?.lastInteractionAt).toBe('2026-07-10')
   })
-  it('ne retombe pas sur cognitive_profiles.engagement_score', () => {
-    const contacts = [
-      { id: 'c1', company_id: 'a', relationship_snapshots: [], cognitive_profiles: [{ engagement_score: 72, score_phase: 'stable', updated_at: '2026-07-10T08:00:00Z' }] },
-      { id: 'c2', company_id: 'a', relationship_snapshots: [], cognitive_profiles: [{ engagement_score: 64, score_phase: null, updated_at: '2026-07-09T08:00:00Z' }] },
-    ]
+  it('ne déduit aucune phase depuis un état V6 sans phase', () => {
+    const contacts = [{ id: 'c1', company_id: 'a', v6_state: { score: 72, observedAt: '2026-07-10' } }]
     const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], contacts, true, NOW)
     expect(result?.score).toBeNull()
-    expect(result?.phase).toBe('stable')
+    expect(result?.phase).toBeNull()
   })
   it('reste null quand aucune donnée de score n’existe — pas de valeur inventée', () => {
-    const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: { relationship_score: null, confidence_score: null }, is_tracked: true }], [], true, NOW)
+    const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], [], true, NOW)
     expect(result?.score).toBeNull()
     expect(result?.confidence).toBeNull()
     expect(result?.delta30d).toBeNull()
   })
-  it('calcule delta30d uniquement avec un vrai historique de snapshots (≥ 25 j)', () => {
+  it('ne fabrique pas de delta sans historique canonique exposé', () => {
     const contacts = [{
       id: 'c1',
       company_id: 'a',
-      relationship_snapshots: [
-        { engagement_score: 70, snapshot_date: '2026-07-14', phase: null, last_contact_at: null },
-        { engagement_score: 60, snapshot_date: '2026-06-10', phase: null, last_contact_at: null },
-      ],
+      v6_state: { score: 70, observedAt: '2026-07-14' },
     }]
     const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], contacts, true, NOW)
-    expect(result?.delta30d).toBe(10)
+    expect(result?.delta30d).toBeNull()
   })
   it('respecte is_tracked quand la colonne existe (scénarios workspace/forfait)', () => {
     const rows = buildScoredAccounts(
@@ -77,9 +71,9 @@ describe('countActiveRelationships — relations actives = personnes, pas compte
     return {
       id: 'c1',
       company_id: null,
-      relationship_snapshots: overrides.last_contact_at !== undefined
-        ? [{ engagement_score: null, phase: null, snapshot_date: '2026-07-10', last_contact_at: overrides.last_contact_at }]
-        : [],
+      v6_state: overrides.last_contact_at
+        ? { score: null, observedAt: '2026-07-10', evidence: [{ eventTime: overrides.last_contact_at }] }
+        : {},
       ...overrides,
     }
   }
@@ -97,10 +91,7 @@ describe('countActiveRelationships — relations actives = personnes, pas compte
     const contacts = [{
       id: 'c1',
       company_id: null,
-      relationship_snapshots: [
-        { engagement_score: null, phase: null, snapshot_date: '2026-07-14', last_contact_at: '2026-07-14T00:00:00Z' },
-        { engagement_score: null, phase: null, snapshot_date: '2026-07-01', last_contact_at: '2026-07-01T00:00:00Z' },
-      ],
+      v6_state: { score: null, observedAt: '2026-07-14', evidence: [{ eventTime: '2026-07-01T00:00:00Z' }, { eventTime: '2026-07-14T00:00:00Z' }] },
     }]
     expect(countActiveRelationships(contacts, NOW)).toBe(1)
   })
@@ -114,19 +105,13 @@ describe('countActiveRelationships — relations actives = personnes, pas compte
     const contacts = [{
       id: 'c1',
       company_id: null,
-      // Le plus ancien arrive en premier dans le tableau : si [0] dépendait de
-      // l'ordre implicite plutôt que du tri explicite de contactSnapshots(),
-      // ce test échouerait (silence de 4 mois au lieu de 14 j).
-      relationship_snapshots: [
-        { engagement_score: null, phase: null, snapshot_date: '2026-03-01', last_contact_at: '2026-03-01T00:00:00Z' },
-        { engagement_score: null, phase: null, snapshot_date: '2026-07-14', last_contact_at: '2026-07-01T00:00:00Z' },
-      ],
+      v6_state: { score: null, observedAt: '2026-07-14', evidence: [{ eventTime: '2026-03-01T00:00:00Z' }, { eventTime: '2026-07-01T00:00:00Z' }] },
     }]
     expect(countActiveRelationships(contacts, NOW)).toBe(1)
   })
 
-  it('retombe sur cognitive_profiles quand relationship_snapshots est vide, sans jamais inventer une date', () => {
-    const contacts = [{ id: 'c1', company_id: null, relationship_snapshots: [], cognitive_profiles: [] }]
+  it("ne compte pas une personne sans preuve d'interaction", () => {
+    const contacts = [{ id: 'c1', company_id: null, v6_state: {} }]
     expect(countActiveRelationships(contacts, NOW)).toBe(0)
   })
 })
@@ -209,9 +194,9 @@ describe('buildTeamMembers — vision d’équipe réelle', () => {
       [{ user_id: 'u1' }, { user_id: 'u2' }],
       [{ id: 'u1', full_name: 'Alex Martin', avatar_url: null }, { id: 'u2', full_name: 'Sam Lee', avatar_url: null }],
       [
-        { owner_user_id: 'u1', company_id: 'a', relationship_snapshots: [{ engagement_score: 70, snapshot_date: '2026-07-14' }] },
-        { owner_user_id: 'u1', company_id: 'a', relationship_snapshots: [{ engagement_score: 50, snapshot_date: '2026-07-14' }] },
-        { owner_user_id: 'u2', company_id: 'b', relationship_snapshots: [] },
+        { owner_user_id: 'u1', company_id: 'a', v6_state: { score: 70, observedAt: '2026-07-14' } },
+        { owner_user_id: 'u1', company_id: 'a', v6_state: { score: 50, observedAt: '2026-07-14' } },
+        { owner_user_id: 'u2', company_id: 'b', v6_state: {} },
       ],
       NOW,
     )

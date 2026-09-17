@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildApproachGuidance, buildContactDetails, buildHistory, buildPersonDetail, buildRecommendations,
-  buildScoreHistory, buildSignals, buildSources, legacyCareerRows, scoreWindow,
+  buildScoreHistory, buildSignals, buildSources, scoreWindow,
   type PersonDetailRaw,
 } from '../mapping'
 import { validateContactDetail } from '../service'
@@ -16,10 +16,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     settings: {},
     userSettings: {},
     summaryRow: {},
-    scoreSnapshots: [],
-    legacyScores: [],
-    legacyCareer: [],
-    relationshipSnapshots: [],
+    importedCareer: [],
     dyadWeatherSnapshot: {},
     markerEvents: [],
     cognitiveProfile: {},
@@ -57,8 +54,6 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
 
   it('l’état V6 admissible est la seule autorité relationnelle', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', confiance_score: 88, satisfaction_score: 92, engagement_score: 70, reciprocity_score: 65, ancrage_score: 60, ancrage_carriers: 2, relationship_age_days: 62, model_version: 'relationship-score-v4' }],
-      legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_confiance: 10, score_satisfaction: 10, score_engagement: 10, score_reciprocite: 10, score_ancrage: 10 }],
       dyadWeatherSnapshot: { status: 'actif', score: 81, reliability: .74, computedAt: '2026-07-11T00:00:00Z', admissibility: { verdict: true }, axes: { confiance: 88, satisfaction: 92, engagement: 70, reciprocite: 65, ancrage: 60 } },
       markerEvents: [{ markerId: 'C01', axis: 'confiance' }, { markerId: 'S08', axis: 'satisfaction' }],
     }))
@@ -68,21 +63,16 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.relationship.confidence).toBe(74)
   })
 
-  it('ignore contact_score_history quand V6 ne dispose pas de preuve admissible', () => {
-    const data = buildPersonDetail(raw({
-      legacyScores: [
-        { score: 72, phase: 'stable', snapshot_date: '2026-07-01', score_confiance: 80, score_satisfaction: 70, score_engagement: 64, score_reciprocite: 64, score_ancrage: 55 },
-        { score: 60, phase: 'growing', snapshot_date: '2026-06-01' },
-      ],
-    }))
+  it('garde les champs relationnels vides sans preuve V6 admissible', () => {
+    const data = buildPersonDetail(raw())
     expect(data.relationship.score).toBeNull()
     expect(data.relationship.phase).toBe('unknown')
     expect(data.relationship.dimensions.confiance).toBeNull()
     expect(data.scoreHistory).toEqual([])
   })
 
-  it('ne transforme pas le profil cognitif Legacy en score de secours', () => {
-    const data = buildPersonDetail(raw({ cognitiveProfile: { engagement_score: 66, score_phase: 'growing', global_confidence: 58, score_engagement: 61, trust_score: 74 } }))
+  it('ne transforme pas le profil cognitif en score relationnel de secours', () => {
+    const data = buildPersonDetail(raw({ cognitiveProfile: { global_confidence: 58 } }))
     expect(data.relationship.score).toBeNull()
     expect(data.relationship.phase).toBe('unknown')
     expect(data.relationship.confidence).toBeNull()
@@ -91,11 +81,8 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.relationship.dimensions.satisfactionMeasured).toBe(false)
   })
 
-  it('ne raccorde aucune preuve Legacy à un état V6 absent', () => {
+  it('ne raccorde aucune preuve à un état V6 absent', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{ score: 67, computed_at: '2026-09-15T00:00:00Z', confiance_score: 72, engagement_score: 64 }],
-      legacyScores: [{ score: 61, snapshot_date: '2026-08-15', score_confiance: 66, score_engagement: 54 }],
-      cognitiveProfile: { trust_score: 72, trust_evidence: ['Promesse tenue le 12/09.'] },
       markerEvents: [{ marker_id: 'C01', observed_at: '2026-09-12', evidence_text: 'Échange V6', evidence_ref: 'mail-1' }],
     }))
     expect(data.relationship.dimensionHistory).toEqual([])
@@ -106,9 +93,7 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
 
   it('refuse un ancien snapshot V6 qui ne porte pas l’admissibilité canonique', () => {
     const data = buildPersonDetail(raw({
-      scoreSnapshots: [{score:67,computed_at:'2026-09-15',confiance_score:72,engagement_score:64}],
       dyadWeatherSnapshot: {status:'active',verdict_allowed:true,score:77,axes:{confiance:{value:78}}},
-      cognitiveProfile: {trust_score:72,trust_evidence:['Promesse tenue.']},
       markerEvents: [{marker_id:'C01',observed_at:'2026-09-12',evidence_text:'Shadow',evidence_ref:'mail-1'}],
     }))
     expect(data.relationship.score).toBeNull()
@@ -143,9 +128,9 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(withCognitive.summary?.provenance?.inferenceLevel).toBe('inferred')
   })
 
-  it('parcours : les entrées héritées contact_career_path deviennent « probable »', () => {
+  it('parcours : les entrées importées deviennent « probable »', () => {
     const data = buildPersonDetail(raw({
-      legacyCareer: [{ id: 'c1', job_title: 'CTO', company_name: 'Oxalis', start_date: '2024-01-01', is_current: true, created_at: '2026-01-01' }],
+      importedCareer: [{ id: 'c1', job_title: 'CTO', company_name: 'Oxalis', start_date: '2024-01-01', is_current: true, created_at: '2026-01-01' }],
     }))
     expect(data.careerEntries).toHaveLength(1)
     expect(data.careerEntries[0]?.verificationStatus).toBe('probable')
@@ -230,10 +215,10 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
 
 describe('buildScoreHistory / scoreWindow — courbe sur vraies données', () => {
   it('agrège par mois en gardant le dernier snapshot du mois', () => {
-    const history = buildScoreHistory([], [
-      { score: 50, snapshot_date: '2026-05-02' },
-      { score: 58, snapshot_date: '2026-05-20' },
-      { score: 63, snapshot_date: '2026-06-11' },
+    const history = buildScoreHistory([
+      { score: 50, at: '2026-05-02' },
+      { score: 58, at: '2026-05-20' },
+      { score: 63, at: '2026-06-11' },
     ])
     expect(history).toHaveLength(2)
     expect(history[0]).toMatchObject({ monthKey: '2026-05', score: 58 })
@@ -241,31 +226,27 @@ describe('buildScoreHistory / scoreWindow — courbe sur vraies données', () =>
   })
 
   it('fenêtre continue : les mois sans donnée restent vides (jamais interpolés)', () => {
-    const history = buildScoreHistory([], [{ score: 40, snapshot_date: '2026-03-10' }, { score: 70, snapshot_date: '2026-06-10' }])
+    const history = buildScoreHistory([{ score: 40, at: '2026-03-10' }, { score: 70, at: '2026-06-10' }])
     const window = scoreWindow(history, 6, new Date('2026-07-16'))
     expect(window).toHaveLength(6)
     expect(window.map((point) => point.score)).toEqual([null, null, 40, null, null, 70])
   })
 
   it('ignore les lignes sans score ou sans date', () => {
-    expect(buildScoreHistory([], [{ snapshot_date: '2026-05-01' }, { score: 44 }])).toEqual([])
+    expect(buildScoreHistory([{ at: '2026-05-01' }, { score: 44 }])).toEqual([])
   })
 
-  it('fusionne canonical et legacy : canonical ne doit pas effacer les mois plus anciens que seul legacy couvre', () => {
-    const legacy = [
-      { score: 18, snapshot_date: '2026-05-23' },
-      { score: 33, snapshot_date: '2026-06-22' },
-      { score: 39, snapshot_date: '2026-07-20' },
-    ]
+  it('garde le dernier snapshot canonique de chaque mois', () => {
     const canonical = [
-      { score: 40, computed_at: '2026-07-20T10:00:00Z' },
-      { score: 45, computed_at: '2026-07-22T10:00:00Z' },
+      { score: 18, at: '2026-05-23' },
+      { score: 33, at: '2026-06-22' },
+      { score: 40, at: '2026-07-20T10:00:00Z' },
+      { score: 45, at: '2026-07-22T10:00:00Z' },
     ]
-    const history = buildScoreHistory(canonical, legacy)
+    const history = buildScoreHistory(canonical)
     expect(history).toHaveLength(3)
     expect(history[0]).toMatchObject({ monthKey: '2026-05', score: 18 })
     expect(history[1]).toMatchObject({ monthKey: '2026-06', score: 33 })
-    // Juillet : canonical couvre ce mois, donc il prend le dessus sur legacy (45, pas 39).
     expect(history[2]).toMatchObject({ monthKey: '2026-07', score: 45 })
   })
 })

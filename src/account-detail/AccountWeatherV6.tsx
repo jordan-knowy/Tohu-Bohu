@@ -6,7 +6,7 @@
 // Réutilise les primitives de preuve communes (SourceBadge/EvidenceItem) et la
 // règle d'affichage fiabilité (displayRule).
 import { useEffect, useMemo, useState } from 'react'
-import { fetchAccountBrain, fetchAccountDyadSnapshots, rankDelta, rankSignals, type AccountBrainDTO, type AccountDyadSnapshotSummary, type FactKind, type RankedSignal } from '../services/account-brain/accountBrain'
+import { fetchAccountBrain, rankDelta, rankSignals, type AccountBrainDTO, type FactKind, type RankedSignal } from '../services/account-brain/accountBrain'
 import { V6_PRODUCT_AUTHORITY } from '../services/scoring/productAuthority'
 import { displayRule } from '../services/scoring/snapshots'
 import { PARAMS_V6_PALIER, REGISTRY_V6 } from '../services/scoring/registry-v6'
@@ -352,18 +352,6 @@ export function useAccountBrain(organizationId: string, companyId: string, enabl
     return () => { cancelled = true }
   }, [organizationId, companyId, enabled])
   return brain
-}
-
-/** Snapshots de dyade V6 (un par contact du compte) — pour « Santé du compte ». */
-export function useAccountDyadSnapshots(companyId: string, enabled: boolean) {
-  const [snapshots, setSnapshots] = useState<AccountDyadSnapshotSummary[] | null>(null)
-  useEffect(() => {
-    if (!enabled || !V6_PRODUCT_AUTHORITY) { setSnapshots(null); return }
-    let cancelled = false
-    void fetchAccountDyadSnapshots(companyId).then((rows) => { if (!cancelled) setSnapshots(rows) }).catch(() => { if (!cancelled) setSnapshots(null) })
-    return () => { cancelled = true }
-  }, [companyId, enabled])
-  return snapshots
 }
 
 export { rankSignals }

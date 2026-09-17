@@ -1,8 +1,6 @@
 // Liste Comptes — mapping pur des lignes Supabase vers le modèle d'affichage.
-// Aucun score n'est calculé ici : on affiche le score de compte persisté par
-// score-batch (account_relationship_score_snapshots) — la même source que la
-// fiche compte — et on ne retombe sur la moyenne des scores contacts que si
-// aucun snapshot de compte n'existe encore.
+// Aucun score n'est calculé ici : on affiche les snapshots V6 canoniques lus
+// par les RPC de portefeuille.
 
 export type Row = Record<string, unknown>
 
@@ -94,13 +92,8 @@ export function durationLabel(months: number | null): string {
   return `${rounded % 1 === 0 ? rounded : rounded.toFixed(1).replace('.', ',')} an${rounded >= 2 ? 's' : ''}`
 }
 
-/** Dernier score persisté d'un contact : cognitive_profiles, sinon dernier point d'historique. */
+/** Dernier score V6 canonique persisté pour un contact. */
 export function latestContactScore(contact: Row, historyByContact: Map<string, Row[]>): number | null {
-  const profiles = rows(contact.cognitive_profiles)
-    .filter((profile) => num(profile.engagement_score) !== null)
-    .sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))
-  const fromProfile = num(profiles[0]?.engagement_score)
-  if (fromProfile !== null) return fromProfile
   const history = historyByContact.get(String(contact.id)) ?? []
   return num(history[0]?.score)
 }
@@ -213,9 +206,9 @@ function mostCommonOwner(contacts: Row[]): string | null {
 /** Un compte réellement scoré à un mois donné — jamais reconstitué. */
 export type PortfolioAccountSnapshot = { companyId: string; name: string; score: number }
 
-/** Série mensuelle du portefeuille — SEULE source : account_relationship_score_snapshots
+/** Série mensuelle du portefeuille — source V6 canonique
  *  (mêmes lignes, même formule que la carte « Score relationnel global » et la colonne
- *  Score du tableau — voir getAccountsOverview). Aucune dépendance à contact_score_history :
+ *  Score du tableau — voir getAccountsOverview). Aucun repli sur un historique contact :
  *  ce n'est pas la même métrique (score contact ≠ score compte pondéré coverage/récence),
  *  la présenter comme « l'évolution du score relationnel » induisait en erreur.
  *
@@ -266,7 +259,7 @@ export function buildAccountScoreSeries(
 /** Évolutions % sur 1 mois / trimestre / année — ancrées sur le DERNIER point exact de la
  *  série (le mois courant, pas « le dernier mois qui avait des données ») pour rester
  *  mathématiquement raccord avec la carte : si ce point est renseigné, il est calculé sur
- *  les mêmes lignes account_relationship_score_snapshots que le score actuel affiché. */
+ *  les mêmes lignes canoniques que le score actuel affiché. */
 export function evolutionPercents(series: PortfolioPoint[]): { m1: number | null; m3: number | null; m12: number | null } {
   const last = series.at(-1)?.score ?? null
   const at = (offset: number): number | null => {
