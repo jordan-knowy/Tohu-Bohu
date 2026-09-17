@@ -1,0 +1,32 @@
+{
+  "prepared_at": "2026-09-17",
+  "selection_used_model_predictions": false,
+  "total_cases": 35,
+  "development_cases": 27,
+  "holdout_cases": 8,
+  "relation_groups": 25,
+  "holdout_groups": 6,
+  "case_types": {
+    "semantic_single": 23,
+    "semantic_sequence": 12,
+    "account_context": 0
+  },
+  "sources": {
+    "dated_verbatim_excerpts": 23,
+    "message_metadata_sequences": 8,
+    "systematic_transcript_windows": 4
+  },
+  "privacy": {
+    "emails_remaining": 0,
+    "urls_remaining": 0,
+    "phones_remaining": 0,
+    "possible_names_requiring_human_review": 5,
+    "human_reviewed": 0
+  },
+  "account_context_support": {
+    "account_contact_roles_rows": 0,
+    "invoice_or_contract_sources_available": false,
+    "classification": "insufficient_support",
+    "reason": "No authoritative account-role, invoice or contract corpus is available; account cases were not fabricated."
+  }
+}

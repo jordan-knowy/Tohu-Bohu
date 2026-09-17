@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+import {readdir,readFile,writeFile} from 'node:fs/promises'
+import {resolve,relative,extname} from 'node:path'
+const root=resolve(import.meta.dirname,'..'),output=resolve(root,process.argv[2]??'docs/audits/v6-phase4-5-consumer-inventory.json')
+const roots=['src','supabase/functions','supabase/migrations'],extensions=new Set(['.ts','.tsx','.sql'])
+const patterns={
+ legacy_batch:/\bscore-batch\b/g,legacy_strategic_reader:/\baccount-strategic-reading\b/g,
+ legacy_contact_history:/\bcontact_score_history\b/g,legacy_account_snapshots:/\baccount_relationship_score_snapshots\b/g,
+ legacy_person_snapshots:/\bperson_relationship_score_snapshots\b/g,legacy_profile_score:/\b(?:trust_score|satisfaction_score|engagement_score)\b/g,
+ legacy_context_score:/\brelationship_score\b/g,canonical_account_brain:/\baccount_brain\b/g,
+ canonical_dyad_reader:/\bget_dyad_weather_snapshot\b/g,canonical_scoring_snapshot:/\bscoring\.score_snapshot\b/g
+}
+async function files(dir){const out=[];for(const entry of await readdir(dir,{withFileTypes:true})){const path=resolve(dir,entry.name);if(entry.isDirectory()){if(!['node_modules','.git'].includes(entry.name))out.push(...await files(path))}else if(extensions.has(extname(entry.name)))out.push(path)}return out}
+const occurrences=[]
+for(const base of roots)for(const file of await files(resolve(root,base))){const lines=(await readFile(file,'utf8')).split('\n');for(let i=0;i<lines.length;i++)for(const [category,regex] of Object.entries(patterns)){regex.lastIndex=0;if(regex.test(lines[i]))occurrences.push({category,file:relative(root,file),line:i+1,test_file:/(__tests__|\.test\.)/.test(file)})}}
+const summary={};for(const item of occurrences){summary[item.category]??={total:0,production:0,tests:0,files:[]};const s=summary[item.category];s.total++;s[item.test_file?'tests':'production']++;if(!s.files.includes(item.file))s.files.push(item.file)}for(const s of Object.values(summary))s.files.sort()
+const report={generated_at:new Date().toISOString(),scope:roots,summary,occurrences}
+await writeFile(output,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({output:relative(root,output),occurrences:occurrences.length,categories:Object.keys(summary).length}))

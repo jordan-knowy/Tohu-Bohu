@@ -29,3 +29,65 @@ L'arbitre reçoit les deux annotations seulement après leur gel. Il conserve ch
 Chaque prédiction renseigne `dataset_version`, `model`, `prompt_version`, `classifier_version` et `registry_version`. Une exécution ne mélange aucune de ces versions. On choisit sur development, puis on exécute une seule fois le holdout gelé. Toute modification après lecture du holdout crée une nouvelle version de dataset et un nouveau holdout.
 
 Le rapport publie les effectifs TP/FP/FN, précision, rappel et F1 par marker, les faux positifs critiques S07/K06, les métriques séparées des faits/engagements/rôles, l'exactitude de direction, le taux d'abstention, les erreurs techniques et les désaccords d'annotation. Aucun pourcentage n'est interprété sans son effectif.
+
+## Procédure locale exacte
+
+Les commandes se lancent depuis la racine du repository. Chaque serveur écoute uniquement sur `127.0.0.1`. Fermer le serveur avec `Ctrl+C` après la passe.
+
+### 1. Revue confidentialité et annotabilité
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs serve privacy privacy-reviewer 4179
+```
+
+Ouvrir `http://127.0.0.1:4179`. Vérifier les 35 cas, corriger dans l'interface les éventuels noms résiduels, confirmer ou refuser l'annotabilité et préciser `complete`, `partial` ou `insufficient`. Un cas impossible à interpréter doit recevoir un motif ; il ne sera pas envoyé à A/B.
+
+Après le dernier cas :
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs freeze privacy privacy-reviewer
+```
+
+Le gel refuse automatiquement tout email, URL ou téléphone encore présent.
+
+### 2. Deux annotations indépendantes
+
+Annotateur A :
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs serve A annotateur-a 4179
+node evaluation/relational-intelligence/annotation-tool.mjs freeze A annotateur-a
+```
+
+Annotateur B, sur un autre port ou après fermeture de A :
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs serve B annotateur-b 4180
+node evaluation/relational-intelligence/annotation-tool.mjs freeze B annotateur-b
+```
+
+Les ordres diffèrent automatiquement. Chaque serveur ne charge que son fichier de réponses. Les identifiants `annotateur-a` et `annotateur-b` doivent désigner deux humains différents.
+
+### 3. Divergences et arbitrage
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs diff
+node evaluation/relational-intelligence/annotation-tool.mjs serve arbitration arbitre 4181
+```
+
+L'arbitre ne voit que les cas et champs divergents, avec les preuves laissées par A et B. Après traitement :
+
+```sh
+node evaluation/relational-intelligence/annotation-tool.mjs freeze arbitration arbitre
+```
+
+Le résultat privé est `evaluation/relational-intelligence/private/gold.v1.json`. Il contient l'enveloppe versionnée, les deux annotations originales, les désaccords et l'arbitrage final. Ne pas ouvrir les labels holdout pendant le choix des variantes.
+
+## Temps humain minimal estimé
+
+- confidentialité/annotabilité : 15 à 25 minutes pour 35 cas ;
+- annotation A : 60 à 90 minutes ;
+- annotation B : 60 à 90 minutes, réalisable en parallèle de A ;
+- arbitrage : environ 15 à 30 minutes selon le nombre de divergences.
+
+Le temps calendaire minimal est donc d'environ 1 h 30 à 2 h 25 si A et B travaillent en parallèle. Les cas déclarés impossibles lors de la revue réduisent ce temps et restent documentés hors métriques.

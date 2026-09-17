@@ -1,7 +1,7 @@
 # Phase 2 — intelligence relationnelle et LLM
 
 Date : 17 septembre 2026  
-Statut : **bloquée sur validation humaine externe**  
+Statut : **outillage complet, attente de validation humaine externe**
 Verdict : **NO GO Phase 2**
 
 ## Résumé
@@ -9,6 +9,14 @@ Verdict : **NO GO Phase 2**
 La Phase 1 est validée et la Phase 2 a commencé. Le registre complet a été audité concept par concept, le classificateur multi-observations et ses garde-fous ont été relus, le harness Gold a été renforcé et 23 extraits réels verbatim, datés et pseudonymisés ont été préparés dans un espace privé. Aucun résultat de pertinence n'est inventé : zéro cas possède aujourd'hui deux annotations humaines indépendantes et un arbitrage. Le gate exige précisément cette preuve ; il reste donc **NO GO**.
 
 Ce blocage ne peut pas être corrigé par un agent logiciel sans falsifier le caractère humain et indépendant du Gold Dataset. Phase 3 n'est pas commencée.
+
+## Reprise — enrichissement et réduction du temps humain
+
+Le corpus privé V2 contient désormais **35 cas sur 25 groupes relationnels** : 27 development et 8 holdout. La sélection a été gelée sans consulter de prédiction du modèle. Elle combine 23 verbatims datés, 8 séquences de métadonnées de messages et 4 fenêtres systématiques du transcript autorisé. Les cas sont classés en 23 `semantic_single` et 12 `semantic_sequence`.
+
+Les sources distantes ne contiennent aucune ligne `account_contact_roles` et aucun corpus contractuel ou de factures exploitable. Aucun cas `account_context` n'a donc été fabriqué ; ce périmètre est marqué `insufficient_support`.
+
+L'interface locale couvre maintenant la revue de confidentialité, deux annotations isolées dans des ordres distincts, leur gel, le calcul des divergences, l'arbitrage limité aux champs divergents et la génération de `gold.v1.json`. Les annotateurs ne voient ni split, ni score, ni Legacy, ni prédiction IA, ni recommandation. Cinq chaînes ressemblant éventuellement à des noms restent explicitement présentées au privacy reviewer ; aucun email, téléphone ou URL n'est détecté.
 
 ## Travail réalisé
 
@@ -37,10 +45,17 @@ Après, le pipeline d'évaluation sépare markers, faits, engagements, rôles et
 - `evaluation/relational-intelligence/README.md`
 - `evaluation/relational-intelligence/ANNOTATION_GUIDE.md`
 - `scripts/v6-export-gold-candidates.py`
+- `evaluation/relational-intelligence/annotation-tool.mjs`
+- `evaluation/relational-intelligence/annotation-app.html`
+- `evaluation/relational-intelligence/annotationTool.test.ts`
+- `docs/audits/v6-phase2-dataset-preparation.json`
+- `scripts/v6-inventory-legacy-authority.mjs`
+- `docs/audits/v6-phase4-5-consumer-inventory.json`
+- `docs/audits/V6_PHASE3_5_PREPARATION.md`
 - `.gitignore`
 - `docs/audits/V6_MASTER_EXECUTION_REPORT.md`
 
-Le fichier réel `evaluation/relational-intelligence/private/candidates.v1.json` contient les 23 candidats, est en mode `0600` et n'est pas versionné.
+Le fichier réel `evaluation/relational-intelligence/private/candidates.v2.json` contient les 35 candidats, est en mode `0600` et n'est pas versionné. Le V1 est conservé comme preuve de la première extraction.
 
 ## Migrations
 
@@ -48,7 +63,7 @@ Aucune migration. Aucune écriture distante. Aucun déploiement Edge, cron ou ch
 
 ## Tests
 
-- Vitest : **416/416 réussis**, 38 fichiers.
+- Vitest : **417/417 réussis**, 39 fichiers.
 - TypeScript frontend : **PASS**.
 - Harness sur les 15 gabarits synthétiques : `evaluated: 0`, comportement attendu.
 - Exporteur Python : compilation `py_compile` **PASS**.
@@ -79,12 +94,12 @@ L'inventaire read-only du projet `bgmtzwfafcgjklgygvtx` trouve :
 - 80 `person_key_moments.summary`, couvrant 20 contacts et 2 organisations ;
 - 1 transcript non vide dans 1 organisation.
 
-Les 23 extraits verbatim sont les seuls candidats exportés. Les 80 résumés sont des dérivations LLM et ne servent pas de vérité Gold. Aucun contenu source n'est inclus dans les rapports Git. Les candidats n'ont pas encore le contexte avant/après requis pour une annotation fiable ; la revue humaine devra soit compléter ce contexte depuis les sources autorisées, soit marquer les champs indéterminables.
+Les 23 extraits verbatim sont complétés par huit séquences déterministes de métadonnées et quatre fenêtres systématiques du transcript. Les 80 résumés sont des dérivations LLM et ne servent pas de vérité Gold. Aucun contenu source n'est inclus dans les rapports Git. Chaque paquet limite le contexte aux extraits adjacents, participants pseudonymisés, timeline et faits de complétude nécessaires. La revue humaine peut déclarer `ANNOTATION_NOT_POSSIBLE` plutôt que forcer un label.
 
 ## Problèmes découverts
 
 1. Aucun Gold Dataset humain n'existe encore.
-2. Les 23 candidats sont un petit corpus de deux comptes fondateurs, insuffisant pour démontrer la généralisation.
+2. Les 35 candidats restent un petit corpus de deux comptes fondateurs, insuffisant pour démontrer la généralisation à lui seul.
 3. Le registre sémantique exécutable couvre seulement C01, C05, S03, S06, S07, S08 et E01–E04 ; les autres concepts exigent des détecteurs de séquence, baseline ou sources métier.
 4. Les extraits isolés ne suffisent pas toujours à déterminer cible, rôle, spontanéité, condition ou contradiction.
 5. `person_key_moments.summary` n'est pas un verbatim et ne doit pas valider les markers critiques.
@@ -104,7 +119,7 @@ Le harness refuse maintenant les cas réels sans revue de confidentialité, mesu
 
 ## Dette restante
 
-1. Revue de confidentialité des 23 candidats et enrichissement du contexte utile.
+1. Revue de confidentialité/annotabilité des 35 candidats via l'interface locale.
 2. Annotation indépendante par deux humains, puis arbitrage par une troisième passe explicite.
 3. Augmentation raisonnée du corpus, notamment négatifs difficiles, contradictions, rôles, engagements conditionnels, S07/K06 et absence de contexte.
 4. Exécution A/B versionnée sur development, choix selon métriques, puis holdout gelé.
@@ -118,4 +133,4 @@ L'accès Management read-only est fonctionnel. L'inventaire de sources ci-dessus
 
 **NO GO.** L'analyse sémantique n'est pas suffisamment démontrée sur un Gold Dataset humain, car il n'existe encore aucun cas avec revue de confidentialité, deux annotations humaines indépendantes et arbitrage. Le travail autonome possible est terminé sans fabriquer cette preuve.
 
-Pour débloquer : désigner deux annotateurs humains indépendants et un arbitre (l'arbitre peut être l'un des deux après gel des réponses si cette règle produit est acceptée), leur faire traiter d'abord les 21 cas development privés selon `ANNOTATION_GUIDE.md`, puis lancer les expériences. Les 2 cas holdout restent invisibles aux choix de prompt/modèle jusqu'au gel de la variante. Ce holdout est trop petit pour conclure et devra être enrichi avant le gate. La dernière phase validée reste **Phase 1 — GO**.
+Pour débloquer : suivre les commandes de `ANNOTATION_GUIDE.md` dans cet ordre : privacy review, A, B, `diff`, arbitrage, gel final. Les 35 cas sont annotés sans révéler leur split ; le moteur sera ensuite évalué sur les 27 development et la variante choisie avant d'ouvrir les résultats des 8 holdout. Temps calendaire minimal estimé si A/B travaillent en parallèle : 1 h 30 à 2 h 25. La dernière phase validée reste **Phase 1 — GO**.

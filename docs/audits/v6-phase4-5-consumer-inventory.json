@@ -1,0 +1,1877 @@
+{
+  "generated_at": "2026-09-17T17:04:53.183Z",
+  "scope": [
+    "src",
+    "supabase/functions",
+    "supabase/migrations"
+  ],
+  "summary": {
+    "legacy_batch": {
+      "total": 42,
+      "production": 42,
+      "tests": 0,
+      "files": [
+        "src/account-detail/AccountHeader.tsx",
+        "src/account-detail/service.ts",
+        "src/account-detail/types.ts",
+        "src/account-list/mapping.ts",
+        "src/account-list/service.ts",
+        "src/home/render.ts",
+        "src/home/service.ts",
+        "src/person-detail/mapping.ts",
+        "src/person-detail/types.ts",
+        "src/person-list/service.ts",
+        "src/services/recDedup.ts",
+        "supabase/functions/_shared/behavior-analysis.ts",
+        "supabase/functions/account-strategic-reading/index.ts",
+        "supabase/functions/score-batch/index.ts",
+        "supabase/functions/sync-email-analysis/index.ts",
+        "supabase/migrations/20260621204803_schedule_score_cron.sql",
+        "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+        "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+        "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+        "supabase/migrations/20260916120000_classify_markers_cron.sql",
+        "supabase/migrations/20260917053806_reconstruct_scheduled_workers.sql"
+      ]
+    },
+    "canonical_account_brain": {
+      "total": 22,
+      "production": 22,
+      "tests": 0,
+      "files": [
+        "src/account-detail/AccountRelationView.tsx",
+        "src/account-detail/AccountWeatherV6.tsx",
+        "src/services/account-brain/accountBrain.ts",
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917051111_v6_harden_existing_readers.sql"
+      ]
+    },
+    "legacy_profile_score": {
+      "total": 79,
+      "production": 54,
+      "tests": 25,
+      "files": [
+        "src/account-detail/service.ts",
+        "src/account-list/__tests__/mapping.test.ts",
+        "src/account-list/mapping.ts",
+        "src/account-list/service.ts",
+        "src/home/__tests__/service.test.ts",
+        "src/home/priority.ts",
+        "src/home/service.ts",
+        "src/person-detail/__tests__/mapping.test.ts",
+        "src/person-detail/mapping.ts",
+        "src/person-list/service.ts",
+        "src/services/behavior-sync.ts",
+        "src/services/data.ts",
+        "supabase/functions/_shared/behavior-analysis.ts",
+        "supabase/functions/account-strategic-reading/index.ts",
+        "supabase/functions/monitor-company-news/index.ts",
+        "supabase/functions/score-batch/index.ts",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260916201852_cognitive_profiles_axis_evidence.sql",
+        "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql"
+      ]
+    },
+    "legacy_account_snapshots": {
+      "total": 39,
+      "production": 37,
+      "tests": 2,
+      "files": [
+        "src/account-detail/service.ts",
+        "src/account-list/AccountsListPage.tsx",
+        "src/account-list/__tests__/mapping.test.ts",
+        "src/account-list/mapping.ts",
+        "src/account-list/service.ts",
+        "src/home/service.ts",
+        "supabase/functions/account-strategic-reading/index.ts",
+        "supabase/functions/generate-briefs/index.ts",
+        "supabase/functions/score-batch/index.ts",
+        "supabase/functions/send-weekly-digest/assemble.ts",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+        "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql"
+      ]
+    },
+    "legacy_context_score": {
+      "total": 10,
+      "production": 8,
+      "tests": 2,
+      "files": [
+        "src/account-detail/service.ts",
+        "src/account-list/mapping.ts",
+        "src/home/__tests__/service.test.ts",
+        "src/home/priority.ts",
+        "src/home/service.ts",
+        "src/services/data.ts"
+      ]
+    },
+    "legacy_strategic_reader": {
+      "total": 6,
+      "production": 6,
+      "tests": 0,
+      "files": [
+        "src/account-detail/service.ts",
+        "src/services/recDedup.ts",
+        "src/services/strategic-reading.ts",
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    "legacy_contact_history": {
+      "total": 33,
+      "production": 31,
+      "tests": 2,
+      "files": [
+        "src/account-list/__tests__/mapping.test.ts",
+        "src/account-list/mapping.ts",
+        "src/account-list/service.ts",
+        "src/person-detail/__tests__/mapping.test.ts",
+        "src/person-detail/mapping.ts",
+        "src/person-detail/service.ts",
+        "src/person-list/service.ts",
+        "supabase/functions/generate-briefs/index.ts",
+        "supabase/functions/score-batch/index.ts",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+        "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql"
+      ]
+    },
+    "legacy_person_snapshots": {
+      "total": 23,
+      "production": 23,
+      "tests": 0,
+      "files": [
+        "src/person-detail/mapping.ts",
+        "src/person-detail/service.ts",
+        "supabase/functions/score-batch/index.ts",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql",
+        "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql"
+      ]
+    },
+    "canonical_scoring_snapshot": {
+      "total": 23,
+      "production": 23,
+      "tests": 0,
+      "files": [
+        "src/person-detail/mapping.ts",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+        "supabase/migrations/20260917051111_v6_harden_existing_readers.sql"
+      ]
+    },
+    "canonical_dyad_reader": {
+      "total": 5,
+      "production": 5,
+      "tests": 0,
+      "files": [
+        "src/person-detail/mapping.ts",
+        "src/person-detail/service.ts",
+        "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql"
+      ]
+    }
+  },
+  "occurrences": [
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/AccountHeader.tsx",
+      "line": 51,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountRelationView.tsx",
+      "line": 119,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountRelationView.tsx",
+      "line": 501,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountRelationView.tsx",
+      "line": 677,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountRelationView.tsx",
+      "line": 680,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountWeatherV6.tsx",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/account-detail/AccountWeatherV6.tsx",
+      "line": 343,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-detail/service.ts",
+      "line": 72,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-detail/service.ts",
+      "line": 78,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-detail/service.ts",
+      "line": 155,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/account-detail/service.ts",
+      "line": 298,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/service.ts",
+      "line": 310,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "src/account-detail/service.ts",
+      "line": 358,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "src/account-detail/service.ts",
+      "line": 362,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/service.ts",
+      "line": 421,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/service.ts",
+      "line": 422,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/service.ts",
+      "line": 426,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/service.ts",
+      "line": 617,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-detail/types.ts",
+      "line": 98,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/AccountsListPage.tsx",
+      "line": 91,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/AccountsListPage.tsx",
+      "line": 119,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 35,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 36,
+      "test_file": true
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 89,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 91,
+      "test_file": true
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 97,
+      "test_file": true
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/__tests__/mapping.test.ts",
+      "line": 173,
+      "test_file": true
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-list/mapping.ts",
+      "line": 3,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/mapping.ts",
+      "line": 3,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/mapping.ts",
+      "line": 100,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/mapping.ts",
+      "line": 102,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/account-list/mapping.ts",
+      "line": 163,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/mapping.ts",
+      "line": 226,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/account-list/mapping.ts",
+      "line": 228,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/mapping.ts",
+      "line": 279,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/account-list/service.ts",
+      "line": 13,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/account-list/service.ts",
+      "line": 67,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/account-list/service.ts",
+      "line": 68,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/account-list/service.ts",
+      "line": 76,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-list/service.ts",
+      "line": 180,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-list/service.ts",
+      "line": 313,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-list/service.ts",
+      "line": 314,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/account-list/service.ts",
+      "line": 330,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 10,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 18,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 20,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 21,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 28,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 30,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 31,
+      "test_file": true
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 38,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 48,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 49,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 80,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 100,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 101,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 120,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 121,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 211,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/__tests__/service.test.ts",
+      "line": 212,
+      "test_file": true
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/home/priority.ts",
+      "line": 5,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/priority.ts",
+      "line": 6,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/home/render.ts",
+      "line": 532,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 140,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 145,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 156,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 161,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/home/service.ts",
+      "line": 167,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/home/service.ts",
+      "line": 167,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 168,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 189,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 196,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 197,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/home/service.ts",
+      "line": 200,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/home/service.ts",
+      "line": 220,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 251,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 256,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 257,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/home/service.ts",
+      "line": 420,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/home/service.ts",
+      "line": 436,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "src/home/service.ts",
+      "line": 441,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 60,
+      "test_file": true
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 69,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 82,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 83,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 94,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 96,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 107,
+      "test_file": true
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/__tests__/mapping.test.ts",
+      "line": 109,
+      "test_file": true
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-detail/mapping.ts",
+      "line": 250,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 251,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 253,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "src/person-detail/mapping.ts",
+      "line": 262,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-detail/mapping.ts",
+      "line": 264,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "src/person-detail/mapping.ts",
+      "line": 657,
+      "test_file": false
+    },
+    {
+      "category": "canonical_dyad_reader",
+      "file": "src/person-detail/mapping.ts",
+      "line": 658,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-detail/mapping.ts",
+      "line": 696,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 716,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 747,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 748,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 752,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 753,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-detail/mapping.ts",
+      "line": 802,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 807,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 831,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-detail/mapping.ts",
+      "line": 832,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "src/person-detail/service.ts",
+      "line": 44,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-detail/service.ts",
+      "line": 46,
+      "test_file": false
+    },
+    {
+      "category": "canonical_dyad_reader",
+      "file": "src/person-detail/service.ts",
+      "line": 66,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-detail/types.ts",
+      "line": 350,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-list/service.ts",
+      "line": 26,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/person-list/service.ts",
+      "line": 65,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "src/person-list/service.ts",
+      "line": 66,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-list/service.ts",
+      "line": 168,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-list/service.ts",
+      "line": 172,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-list/service.ts",
+      "line": 225,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-list/service.ts",
+      "line": 226,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/person-list/service.ts",
+      "line": 239,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/services/account-brain/accountBrain.ts",
+      "line": 1,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/services/account-brain/accountBrain.ts",
+      "line": 10,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "src/services/account-brain/accountBrain.ts",
+      "line": 100,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/services/behavior-sync.ts",
+      "line": 49,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/services/behavior-sync.ts",
+      "line": 62,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/services/data.ts",
+      "line": 14,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/services/data.ts",
+      "line": 34,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/services/data.ts",
+      "line": 124,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/services/data.ts",
+      "line": 155,
+      "test_file": false
+    },
+    {
+      "category": "legacy_context_score",
+      "file": "src/services/data.ts",
+      "line": 155,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "src/services/data.ts",
+      "line": 176,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "src/services/recDedup.ts",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "src/services/recDedup.ts",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "src/services/strategic-reading.ts",
+      "line": 4,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/_shared/behavior-analysis.ts",
+      "line": 42,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/_shared/behavior-analysis.ts",
+      "line": 46,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/_shared/behavior-analysis.ts",
+      "line": 526,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/_shared/behavior-analysis.ts",
+      "line": 527,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/account-strategic-reading/index.ts",
+      "line": 86,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/account-strategic-reading/index.ts",
+      "line": 100,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/account-strategic-reading/index.ts",
+      "line": 122,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/account-strategic-reading/index.ts",
+      "line": 123,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/account-strategic-reading/index.ts",
+      "line": 196,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/generate-briefs/index.ts",
+      "line": 105,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/generate-briefs/index.ts",
+      "line": 120,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/generate-briefs/index.ts",
+      "line": 238,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/monitor-company-news/index.ts",
+      "line": 130,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 1,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 24,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 285,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 286,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 288,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 294,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 295,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 300,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 302,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 339,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 343,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 377,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 379,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 507,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 522,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 524,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 726,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 739,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 743,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 744,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 748,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 752,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 753,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 759,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 760,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/score-batch/index.ts",
+      "line": 771,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/functions/send-weekly-digest/assemble.ts",
+      "line": 33,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/functions/sync-email-analysis/index.ts",
+      "line": 1558,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 44,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 116,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 132,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 161,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 182,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+      "line": 283,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+      "line": 86,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260621204803_schedule_score_cron.sql",
+      "line": 7,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "supabase/migrations/202607160011_account_strategic_readings.sql",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+      "line": 345,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+      "line": 351,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+      "line": 355,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 33,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 209,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 244,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 259,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 336,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 338,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260716193854_person_detail_p0.sql",
+      "line": 339,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 42,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 165,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 200,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 276,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 277,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260717012619_account_detail_p0.sql",
+      "line": 278,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+      "line": 40,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql",
+      "line": 3,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql",
+      "line": 7,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql",
+      "line": 10,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+      "line": 531,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+      "line": 532,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 8,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 15,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 23,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 53,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 60,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 63,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 69,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 75,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 79,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 82,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "line": 85,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 72,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 95,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 96,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 102,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 119,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "line": 120,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260914150000_feature_flags.sql",
+      "line": 18,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 1,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 6,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 43,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 71,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 79,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "line": 80,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+      "line": 39,
+      "test_file": false
+    },
+    {
+      "category": "legacy_strategic_reader",
+      "file": "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+      "line": 39,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+      "line": 1,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+      "line": 9,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 20,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 22,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 53,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 62,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 64,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 99,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 107,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "line": 108,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260916120000_classify_markers_cron.sql",
+      "line": 4,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260916201852_cognitive_profiles_axis_evidence.sql",
+      "line": 14,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260916201852_cognitive_profiles_axis_evidence.sql",
+      "line": 16,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 13,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 82,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 127,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 142,
+      "test_file": false
+    },
+    {
+      "category": "canonical_dyad_reader",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 156,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 166,
+      "test_file": false
+    },
+    {
+      "category": "canonical_dyad_reader",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 170,
+      "test_file": false
+    },
+    {
+      "category": "canonical_dyad_reader",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 171,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917050631_v6_recover_remote_contracts.sql",
+      "line": 185,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 2,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 3,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 40,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 49,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 51,
+      "test_file": false
+    },
+    {
+      "category": "canonical_scoring_snapshot",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 86,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 95,
+      "test_file": false
+    },
+    {
+      "category": "canonical_account_brain",
+      "file": "supabase/migrations/20260917051111_v6_harden_existing_readers.sql",
+      "line": 96,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 148,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 149,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 149,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 150,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 151,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 151,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 152,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 153,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 154,
+      "test_file": false
+    },
+    {
+      "category": "legacy_person_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 155,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 156,
+      "test_file": false
+    },
+    {
+      "category": "legacy_profile_score",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 159,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 170,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 171,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 172,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 173,
+      "test_file": false
+    },
+    {
+      "category": "legacy_contact_history",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 174,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 175,
+      "test_file": false
+    },
+    {
+      "category": "legacy_account_snapshots",
+      "file": "supabase/migrations/20260917051508_recover_deployed_support_contracts.sql",
+      "line": 176,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260917053806_reconstruct_scheduled_workers.sql",
+      "line": 38,
+      "test_file": false
+    },
+    {
+      "category": "legacy_batch",
+      "file": "supabase/migrations/20260917053806_reconstruct_scheduled_workers.sql",
+      "line": 39,
+      "test_file": false
+    }
+  ]
+}

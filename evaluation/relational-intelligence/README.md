@@ -2,6 +2,8 @@
 
 Les 15 cas fournis sont des **gabarits synthétiques non annotés**, exclus des métriques humaines. Aucun score précis n'est une annotation attendue. `harness.ts` définit et valide le schéma : contexte temporel, événements, participants, faits/markers attendus et interdits, engagements, rôles, direction qualitative, champs indéterminables. Deux annotateurs distincts et un arbitrage conservant les désaccords sont obligatoires pour un cas évalué. Un cas réel reste exclu tant que `privacy_reviewed` n'est pas explicitement vrai.
 
+Le corpus privé courant est `private/candidates.v2.json` : 35 cas, 27 development et 8 holdout, séparés par relation. Les paquets ne contiennent aucun score, résultat Legacy, marker prédit ou recommandation. Utiliser `ANNOTATION_GUIDE.md` et l'interface locale `annotation-tool.mjs`; aucun JSON ne doit être édité manuellement.
+
 Remplacer les gabarits par des séquences réelles autorisées et anonymisées, marquées `human_real`. `scripts/v6-export-gold-candidates.py` conserve une clé HMAC privée afin que les pseudonymes et le split soient stables entre deux exports. Scinder par `group_id` de compte/relation : un groupe ne peut appartenir à development et holdout. Conserver le holdout hors des choix de prompts/poids/seuils. L'arbitrage ne gomme pas les annotations initiales. Conserver identifiants de versions, citations vérifiées et instant des corrections.
 
 Commande :
