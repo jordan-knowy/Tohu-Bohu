@@ -1,23 +1,31 @@
-// Copie exacte de src/services/scoring/detectors.ts — voir le commentaire de
-// types.ts dans ce même dossier pour la raison de cette duplication.
+// Canonical V6 module: shared by browser and edge.
 // Détecteurs DÉTERMINISTES V6 — purs, sans DB/LLM. Produisent des marker_event
 // « drafts » (preuve + date obligatoires) à partir des données RÉELLES disponibles
 // (communication_messages, meetings). Un draft n'entre PAS dans le score tant qu'il
 // n'est pas persisté ; un draft `candidate` n'entre jamais tel quel (validation requise).
+//
+// Disponibilité auditée le 2026-09-14 :
+//   • messages : thread_id, direction, sent_at, subject → OK (latence, cadence, threads)
+//   • meetings + meeting_participants → OK (présence), MAIS response_status = 'needsAction'
+//     uniquement → pas d'accept/decline → E05 = candidate_only
+//   • cc réel non capté (metadata: from/to seulement) → C02 blocked_by_missing_source
+//   • corps non stocké (analyzed_without_body_storage) → C03/S01 (formalité/hedging) blocked
+// Voir FINAL_ACCOUNT_ENGINE_V6_REPORT.md §6.
 
 export const DETECTOR_VERSION = 'detectors-v1'
 
 export interface DyadMessage {
   id: string
   threadId: string
-  direction: 'inbound' | 'outbound'
+  direction: 'inbound' | 'outbound' // inbound = du contact vers nous
   sentAt: string
   subject?: string | null
 }
 export interface DyadMeeting {
   id: string
   startsAt: string
-  occurred: boolean
+  state?: 'observed' | 'scheduled' | 'cancelled' | 'corrected' | 'deleted'
+  occurred: boolean            // réunion réellement tenue (passée / brief)
   contactParticipated: boolean
 }
 
@@ -26,12 +34,12 @@ export interface MarkerEventDraft {
   scope: 'person'
   sense: -1 | 1
   observedAt: string
-  evidenceRef: string
+  evidenceRef: string          // id d'un message/réunion représentatif
   evidenceText: string
   measure: Record<string, unknown>
   detectorVersion: string
-  confidence: number
-  status: 'accepted' | 'candidate'
+  confidence: number           // 0-1
+  status: 'accepted' | 'candidate'  // candidate = ne pas scorer tant que non validé
 }
 
 const DAY = 86_400_000
@@ -42,13 +50,14 @@ const median = (xs: number[]): number | null => {
   return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
 }
 
+// ── P4 : baseline dyade (fenêtre glissante, défaut 182 j ≈ 6 mois) ───────────
 export interface DyadBaseline {
   episodes: number
-  sufficient: boolean
-  reliabilityCap: number
+  sufficient: boolean          // ≥ 8 épisodes → marqueurs de déviation autorisés
+  reliabilityCap: number       // ≤ 0.50 sous 8 épisodes (P4)
   cadenceMedianDays: number | null
-  contactResponseMedianHours: number | null
-  ourResponseMedianHours: number | null
+  contactResponseMedianHours: number | null // latence : notre outbound → leur inbound
+  ourResponseMedianHours: number | null      // leur inbound → notre outbound
   avgThreadDepth: number | null
   channels: string[]
   windowDays: number
@@ -57,9 +66,10 @@ export interface DyadBaseline {
 export function computeDyadBaseline(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number, windowDays = 182): DyadBaseline {
   const from = nowMs - windowDays * DAY
   const msg = messages.filter((m) => { const t = new Date(m.sentAt).getTime(); return t >= from && t <= nowMs }).sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
-  const meet = meetings.filter((m) => { const t = new Date(m.startsAt).getTime(); return t >= from && t <= nowMs })
+  const meet = meetings.filter((m) => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed')).filter((m) => { const t = new Date(m.startsAt).getTime(); return t >= from && t <= nowMs })
   const episodes = msg.length + meet.length
 
+  // Latences par sens, à l'intérieur de chaque thread (messages consécutifs de sens opposé).
   const byThread = new Map<string, DyadMessage[]>()
   for (const m of msg) byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m])
   const contactResp: number[] = []
@@ -75,6 +85,7 @@ export function computeDyadBaseline(messages: DyadMessage[], meetings: DyadMeeti
     }
   }
 
+  // Cadence : médiane des écarts entre interactions consécutives (tous types).
   const times = [...msg.map((m) => new Date(m.sentAt).getTime()), ...meet.map((m) => new Date(m.startsAt).getTime())].sort((a, b) => a - b)
   const gaps: number[] = []
   for (let i = 1; i < times.length; i++) gaps.push((times[i]! - times[i - 1]!) / DAY)
@@ -94,6 +105,8 @@ export function computeDyadBaseline(messages: DyadMessage[], meetings: DyadMeeti
   }
 }
 
+// ── S04 : même demande relancée ≥ 2× sans réponse (déterministe) ─────────────
+// Un thread avec ≥ 2 outbound sur des jours distincts et 0 inbound = relances sans réponse.
 export function detectS04(messages: DyadMessage[]): MarkerEventDraft[] {
   const byThread = new Map<string, DyadMessage[]>()
   for (const m of messages) byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m])
@@ -103,7 +116,7 @@ export function detectS04(messages: DyadMessage[]): MarkerEventDraft[] {
     const inbound = arr.filter((m) => m.direction === 'inbound')
     if (inbound.length > 0 || outbound.length < 2) continue
     const days = new Set(outbound.map((m) => m.sentAt.slice(0, 10)))
-    if (days.size < 2) continue
+    if (days.size < 2) continue // relances le même jour = pas une vraie relance espacée
     const sorted = outbound.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
     const spanDays = (new Date(sorted[sorted.length - 1]!.sentAt).getTime() - new Date(sorted[0]!.sentAt).getTime()) / DAY
     out.push({
@@ -117,6 +130,7 @@ export function detectS04(messages: DyadMessage[]): MarkerEventDraft[] {
   return out
 }
 
+// ── R01 : latence asymétrique du contact vs SA baseline (jamais un seuil absolu) ──
 export function detectR01(baseline: DyadBaseline, recentMessages: DyadMessage[], nowMs: number, recentDays = 45): MarkerEventDraft[] {
   if (!baseline.sufficient || baseline.contactResponseMedianHours == null) return []
   const from = nowMs - recentDays * DAY
@@ -137,8 +151,8 @@ export function detectR01(baseline: DyadBaseline, recentMessages: DyadMessage[],
   if (recentMed == null || recent.length < 2) return []
   const ratio = recentMed / baseline.contactResponseMedianHours
   let sense: -1 | 1 | 0 = 0
-  if (ratio >= 1.5) sense = -1
-  else if (ratio <= 0.67) sense = 1
+  if (ratio >= 1.5) sense = -1        // le contact répond nettement plus lentement qu'à son habitude
+  else if (ratio <= 0.67) sense = 1   // nettement plus vite
   if (sense === 0) return []
   return [{
     markerId: 'R01', scope: 'person', sense, observedAt: new Date(nowMs).toISOString(),
@@ -149,6 +163,7 @@ export function detectR01(baseline: DyadBaseline, recentMessages: DyadMessage[],
   }]
 }
 
+// ── R02 : initiation qualifiée (candidate — « substantielle vs relance » exige le contenu) ──
 export function detectR02(messages: DyadMessage[], nowMs: number, recentDays = 90): MarkerEventDraft[] {
   const from = nowMs - recentDays * DAY
   const byThread = new Map<string, DyadMessage[]>()
@@ -170,10 +185,11 @@ export function detectR02(messages: DyadMessage[], nowMs: number, recentDays = 9
   }]
 }
 
+// ── A01 : diversité de canaux instrumentés actifs (déterministe, bipolaire) ──
 export function detectA01(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number, windowDays = 182): MarkerEventDraft[] {
   const from = nowMs - windowDays * DAY
-  const hasEmail = messages.some((m) => new Date(m.sentAt).getTime() >= from)
-  const hasMeeting = meetings.some((m) => new Date(m.startsAt).getTime() >= from)
+  const hasEmail = messages.some((m) => new Date(m.sentAt).getTime() >= from && new Date(m.sentAt).getTime() <= nowMs)
+  const hasMeeting = meetings.some((m) => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed') && new Date(m.startsAt).getTime() >= from && new Date(m.startsAt).getTime() <= nowMs)
   const channels = [hasEmail && 'email', hasMeeting && 'meeting'].filter(Boolean) as string[]
   if (channels.length === 0) return []
   const sense: -1 | 1 = channels.length >= 2 ? 1 : -1
@@ -186,8 +202,9 @@ export function detectA01(messages: DyadMessage[], meetings: DyadMeeting[], nowM
   }]
 }
 
+// ── A02 : continuité entre périodes (trimestres actifs, déterministe, bipolaire) ──
 export function detectA02(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number): MarkerEventDraft[] {
-  const times = [...messages.map((m) => new Date(m.sentAt).getTime()), ...meetings.map((m) => new Date(m.startsAt).getTime())]
+  const times = [...messages.map((m) => new Date(m.sentAt).getTime()), ...meetings.filter(m => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed')).map((m) => new Date(m.startsAt).getTime())]
   const activeQuarters = new Set<number>()
   for (let q = 0; q < 4; q++) {
     const start = nowMs - (q + 1) * 90 * DAY, end = nowMs - q * 90 * DAY
@@ -208,8 +225,9 @@ export function detectA02(messages: DyadMessage[], meetings: DyadMeeting[], nowM
   }]
 }
 
+// ── E05 : acceptation de sollicitations → CANDIDATE (pas d'accept/decline capté) ──
 export function detectE05Candidate(meetings: DyadMeeting[]): MarkerEventDraft[] {
-  const held = meetings.filter((m) => m.occurred && m.contactParticipated)
+  const held = meetings.filter((m) => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed'))
   if (held.length === 0) return []
   const last = held.sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime())[0]!
   return [{
@@ -221,7 +239,10 @@ export function detectE05Candidate(meetings: DyadMeeting[]): MarkerEventDraft[] 
   }]
 }
 
+/** Orchestrateur : tous les détecteurs déterministes disponibles pour une dyade. */
 export function runDeterministicDetectors(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number): { baseline: DyadBaseline; drafts: MarkerEventDraft[] } {
+  messages = messages.filter(m => new Date(m.sentAt).getTime() <= nowMs)
+  meetings = meetings.filter(m => new Date(m.startsAt).getTime() <= nowMs && m.occurred && m.contactParticipated && (!m.state || m.state === 'observed'))
   const baseline = computeDyadBaseline(messages, meetings, nowMs)
   const drafts = [
     ...detectS04(messages),

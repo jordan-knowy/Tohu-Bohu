@@ -88,3 +88,16 @@ verify_jwt = false
 
 [functions.sync-notion]
 verify_jwt = false
+
+# V6 foundation: gateway JWT verification plus explicit handler authorization.
+[functions.classify-markers]
+verify_jwt = true
+
+[functions.detect-dyad-markers]
+verify_jwt = true
+
+[functions.score-batch-account-v6]
+verify_jwt = true
+
+[functions.v6-ingest-events]
+verify_jwt = true

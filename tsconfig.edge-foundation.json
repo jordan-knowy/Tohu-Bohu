@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {"types": [], "noEmit": true},
+  "include": [
+    "scripts/edge-runtime.d.ts",
+    "supabase/functions/_shared/scoring-v6/*.ts",
+    "supabase/functions/classify-markers/index.ts",
+    "supabase/functions/detect-dyad-markers/index.ts",
+    "supabase/functions/score-batch-account-v6/index.ts",
+    "supabase/functions/v6-ingest-events/index.ts",
+    "evaluation/relational-intelligence/harness.ts"
+  ],
+  "exclude": ["**/*.test.ts"]
+}

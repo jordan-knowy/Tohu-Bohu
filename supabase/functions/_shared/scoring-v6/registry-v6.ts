@@ -1,10 +1,11 @@
-// Copie exacte de src/services/scoring/registry-v6.ts — voir le commentaire
-// de types.ts dans ce même dossier pour la raison de cette duplication.
+// Canonical V6 module: shared by browser and edge.
 // Fixtures V6 — registre des marqueurs (22 personne + K01–K09 + X01–X03) et
 // paramètres. Statique, versionné, IMMUABLE : un changement = nouvelle version.
+// Valeurs issues de SCORING_V6_S0_DESIGN.md §B/§C/§D et du prompt de mission §10/§22/§26.
 
 import type { DialId, MarkerRegistry, MarkerRegistryEntry, ScoringParams } from './types.ts'
 
+// Marqueur PERSONNE (axe) ou hors-score (X)
 function m(
   markerId: string, axis: MarkerRegistryEntry['axis'], tier: MarkerRegistryEntry['tier'],
   ptsSpec: number | null, sign: -1 | 0 | 1, volBase: number,
@@ -12,6 +13,7 @@ function m(
 ): MarkerRegistryEntry {
   return { markerId, scope: axis ? 'person' : 'out_of_score', axis, dial: null, tier, ptsSpec, sign, volBase, manipulable, cost: tier, rule }
 }
+// Marqueur COMPTE (cadran K)
 function k(
   markerId: string, dial: DialId, tier: MarkerRegistryEntry['tier'], ptsSpec: number, sign: -1 | 0,
   rule: string,
@@ -71,10 +73,11 @@ const STATUS = {
   tiers: REF, repetition: REF, decay: REF, volontarite: REF, axisWeights: REF,
   authority: REF, anchoring: REF, dynamics: REF,
   dialWeightsClientProspect: REF,
-  dialWeightsOtherTypes: PROP,
-  temporalDecay: BLOCKED,
+  dialWeightsOtherTypes: PROP,     // Fournisseur/Partenaire/Investisseur/Interne : jamais présentés comme validés
+  temporalDecay: BLOCKED,          // ?D01 : jamais implémenté
 } as const
 
+/** Mode PALIER (défaut V6). Les points viennent des paliers, jamais de ptsSpec. */
 export const PARAMS_V6_PALIER: ScoringParams = {
   version: 'params-v6.0-palier',
   mode: 'palier',
@@ -93,7 +96,9 @@ export const PARAMS_V6_PALIER: ScoringParams = {
   },
   axisWeights: { confiance: 0.25, satisfaction: 0.25, engagement: 0.20, reciprocite: 0.20, ancrage: 0.10 },
   dialWeights: {
+    // current_reference
     'Client/Prospect': { d_satisfaction: .25, d_confiance_recip: .20, d_couverture: .20, d_equilibre: .15, d_ancrage: .10, d_dynamique: .10 },
+    // provisional (jamais « validé scientifiquement »)
     Fournisseur: { d_satisfaction: .30, d_confiance_recip: .25, d_couverture: .05, d_equilibre: .05, d_ancrage: .15, d_dynamique: .20 },
     Partenaire: { d_satisfaction: .15, d_confiance_recip: .25, d_couverture: .15, d_equilibre: .15, d_ancrage: .10, d_dynamique: .20 },
     Investisseur: { d_satisfaction: .15, d_confiance_recip: .30, d_couverture: .20, d_equilibre: .05, d_ancrage: .20, d_dynamique: .10 },
@@ -112,12 +117,14 @@ export const PARAMS_V6_PALIER: ScoringParams = {
   status: STATUS,
 }
 
+/** Mode SPEC (référence de non-régression V5.1). Points = ptsSpec des marqueurs. */
 export const PARAMS_V6_SPEC: ScoringParams = {
   ...PARAMS_V6_PALIER,
   version: 'params-v6.0-spec',
   mode: 'spec',
 }
 
+/** Types de relation dont les poids de cadrans sont validés (current_reference). */
 export function relationTypeStatus(relationType: string): 'current_reference' | 'provisional' {
   return relationType === 'Client/Prospect' ? 'current_reference' : 'provisional'
 }

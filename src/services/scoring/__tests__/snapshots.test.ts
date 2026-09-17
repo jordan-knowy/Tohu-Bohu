@@ -3,7 +3,7 @@ import { PARAMS_V6_PALIER, REGISTRY_V6 } from '../registry-v6'
 import {
   buildDyadScoreSnapshot, displayRule, reliabilityDyad, statusFromCadence,
 } from '../snapshots'
-import { computeDelta30, monthlySteps, replayDyadMonthly } from '../replay'
+import { monthlySteps, replayDyadMonthly } from '../replay'
 import type { DyadRole, MarkerEvent } from '../types'
 import type { DyadSnapshotInput } from '../snapshots'
 
@@ -111,21 +111,9 @@ describe('S7 — rejeu temporel (escalier mensuel, observed_at ≤ T)', () => {
     expect(july.markerCount).toBe(2)    // C01 + C05
     expect(july.score!).toBeGreaterThan(april.score!) // C05 ajoute de la confiance
   })
-  it('replayDyadMonthly : chaque marche est un calcul réel, sans interpolation', () => {
-    const events = [ev('C01', '2026-03-10T00:00:00Z'), ev('C04', '2026-05-10T00:00:00Z')]
-    const { at, ...rest } = base({ markerEvents: events })
-    const points = replayDyadMonthly(rest, monthlySteps(new Date('2026-06-01T00:00:00Z'), 4))
-    // mars: 1 marqueur ; avril: idem ; mai: 2 ; juin: 2 — score non décroissant ici
-    expect(points).toHaveLength(4)
-    expect(points[0]!.snapshotMonth).toBe('2026-03-01')
-    expect(points[3]!.snapshotMonth).toBe('2026-06-01')
-  })
-  it('delta 30 j = score(T) − score(T−30j)', () => {
-    const events = [ev('C01', '2026-03-10T00:00:00Z'), ev('C05', '2026-05-20T00:00:00Z')]
-    const { at, ...rest } = base({ markerEvents: events })
-    const delta = computeDelta30(rest, '2026-06-01T00:00:00Z')
-    // à T-30 (2 mai) seul C01 ; à T (1 juin) C01+C05 → delta > 0
-    expect(delta!).toBeGreaterThan(0)
+  it('rejects replay using undated present-day context (replaced by foundation replay tests)', () => {
+    const { at, ...rest } = base()
+    expect(() => replayDyadMonthly(rest as any, [at])).toThrow('DATED_LEDGER_REQUIRED')
   })
   it('reproductibilité : mêmes versions + mêmes events ≤ T → score identique', () => {
     const a = buildDyadScoreSnapshot(base())
