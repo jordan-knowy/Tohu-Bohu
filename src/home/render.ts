@@ -529,7 +529,6 @@ async function runAnalysis(ctx: HomeContext, chosen: HomeAccountCandidate[]): Pr
     // (pas seulement « aujourd'hui ») à partir des échanges déjà synchronisés,
     // avec la même formule que le score courant. Best-effort, ne bloque jamais
     // l'affichage du cockpit.
-    void getSupabase().functions.invoke('score-batch', { body: { organizationId: ctx.organizationId, deepBackfill: true } })
     await renderHome(ctx)
   } catch (error) {
     stepError(ctx, error instanceof Error ? error.message : 'Activation impossible.', () => void runAnalysis(ctx, chosen))

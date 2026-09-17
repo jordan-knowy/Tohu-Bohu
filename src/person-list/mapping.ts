@@ -117,8 +117,7 @@ export function buildPersonListRows(raw: PersonListRaw): PersonListRow[] {
       : null
 
     const lastMessageAt = messages.map((m) => text(m.sent_at)).filter((v): v is string => v !== null).sort().at(-1) ?? null
-    const lastSnapshotAt = rows(contact.relationship_snapshots).map((r) => text(r.last_contact_at)).filter((v): v is string => v !== null).sort().at(-1) ?? null
-    const lastContactAt = [lastMessageAt, lastSnapshotAt].filter((v): v is string => v !== null).sort().at(-1) ?? null
+    const lastContactAt = lastMessageAt
 
     const startedAt = text(contact.tenure_start_date)
       ?? meetings.map((m) => text(m.starts_at)).filter((v): v is string => v !== null).sort()[0]

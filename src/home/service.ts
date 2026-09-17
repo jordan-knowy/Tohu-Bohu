@@ -140,6 +140,11 @@ function mapJob(row: DbRow): HomeSyncJob {
 type SnapshotRow = { engagement_score: number | null; phase: string | null; snapshot_date: string | null; last_contact_at: string | null }
 
 function contactSnapshots(row: DbRow): SnapshotRow[] {
+  const state = record(row.v6_state)
+  if (Object.keys(state).length) {
+    const lastContactAt = rows(state.evidence).map((event) => str(event.eventTime)).filter((value): value is string => value !== null).sort().at(-1) ?? null
+    return [{ engagement_score: num(state.score), phase: null, snapshot_date: str(state.observedAt)?.slice(0, 10) ?? null, last_contact_at: lastContactAt }]
+  }
   const snapshots = rows(row.relationship_snapshots)
     .map((snapshot) => ({
       engagement_score: num(snapshot.engagement_score),
@@ -197,13 +202,12 @@ export function buildScoredAccounts(companies: DbRow[], contacts: DbRow[], track
         previousScores.push(latest.engagement_score - previous.engagement_score)
       }
     }
-    const ownScore = accountScores.get(String(company.id)) ?? num(context.relationship_score)
-    const contactAverage = latestScores.length ? Math.round(latestScores.reduce((sum, value) => sum + value, 0) / latestScores.length) : null
+    const ownScore = accountScores.get(String(company.id)) ?? null
     return {
       id: String(company.id),
       name: String(company.name ?? 'Compte'),
       industry: str(company.industry),
-      score: ownScore ?? contactAverage,
+      score: ownScore,
       confidence: num(context.confidence_score ?? company.account_type_confidence),
       lastInteractionAt: lastContactAt,
       contactCount: linked.length,
@@ -415,9 +419,9 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
 
-  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData, behaviorProfileData, insightFeedbackData, archivedAccountsData, archivedPeopleData] = await Promise.all([
+  const [companiesData, contactsData, connectorsData, subscriptionData, companySignalsData, behavioralSignalsData, profileData, feedbackData, actionStatesData, jobsData, membershipsData, exchangesCount, companySignalsToday, behavioralSignalsToday, accountScoresData, personStatesData, behaviorProfileData, insightFeedbackData, archivedAccountsData, archivedPeopleData] = await Promise.all([
     safeQuery<DbRow[]>(client.from('companies').select('*').eq('organization_id', organizationId).eq('is_tracked', true).order('updated_at', { ascending: false }).limit(500), 'table companies', degradedReasons),
-    safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at,relationship_snapshots(engagement_score,phase,snapshot_date,last_contact_at),cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
+    safeQuery<DbRow[]>(client.from('contacts').select('id,company_id,owner_user_id,full_name,created_at').eq('organization_id', organizationId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000), 'table contacts', degradedReasons),
     safeQuery<DbRow[]>(client.from('connectors').select('*').eq('organization_id', organizationId).eq('user_id', userId), 'table connectors', degradedReasons),
     safeQuery<DbRow>(client.from('subscriptions').select('*').eq('organization_id', organizationId).maybeSingle(), 'table subscriptions', degradedReasons),
     // nullsFirst:false — un signal sans date connue (ex. fait générique trouvé
@@ -433,7 +437,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
     safeCount(client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId), 'comptage communication_messages', degradedReasons),
     safeCount(client.from('company_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage company_signals', degradedReasons),
     safeCount(client.from('behavioral_signals').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).gte('observed_at', startOfToday.toISOString()), 'comptage behavioral_signals', degradedReasons),
-    safeQuery<DbRow[]>(client.from('account_relationship_score_snapshots').select('company_id,score,computed_at').eq('organization_id', organizationId).order('computed_at', { ascending: false }).limit(2000), 'snapshots du score compte', degradedReasons),
+    safeQuery<DbRow[]>(client.rpc('v6_account_overview', { p_organization_id: organizationId }), 'états V6 des comptes', degradedReasons),
+    safeQuery<DbRow[]>(client.rpc('v6_person_overview', { p_organization_id: organizationId, p_user_id: userId }), 'états V6 des personnes', degradedReasons),
     safeBehaviorProfile(userId, organizationId, degradedReasons),
     safeQuery<DbRow[]>(client.from('insight_feedback').select('insight_id,feedback_type').eq('organization_id', organizationId).eq('user_id', userId).limit(200), 'table insight_feedback', degradedReasons),
     // Un compte/une personne archivé(e) doit sortir du score global à l'instant
@@ -448,7 +453,8 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   }
 
   const companies = rows(companiesData)
-  const contacts = rows(contactsData)
+  const stateByContact = new Map(rows(personStatesData).map((row) => [String(row.contact_id), record(row.payload)]))
+  const contacts: DbRow[] = rows(contactsData).map((contact): DbRow => ({ ...contact, v6_state: stateByContact.get(String(contact.id)) ?? {} }))
   const connectors = rows(connectorsData)
   const memberships = rows(membershipsData)
 
@@ -483,7 +489,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   for (const row of accountScoreRows) {
     const companyId = str(row.company_id)
     if (!companyId || accountScores.has(companyId)) continue
-    const score = num(row.score)
+    const score = num(record(row.payload).score)
     if (score !== null) accountScores.set(companyId, score)
   }
   const archivedCompanyIds = new Set(rows(archivedAccountsData).map((row) => str(row.company_id)).filter((value): value is string => value !== null))
@@ -610,7 +616,7 @@ export async function getHomeDashboard(organizationId: string, userId: string): 
   if (digest) digest.overdueActions = overdueActions
 
   const aggregate = aggregateGlobalScore(scoredAccounts)
-  const snapshotDates = contacts.flatMap((contact) => rows(contact.relationship_snapshots).map((snapshot) => str(snapshot.snapshot_date) ?? '')).filter(Boolean).sort()
+  const snapshotDates = contacts.map((contact) => str(record(contact.v6_state).observedAt) ?? '').filter(Boolean).sort()
   const accountDeltas = tracked.map((account) => account.delta30d).filter((value): value is number => value !== null)
 
   const jobs = rows(jobsData).map(mapJob)

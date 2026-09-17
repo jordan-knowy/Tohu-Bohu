@@ -1,3 +1,3 @@
-/** Phase 1 is shadow-only. Enabling product authority requires Phase 2's
- * unified state adapters; old contact-only snapshots must never win a fallback. */
-export const V6_PRODUCT_AUTHORITY: boolean = false
+/** V6 is the sole relational authority. Its contracts keep non-admissible
+ * states null, so enabling the reader never promotes exploratory scores. */
+export const V6_PRODUCT_AUTHORITY: boolean = true

@@ -28,7 +28,7 @@ describe('accountTier — bandes de score persisté, jamais de score inventé', 
 
 describe('buildAccountRows — agrégation de scores persistés', () => {
   const companies = [{ id: 'a', name: 'Oxalis', industry: 'SaaS', public_context: {}, is_tracked: true }]
-  it('moyenne des derniers scores contacts (cognitive_profiles)', () => {
+  it('ne moyenne pas les anciens scores contacts', () => {
     const rows = buildAccountRows(raw({
       companies,
       contacts: [
@@ -36,8 +36,8 @@ describe('buildAccountRows — agrégation de scores persistés', () => {
         { id: 'c2', company_id: 'a', cognitive_profiles: [{ engagement_score: 60, updated_at: '2026-07-01' }] },
       ],
     }))
-    expect(rows[0]?.score).toBe(70)
-    expect(rows[0]?.tier).toBe('Stables')
+    expect(rows[0]?.score).toBeNull()
+    expect(rows[0]?.tier).toBe('À qualifier')
     expect(rows[0]?.contactCount).toBe(2)
   })
   it('sans aucune donnée : score null, tier À qualifier, canaux éteints', () => {

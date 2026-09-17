@@ -55,63 +55,65 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.summary).toBeNull()
   })
 
-  it('le snapshot canonique prime sur l’historique hérité (score PERSONNE 5 axes)', () => {
+  it('l’état V6 admissible est la seule autorité relationnelle', () => {
     const data = buildPersonDetail(raw({
       scoreSnapshots: [{ score: 81, phase: 'growing', confidence: 74, computed_at: '2026-07-10T00:00:00Z', confiance_score: 88, satisfaction_score: 92, engagement_score: 70, reciprocity_score: 65, ancrage_score: 60, ancrage_carriers: 2, relationship_age_days: 62, model_version: 'relationship-score-v4' }],
       legacyScores: [{ score: 40, phase: 'declining', snapshot_date: '2026-07-01', score_confiance: 10, score_satisfaction: 10, score_engagement: 10, score_reciprocite: 10, score_ancrage: 10 }],
+      dyadWeatherSnapshot: { status: 'actif', score: 81, reliability: .74, computedAt: '2026-07-11T00:00:00Z', admissibility: { verdict: true }, axes: { confiance: 88, satisfaction: 92, engagement: 70, reciprocite: 65, ancrage: 60 } },
+      markerEvents: [{ markerId: 'C01', axis: 'confiance' }, { markerId: 'S08', axis: 'satisfaction' }],
     }))
     expect(data.relationship.score).toBe(81)
-    expect(data.relationship.phase).toBe('growing')
-    expect(data.relationship.dimensions).toEqual({ confiance: 88, satisfaction: 92, engagement: 70, reciprocite: 65, ancrage: 60, ancrageCarriers: 2, confianceMeasured: false, satisfactionMeasured: false })
-    expect(data.relationship.relationshipAgeDays).toBe(62)
+    expect(data.relationship.phase).toBe('unknown')
+    expect(data.relationship.dimensions).toEqual({ confiance: 88, satisfaction: 92, engagement: 70, reciprocite: 65, ancrage: 60, ancrageCarriers: null, confianceMeasured: true, satisfactionMeasured: true })
+    expect(data.relationship.confidence).toBe(74)
   })
 
-  it('sans snapshot canonique, contact_score_history fournit score, phase et dimensions', () => {
+  it('ignore contact_score_history quand V6 ne dispose pas de preuve admissible', () => {
     const data = buildPersonDetail(raw({
       legacyScores: [
         { score: 72, phase: 'stable', snapshot_date: '2026-07-01', score_confiance: 80, score_satisfaction: 70, score_engagement: 64, score_reciprocite: 64, score_ancrage: 55 },
         { score: 60, phase: 'growing', snapshot_date: '2026-06-01' },
       ],
     }))
-    expect(data.relationship.score).toBe(72)
-    expect(data.relationship.phase).toBe('stable')
-    expect(data.relationship.dimensions).toEqual({ confiance: 80, satisfaction: 70, engagement: 64, reciprocite: 64, ancrage: 55, ancrageCarriers: null, confianceMeasured: false, satisfactionMeasured: false })
-    expect(data.scoreHistory.map((point) => point.score)).toEqual([60, 72])
+    expect(data.relationship.score).toBeNull()
+    expect(data.relationship.phase).toBe('unknown')
+    expect(data.relationship.dimensions.confiance).toBeNull()
+    expect(data.scoreHistory).toEqual([])
   })
 
-  it('le profil cognitif sert de dernier repli (engagement_score, score_phase) et signale les axes IA mesurés', () => {
+  it('ne transforme pas le profil cognitif Legacy en score de secours', () => {
     const data = buildPersonDetail(raw({ cognitiveProfile: { engagement_score: 66, score_phase: 'growing', global_confidence: 58, score_engagement: 61, trust_score: 74 } }))
-    expect(data.relationship.score).toBe(66)
-    expect(data.relationship.phase).toBe('growing')
-    expect(data.relationship.confidence).toBe(58)
-    expect(data.relationship.dimensions.engagement).toBe(61)
-    expect(data.relationship.dimensions.confianceMeasured).toBe(true)
+    expect(data.relationship.score).toBeNull()
+    expect(data.relationship.phase).toBe('unknown')
+    expect(data.relationship.confidence).toBeNull()
+    expect(data.relationship.dimensions.engagement).toBeNull()
+    expect(data.relationship.dimensions.confianceMeasured).toBe(false)
     expect(data.relationship.dimensions.satisfactionMeasured).toBe(false)
   })
 
-  it('raccorde les preuves et l’historique au score legacy sans mêler les marqueurs V6 shadow', () => {
+  it('ne raccorde aucune preuve Legacy à un état V6 absent', () => {
     const data = buildPersonDetail(raw({
       scoreSnapshots: [{ score: 67, computed_at: '2026-09-15T00:00:00Z', confiance_score: 72, engagement_score: 64 }],
       legacyScores: [{ score: 61, snapshot_date: '2026-08-15', score_confiance: 66, score_engagement: 54 }],
       cognitiveProfile: { trust_score: 72, trust_evidence: ['Promesse tenue le 12/09.'] },
       markerEvents: [{ marker_id: 'C01', observed_at: '2026-09-12', evidence_text: 'Échange V6', evidence_ref: 'mail-1' }],
     }))
-    expect(data.relationship.dimensionHistory.map((point) => point.at)).toEqual(['2026-08-15', '2026-09-15T00:00:00Z'])
-    expect(data.relationship.dimensionEvidence.confiance).toEqual(['Promesse tenue le 12/09.'])
-    expect(data.relationship.weatherDimensions).toEqual({ confiance: 72, satisfaction: null, dynamique: 64, reciprocite: null, fiabilite: null, influence: null })
+    expect(data.relationship.dimensionHistory).toEqual([])
+    expect(data.relationship.dimensionEvidence.confiance).toEqual([])
+    expect(data.relationship.weatherDimensions).toEqual({ confiance: null, satisfaction: null, dynamique: null, reciprocite: null, fiabilite: null, influence: null })
     expect(data.relationship.markerEvidence).toEqual([])
   })
 
-  it('Phase 1 keeps Legacy authority even when an old contact-only V6 snapshot exists', () => {
+  it('refuse un ancien snapshot V6 qui ne porte pas l’admissibilité canonique', () => {
     const data = buildPersonDetail(raw({
       scoreSnapshots: [{score:67,computed_at:'2026-09-15',confiance_score:72,engagement_score:64}],
       dyadWeatherSnapshot: {status:'active',verdict_allowed:true,score:77,axes:{confiance:{value:78}}},
       cognitiveProfile: {trust_score:72,trust_evidence:['Promesse tenue.']},
       markerEvents: [{marker_id:'C01',observed_at:'2026-09-12',evidence_text:'Shadow',evidence_ref:'mail-1'}],
     }))
-    expect(data.relationship.score).toBe(67)
-    expect(data.relationship.dimensions.confiance).toBe(72)
-    expect(data.relationship.dimensionEvidence.confiance).toEqual(['Promesse tenue.'])
+    expect(data.relationship.score).toBeNull()
+    expect(data.relationship.dimensions.confiance).toBeNull()
+    expect(data.relationship.dimensionEvidence.confiance).toEqual([])
     expect(data.relationship.markerEvidence).toEqual([])
   })
 

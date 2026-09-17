@@ -159,20 +159,10 @@ export function buildAccountRows(raw: AccountListRaw): AccountListRow[] {
     if (settings.archived_at) return []
     const meetings = meetingsByCompany.get(id) ?? []
 
-    const scores = linked.map((contact) => latestContactScore(contact, historyByContact)).filter((value): value is number => value !== null)
-    const score = raw.accountScores.get(id) ?? num(context.relationship_score) ?? (scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null)
+    const score = raw.accountScores.get(id) ?? null
 
     // Tendance : dernier point vs point d'il y a ~30 j dans l'historique persisté.
-    const deltas: number[] = []
-    for (const contact of linked) {
-      const history = historyByContact.get(String(contact.id)) ?? []
-      const latest = num(history[0]?.score)
-      const monthAgoKey = new Date(raw.now.getTime() - 30 * 86_400_000).toISOString().slice(0, 10)
-      const previous = history.find((row) => String(row.snapshot_date ?? '') <= monthAgoKey)
-      if (latest !== null && num(previous?.score) !== null) deltas.push(latest - num(previous?.score)!)
-    }
-    const meanDelta = deltas.length ? deltas.reduce((sum, value) => sum + value, 0) / deltas.length : null
-    const trend: AccountListRow['trend'] = meanDelta === null ? null : meanDelta > 1 ? 'up' : meanDelta < -1 ? 'down' : 'flat'
+    const trend: AccountListRow['trend'] = null
 
     const startedAt = text(settings.relationship_started_at)
       ?? [...meetings.map((meeting) => text(meeting.starts_at))].filter((value): value is string => value !== null).sort()[0]

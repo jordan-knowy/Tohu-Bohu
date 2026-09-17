@@ -75,9 +75,9 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     client.from('account_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
     client.from('account_user_preferences').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', currentUserId).maybeSingle(),
     client.from('account_watch_settings').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).maybeSingle(),
-    client.from('account_relationship_score_snapshots').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('computed_at', { ascending: false }).limit(36),
+    client.rpc('account_brain', { p_organization_id: workspaceId, p_company_id: accountId, p_user_id: visionOwnerId }),
     client.from('account_contact_roles').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('active', true),
-    client.from('account_recommendations').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('priority', { ascending: false }).limit(30),
+    Promise.resolve({ data: [], error: null }),
     client.from('account_recommendation_user_state').select('recommendation_id').eq('organization_id', workspaceId).eq('company_id', accountId).eq('user_id', visionOwnerId).not('dismissed_at', 'is', null),
     client.from('account_memory_entries').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(30),
     client.from('account_firmographic_facts').select('*').eq('organization_id', workspaceId).eq('company_id', accountId).order('observed_at', { ascending: false }).limit(100),
@@ -101,9 +101,19 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   }
   const preference = object(optional(preferenceResult, 'Favoris Compte', degradedReasons))
   const watch = object(optional(watchResult, 'Veille Compte', degradedReasons))
-  const scoreRows = rows(optional(scoreResult, 'Snapshots du score Compte', degradedReasons))
+  const accountBrain = object(optional(scoreResult, 'État relationnel V6 du compte', degradedReasons))
+  const brainWeather = object(accountBrain.weather)
+  const brainState = object(accountBrain.state)
+  const scoreRows = text(brainWeather.status) === 'available' ? [{
+    score: brainWeather.score,
+    confidence: number(brainWeather.reliability) !== null ? number(brainWeather.reliability)! * 100 : null,
+    computed_at: brainWeather.at,
+    snapshot_month: text(brainWeather.at)?.slice(0, 10),
+    phase_delta: brainWeather.delta_30d,
+    contact_coverage: number(object(brainState.coverage).targetCount) ? 100 * (number(object(brainState.coverage).coveredCount) ?? 0) / number(object(brainState.coverage).targetCount)! : null,
+  }] : []
   const roleRows = rows(optional(rolesResult, 'Rôles des interlocuteurs', degradedReasons))
-  const recommendationRows = rows(optional(recommendationsResult, 'Recommandations Compte', degradedReasons))
+  const recommendationRows = rows(accountBrain.recommendations)
   // Masquées pour MOI uniquement (× « Pas pour moi ») — account_recommendation_user_state,
   // séparé du statut global de la ligne. Un rejet d'équipe passe par status='dismissed'
   // (voir markRecommendationNotRelevant), jamais par ce mécanisme per-user.
@@ -116,6 +126,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
   const lockRow = String(legacyLockRow.locked_by ?? '') === visionOwnerId ? legacyLockRow : {}
   const strategicReading = mapStrategicReading(optional(strategicReadingResult, 'Lecture stratégique', degradedReasons) as Row | null)
   const roleByContact = new Map(roleRows.map((row) => [String(row.contact_id), row]))
+  const dyadByContact = new Map(rows(brainState.dyads).map((row) => [String(row.contactId), row]))
   const feedbackBySignal = new Map(feedbackRows.map((row) => [String(row.signal_id), text(row.verdict)]))
   const profileIds = new Set<string>()
   if (text(settings.primary_owner_user_id)) profileIds.add(String(settings.primary_owner_user_id))
@@ -131,13 +142,10 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     : { data: [] }
   const profileNames = new Map(rows(profileData).map((row) => [String(row.id), text(row.full_name) ?? 'Membre Tohu']))
 
-  // Santé mensuelle reconstruite sur toute la vie de la relation (36 mois max) —
-  // depuis le scoring réel des personnes du compte, pas seulement les snapshots
-  // account récents. Dégrade silencieusement si la RPC n'est pas déployée.
-  const healthResult = await client.rpc('account_health_monthly', { p_company_id: accountId, p_months: 36 })
-  const monthlyHealth = Array.isArray(healthResult.data)
-    ? (healthResult.data as Row[]).flatMap((row) => { const ym = text(row.ym); return ym ? [{ ym, score: number(row.score) }] : [] })
-    : []
+  const monthlyHealth = rows(brainWeather.history).flatMap((row) => {
+    const at = text(row.observedAt) ?? text(row.at)
+    return at ? [{ ym: at.slice(0, 7), score: number(row.score) }] : []
+  })
 
   const people: AccountPerson[] = rows(peopleResult.data).map((row) => {
     const snapshot = latestNested(row.relationship_snapshots, 'snapshot_date')
@@ -152,7 +160,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
       organizationalRole: text(role.organizational_role),
       decisionRole: text(role.decision_role),
       relationshipRole: text(role.relationship_role),
-      score: number(snapshot.engagement_score),
+      score: number(object(dyadByContact.get(String(row.id))).score),
       phase: text(snapshot.phase),
       confidence: number(cognitive.global_confidence) ?? number(role.confidence),
       lastInteractionAt: text(snapshot.last_contact_at),
@@ -168,7 +176,7 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     }
   })
   const peopleNames = new Map(people.map((person) => [person.id, person.name]))
-  const latestScore = scoreRows[0] ?? {}
+  const latestScore: Row = object(scoreRows[0])
   const meetingRows = rows(meetingsResult.data)
   const meetingProviders = new Map<string, number>()
   meetingRows.forEach((row) => {
@@ -295,13 +303,13 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
       lockedAt: text(lockRow.created_at),
     },
     relationship: {
-      score: number(latestScore.score) ?? number(context.relationship_score),
+      score: number(latestScore.score),
       phase: ['growing', 'stable', 'declining'].includes(String(latestScore.phase)) ? latestScore.phase as 'growing' | 'stable' | 'declining' : 'unknown',
       phaseDelta: number(latestScore.phase_delta),
-      confidence: number(latestScore.confidence) ?? number(context.confidence_score),
+      confidence: number(latestScore.confidence),
       computedAt: text(latestScore.computed_at),
       totalInteractions: number(latestScore.total_interactions) ?? meetingRows.length,
-      lastInteractionAt: text(latestScore.last_interaction_at) ?? text(context.last_interaction_at) ?? text(meetingRows[0]?.starts_at),
+      lastInteractionAt: text(latestScore.last_interaction_at) ?? text(meetingRows[0]?.starts_at),
       interactionFrequency30d: number(latestScore.interaction_frequency_30d),
       contactCoverage: number(latestScore.contact_coverage),
       decisionMakerCoverage: number(latestScore.decision_maker_coverage),
@@ -418,8 +426,7 @@ export async function setAccountArchived(data: AccountDetailData, userId: string
   if (error) throw error
   // Recalcul immédiat : un compte archivé/désarchivé doit sortir/rentrer du
   // score global sans attendre le prochain cron (le moteur exclut désormais
-  // les comptes archivés — voir score-batch).
-  void client.functions.invoke('score-batch', { body: { organizationId: data.account.workspaceId } })
+  // Le pipeline V6 planifié reconstruira les snapshots canoniques.
 }
 
 /** Confirme/change la catégorie du compte (Prospect/Client/Partenaire/...) —

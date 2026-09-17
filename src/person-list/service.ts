@@ -62,8 +62,8 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
     contactsResult, historyResult, settingsResult, userSettingsResult,
     messagesResult, meetingsResult, signalsResult, teamResult, visionsResult,
   ] = await Promise.all([
-    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name,domain),cognitive_profiles(engagement_score,updated_at),relationship_snapshots(last_contact_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
+    client.from('contacts').select('id,full_name,avatar_url,role_title,company_id,owner_user_id,linkedin_url,enrichment_data,tenure_start_date,created_at,companies(name,domain)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
+    client.rpc('v6_person_overview', { p_organization_id: workspaceId, p_user_id: userId }),
     client.from('person_settings').select('contact_id,relationship_type,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('person_user_settings').select('contact_id,favorite,watch_enabled').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('communication_messages').select('contact_id,sent_at').eq('organization_id', workspaceId).eq('metadata->>user_id', userId).limit(3000),
@@ -76,7 +76,10 @@ export async function getPeopleOverview(workspaceId: string, userId: string): Pr
   if (contactsResult.error) throw new Error(contactsResult.error.message)
 
   const contacts = rows(contactsResult.data)
-  const scoreHistory = rows(optional(historyResult, 'Historique de score', degradedReasons))
+  const scoreHistory = rows(optional(historyResult, 'États relationnels V6', degradedReasons)).map((row) => {
+    const payload = object(row.payload)
+    return { contact_id: row.contact_id, score: payload.score, snapshot_date: payload.observedAt }
+  })
   const settings = rows(optional(settingsResult, 'Réglages Personne', degradedReasons))
   const userSettings = rows(optional(userSettingsResult, 'Favoris/veille Personne', degradedReasons))
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
@@ -165,11 +168,6 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
     .eq('status', 'connected')
     .in('provider', ['google', 'microsoft'])
   void Promise.allSettled([
-    client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
-    // Historique complet pour ce nouveau contact : reconstruit son score passé
-    // et présent à partir de ses échanges déjà synchronisés (même formule),
-    // pas seulement le score du jour.
-    client.functions.invoke('score-batch', { body: { organizationId: workspaceId, contactId, deepBackfill: true } }),
     // La veille (monitor-contacts, appel IA) n'est plus déclenchée par l'ajout
     // d'une personne — elle reste une action explicite (bouton « Veille » des
     // listes Comptes/Personnes), jamais un effet de bord automatique.
@@ -220,10 +218,6 @@ export async function setPersonArchived(workspaceId: string, contactId: string, 
     organization_id: workspaceId, contact_id: contactId, archived_at: archived ? new Date().toISOString() : null, updated_by: userId, updated_at: new Date().toISOString(),
   }, { onConflict: 'organization_id,contact_id' })
   if (error) throw error
-  // Recalcul immédiat : une personne archivée/désarchivée doit sortir/rentrer
-  // du score de son compte (et du score global) sans attendre le prochain
-  // cron — le moteur exclut désormais les contacts archivés (score-batch).
-  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 /** Suppression groupée : archive plusieurs personnes en une passe (réversible). */
@@ -236,7 +230,6 @@ export async function archivePeople(workspaceId: string, userId: string, contact
     { onConflict: 'organization_id,contact_id' },
   )
   if (error) throw error
-  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 export type HandoverResult = { entities: number; people: number; skippedPeople: number }

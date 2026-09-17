@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T17:56:27.651599+00:00",
+  "timestamp": "2026-09-17T18:03:51.465055+00:00",
   "source": "WORKING_TREE",
   "resolved_git_commit": null,
   "image": "public.ecr.aws/supabase/postgres:17.6.1.155",
@@ -733,7 +733,7 @@
     },
     {
       "path": "supabase/migrations/20260917174134_v6_canonical_relational_state.sql",
-      "sha256": "4c2d759c5853e752c87fb42c2bf8505db13fea92c56ea15bf6ad1a74a7cfed5c",
+      "sha256": "5ea18f35d3d2218b31f7236e5c65266e47f71cfe9ffc307f6fce47e0394e6e2b",
       "exit_code": 0
     }
   ],

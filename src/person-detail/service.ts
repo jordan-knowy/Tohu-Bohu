@@ -63,8 +63,8 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId),
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).eq('direction', 'inbound'),
     client.from('person_key_moments').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('occurred_at', { ascending: false }).limit(12),
-    client.rpc('get_dyad_weather_snapshot', { p_contact_id: personId }),
-    client.rpc('get_person_marker_events', { p_contact_id: personId }),
+    client.rpc('person_brain', { p_organization_id: workspaceId, p_contact_id: personId, p_user_id: visionOwnerId }),
+    Promise.resolve({ data: [], error: null }),
   ])
 
   if (contactResult.error) {
@@ -116,7 +116,8 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     ? await client.from('profiles').select('id,full_name').in('id', [...profileIds])
     : { data: [] }
   const profileNames = new Map(rows(profileData).map((row) => [String(row.id), text(row.full_name) ?? 'Membre Tohu']))
-  const dyadWeatherSnapshot = object(optional(dyadWeatherResult, 'Score de dyade V6', degradedReasons))
+  const personBrain = object(optional(dyadWeatherResult, 'État relationnel V6', degradedReasons))
+  const dyadWeatherSnapshot = object(personBrain.state)
 
   return buildPersonDetail({
     workspaceId,
@@ -132,7 +133,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     legacyCareer,
     relationshipSnapshots,
     dyadWeatherSnapshot,
-    markerEvents: markerEventsResult.error ? [] : rows(markerEventsResult.data),
+    markerEvents: rows(dyadWeatherSnapshot.contributions),
     cognitiveProfile: cognitiveProfiles[0] ?? {},
     behavioralSignals: rows(behavioralResult.data),
     recommendations,

@@ -259,7 +259,16 @@ begin
     'generated_at', now(),
     'account', jsonb_build_object('id', p_company_id, 'name', v_name, 'relation_type', v_relation),
     'state', coalesce(v_snapshot, jsonb_build_object('status', 'insufficient_evidence', 'score', null)),
-    'weather', coalesce(v_snapshot, jsonb_build_object('status', 'insufficient_evidence', 'score', null)),
+    'weather', case when v_snapshot is null then
+      jsonb_build_object('status', 'insufficient_data', 'score', null, 'reason', 'aucun snapshot compte V6 canonique')
+      else jsonb_build_object(
+        'status', case when v_snapshot->>'status' = 'available' then 'available' else 'insufficient_data' end,
+        'score', v_snapshot->'score', 'reliability', v_snapshot->'reliability',
+        'delta_30d', v_snapshot->'delta', 'weakest_dial', v_snapshot->'weakestDial',
+        'verdict_allowed', v_snapshot->'verdictAllowed', 'dials', v_snapshot->'dials',
+        'at', v_snapshot->'observedAt', 'params_version', v_snapshot->'paramsVersion',
+        'history', coalesce(v_snapshot->'history', '[]'::jsonb)
+      ) end,
     'score', v_snapshot->'score',
     'dimensions', coalesce(v_snapshot->'dials', '{}'::jsonb),
     'reliability', v_snapshot->'reliability',
@@ -282,6 +291,12 @@ begin
     'changes', jsonb_build_object('delta', v_snapshot->'delta'),
     'causes', coalesce(v_snapshot->'causes', '[]'::jsonb),
     'recommendations', '[]'::jsonb,
+    'active_facts', '[]'::jsonb,
+    'engagements', '[]'::jsonb,
+    'situation', jsonb_build_object('status', 'insufficient_data', 'reason', 'synthèse non admise dans le contrat canonique'),
+    'delta_since_last', case when v_snapshot is null then
+      jsonb_build_object('status', 'insufficient_data', 'message', 'Aucun état canonique disponible.')
+      else jsonb_build_object('status', 'available', 'facts', '[]'::jsonb) end,
     'availability', jsonb_build_object(
       'weather', case when v_snapshot is null then 'insufficient_evidence' else coalesce(v_snapshot->>'status', 'insufficient_evidence') end,
       'facts', 'not_in_canonical_ledger', 'commitments', 'not_in_canonical_ledger',
@@ -293,6 +308,57 @@ end $$;
 revoke all on function public.person_brain(uuid, uuid, uuid), public.account_brain(uuid, uuid, uuid)
   from public, anon;
 grant execute on function public.person_brain(uuid, uuid, uuid), public.account_brain(uuid, uuid, uuid)
+  to authenticated, service_role;
+
+create function public.v6_account_overview(p_organization_id uuid)
+returns table(company_id uuid, payload jsonb)
+language sql stable security invoker
+set search_path = pg_catalog, public, scoring, private
+as $$
+  select distinct on (s.account_id) s.account_id, s.payload
+  from scoring.account_snapshot s
+  where s.organization_id = p_organization_id
+    and private.can_view_company(p_organization_id, s.account_id)
+  order by s.account_id, s.observed_at desc, s.computed_at desc, s.id desc
+$$;
+
+create function public.v6_account_portfolio_history(p_organization_id uuid, p_months integer default 36)
+returns table(company_id uuid, observed_at timestamptz, score numeric)
+language sql stable security invoker
+set search_path = pg_catalog, public, scoring, private
+as $$
+  select s.account_id, s.observed_at,
+    case when jsonb_typeof(s.payload->'score') = 'number' then (s.payload->>'score')::numeric else null end
+  from scoring.account_snapshot s
+  where s.organization_id = p_organization_id
+    and s.observed_at >= date_trunc('month', now()) - make_interval(months => greatest(1, least(coalesce(p_months, 36), 120)))
+    and private.can_view_company(p_organization_id, s.account_id)
+  order by s.observed_at desc, s.computed_at desc
+$$;
+
+create function public.v6_person_overview(p_organization_id uuid, p_user_id uuid default auth.uid())
+returns table(contact_id uuid, payload jsonb)
+language plpgsql stable security invoker
+set search_path = pg_catalog, public, scoring, private
+as $$
+begin
+  if (select auth.role()) is distinct from 'service_role' and (
+    (select auth.uid()) is null or p_user_id is distinct from (select auth.uid())
+    or not private.is_org_member(p_organization_id)
+  ) then raise exception 'ORGANIZATION_FORBIDDEN'; end if;
+  return query
+    select distinct on (d.contact_id) d.contact_id, s.payload
+    from scoring.foundation_dyad d join scoring.foundation_snapshot s on s.dyad_id = d.id
+    where d.organization_id = p_organization_id and d.collaborator_user_id = p_user_id
+      and private.can_view_contact(p_organization_id, d.contact_id)
+    order by d.contact_id, s.observed_at desc, s.computed_at desc, s.id desc;
+end $$;
+
+revoke all on function public.v6_account_overview(uuid),
+  public.v6_account_portfolio_history(uuid, integer), public.v6_person_overview(uuid, uuid)
+  from public, anon;
+grant execute on function public.v6_account_overview(uuid),
+  public.v6_account_portfolio_history(uuid, integer), public.v6_person_overview(uuid, uuid)
   to authenticated, service_role;
 
 notify pgrst, 'reload schema';

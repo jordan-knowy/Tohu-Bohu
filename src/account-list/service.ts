@@ -64,8 +64,8 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     accountScoresResult, visionsResult,
   ] = await Promise.all([
     client.from('companies').select('id,name,domain,industry,public_context,is_tracked,created_at').eq('organization_id', workspaceId).eq('is_tracked', true).limit(500),
-    client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data,cognitive_profiles(engagement_score,score_phase,updated_at)').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
-    fetchAllPages((from, to) => client.from('contact_score_history').select('contact_id,score,snapshot_date').eq('organization_id', workspaceId).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
+    client.from('contacts').select('id,company_id,owner_user_id,email,enrichment_data').eq('organization_id', workspaceId).eq('is_tracked', true).is('merged_into_contact_id', null).limit(1000),
+    Promise.resolve({ data: [], error: null }),
     client.from('account_settings').select('company_id,relationship_status,relationship_started_at,primary_owner_user_id,archived_at').eq('organization_id', workspaceId),
     client.from('account_user_preferences').select('company_id,favorite').eq('organization_id', workspaceId).eq('user_id', userId),
     client.from('account_watch_settings').select('company_id,enabled').eq('organization_id', workspaceId),
@@ -73,7 +73,7 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
     client.from('communication_messages').select('contact_id').eq('organization_id', workspaceId).eq('metadata->>user_id', userId).limit(3000),
     client.from('company_signals').select('id,company_id,family,title,summary,source,observed_at,companies(name)').eq('organization_id', workspaceId).order('observed_at', { ascending: false }).limit(24),
     client.rpc('get_team_vision_members', { p_organization_id: workspaceId }),
-    client.from('account_relationship_score_snapshots').select('company_id,score,snapshot_month,computed_at').eq('organization_id', workspaceId).order('computed_at', { ascending: false }).limit(2000),
+    client.rpc('v6_account_portfolio_history', { p_organization_id: workspaceId, p_months: 36 }),
     client.from('fiche_visions').select('entity_id,owner_user_id,visibility').eq('organization_id', workspaceId).eq('entity_type', 'company'),
   ])
 
@@ -90,7 +90,11 @@ export async function getAccountsOverview(workspaceId: string, userId: string): 
   const messages = rows(optional(messagesResult, 'Emails', degradedReasons))
   const signals = rows(optional(signalsResult, 'Signaux comptes', degradedReasons))
   const profiles = rows(optional(teamResult, 'Équipe', degradedReasons))
-  const accountScoreRows = rows(optional(accountScoresResult, 'Snapshots du score Compte', degradedReasons))
+  const accountScoreRows: Row[] = rows(optional(accountScoresResult, 'Snapshots V6 du score Compte', degradedReasons)).map((row): Row => ({
+    ...row,
+    snapshot_month: text(row.observed_at)?.slice(0, 10) ?? null,
+    computed_at: row.observed_at,
+  }))
   const visions = rows(optional(visionsResult, 'Visibilité des fiches', degradedReasons))
   // Trié par computed_at desc : le premier snapshot rencontré par compte est le plus récent.
   const accountScores = new Map<string, number>()
@@ -177,7 +181,6 @@ export async function archiveAccounts(workspaceId: string, userId: string, compa
     { onConflict: 'organization_id,company_id' },
   )
   if (error) throw error
-  void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
 }
 
 export type AccountHandoverScope = 'entity_only' | 'account_and_people'
@@ -306,13 +309,6 @@ export async function trackCandidates(workspaceId: string, selection: Array<{ co
   // La veille (monitor-company-news, appel IA) n'est plus déclenchée par
   // l'ajout d'un compte — elle reste une action explicite (bouton « Veille »
   // de la liste Comptes), jamais un effet de bord automatique.
-  // Score immédiat (pas seulement au prochain cron 6h) : même moteur, même
-  // formule — reconstruit aussi l'historique réel des contacts déjà
-  // synchronisés de ces comptes (deepBackfill), comme au suivi d'une personne.
-  void Promise.allSettled([
-    client.functions.invoke('score-batch', { body: { organizationId: workspaceId } }),
-    client.functions.invoke('score-batch', { body: { organizationId: workspaceId, deepBackfill: true } }),
-  ])
   // Active + analyse les contacts les plus actifs de chaque compte (même appel
   // Gemini, même coût que trackPersonCandidate), puis ré-agrège une fois fait
   // pour que la suggestion de relation soit posée sans attendre le cron.
@@ -327,6 +323,5 @@ export async function trackCandidates(workspaceId: string, selection: Array<{ co
       return next()
     }
     await Promise.all(Array.from({ length: Math.min(INTEGRATION_ANALYSIS_CONCURRENCY, contactIds.length) }, () => next()))
-    void client.functions.invoke('score-batch', { body: { organizationId: workspaceId } })
   })()
 }

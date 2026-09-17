@@ -5,33 +5,34 @@ import type { UserBehaviorProfile } from '../../services/data'
 const NOW = new Date('2026-07-15T12:00:00Z')
 
 describe('buildScoredAccounts — consommation des scores persistés (pas de formule parallèle)', () => {
-  it('utilise le score persisté du compte quand il existe', () => {
+  it('utilise uniquement le score V6 canonique fourni', () => {
     const [result] = buildScoredAccounts(
       [{ id: 'a', name: 'Oxalis', public_context: { relationship_score: 72 }, is_tracked: true }],
       [],
       true,
       NOW,
+      new Map([['a', 72]]),
     )
     expect(result?.score).toBe(72)
     expect(result?.tracked).toBe(true)
   })
-  it("agrège les engagement_score persistés des contacts quand le compte n'a pas de score propre", () => {
+  it("n'agrège pas les anciens scores contacts quand le compte n'a pas d'état V6", () => {
     const contacts = [
       { id: 'c1', company_id: 'a', relationship_snapshots: [{ engagement_score: 80, snapshot_date: '2026-07-10', phase: null, last_contact_at: '2026-07-10' }] },
       { id: 'c2', company_id: 'a', relationship_snapshots: [{ engagement_score: 60, snapshot_date: '2026-07-09', phase: null, last_contact_at: '2026-07-01' }] },
     ]
     const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], contacts, true, NOW)
-    expect(result?.score).toBe(70)
+    expect(result?.score).toBeNull()
     expect(result?.contactCount).toBe(2)
     expect(result?.lastInteractionAt).toBe('2026-07-10')
   })
-  it('retombe sur cognitive_profiles.engagement_score quand relationship_snapshots est vide', () => {
+  it('ne retombe pas sur cognitive_profiles.engagement_score', () => {
     const contacts = [
       { id: 'c1', company_id: 'a', relationship_snapshots: [], cognitive_profiles: [{ engagement_score: 72, score_phase: 'stable', updated_at: '2026-07-10T08:00:00Z' }] },
       { id: 'c2', company_id: 'a', relationship_snapshots: [], cognitive_profiles: [{ engagement_score: 64, score_phase: null, updated_at: '2026-07-09T08:00:00Z' }] },
     ]
     const [result] = buildScoredAccounts([{ id: 'a', name: 'Oxalis', public_context: {}, is_tracked: true }], contacts, true, NOW)
-    expect(result?.score).toBe(68)
+    expect(result?.score).toBeNull()
     expect(result?.phase).toBe('stable')
   })
   it('reste null quand aucune donnée de score n’existe — pas de valeur inventée', () => {
