@@ -36,6 +36,7 @@
 - Le runner V6 déployé a traité **83 dyades** en quatre lots et **0 erreur compte**. Les quatre exécutions sont enregistrées avec durées, volumes et versions ; durée distante observée : 3,7 à 8,5 s par lot de 25 maximum.
 - L'état distant contient 166 snapshots dyadiques et 47 snapshots compte, tous `insufficient_evidence`. Il ne contient encore aucun marker canonique. Cette abstention est attendue tant que la calibration humaine est reportée ; aucun score de secours n'est publié.
 - Preuves finales : `V6_PHASE3_5_PREPARATION.md`, `PHASE_6_VALIDATION.md`, `v6-phase4-5-consumer-inventory.json`, `v6-phase6-rebuild-validation.json` et `v6-phase6-remote-verification.json`.
+- Le backend Supabase est publié. Le frontend passe son build de production, mais le compte Netlify disponible n'expose pas de site Tohu-Bohu lié ; la publication web attend l'identifiant du site cible.
 
 ## Reprise — 17 septembre 2026
 

@@ -32,3 +32,5 @@ L'état observé contient 166 snapshots dyadiques et 47 snapshots compte. Tous s
 La calibration humaine A/B, l'arbitrage, le Gold v1 et les métriques TP/FP/FN, précision, rappel et F1 restent différés. Aucune métrique n'est inventée. Les recommandations et interprétations dépendantes du Gold restent suspendues.
 
 Le moteur V6 est techniquement unique, reconstructible, déployé et observable. Son activation sémantique avancée reste conditionnée à la calibration humaine.
+
+Le backend Supabase est déployé. Le build frontend est validé mais sa publication reste externe à ce gate : le compte Netlify connecté à la session ne présente aucun site lié au dépôt Tohu-Bohu, seulement un site rattaché à un autre dépôt. Aucun site tiers n'a été écrasé.
