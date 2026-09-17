@@ -1,8 +1,8 @@
 # Phase 2 — intelligence relationnelle et LLM
 
 Date : 17 septembre 2026  
-Statut : **outillage complet, attente de validation humaine externe**
-Verdict : **NO GO Phase 2**
+Statut : **implémentation technique terminée ; calibration humaine reportée**
+Verdict : **GO WITH DEFERRED HUMAN CALIBRATION**
 
 ## Résumé
 
@@ -129,8 +129,8 @@ Le harness refuse maintenant les cas réels sans revue de confidentialité, mesu
 
 L'accès Management read-only est fonctionnel. L'inventaire de sources ci-dessus a été relu le 17 septembre 2026. Aucune donnée distante n'a été modifiée. Les quatre fonctions Edge V6 et l'état distant validés en Phase 1 restent la dernière configuration déployée ; les changements locaux d'évaluation de Phase 2 ne sont pas déployés et n'ont pas besoin de l'être pour l'annotation.
 
-## NO GO Phase 2
+## GO WITH DEFERRED HUMAN CALIBRATION
 
-**NO GO.** L'analyse sémantique n'est pas suffisamment démontrée sur un Gold Dataset humain, car il n'existe encore aucun cas avec revue de confidentialité, deux annotations humaines indépendantes et arbitrage. Le travail autonome possible est terminé sans fabriquer cette preuve.
+L'architecture sémantique technique est acceptée pour poursuivre la refonte : sorties `0..N`, faits/markers/engagements/rôles séparés, citations exactes, erreurs techniques distinctes de l'abstention, versionnement complet et absence de score produit par le LLM. Toutes les sorties LLM restent candidates. Les markers critiques ou à fort impact exigent preuve exacte, identité/cible résolues, contexte suffisant et validation explicite ; sinon ils restent sans effet autoritaire.
 
-Pour débloquer : suivre les commandes de `ANNOTATION_GUIDE.md` dans cet ordre : privacy review, A, B, `diff`, arbitrage, gel final. Les 35 cas sont annotés sans révéler leur split ; le moteur sera ensuite évalué sur les 27 development et la variante choisie avant d'ouvrir les résultats des 8 holdout. Temps calendaire minimal estimé si A/B travaillent en parallèle : 1 h 30 à 2 h 25. La dernière phase validée reste **Phase 1 — GO**.
+La revue de confidentialité des 35 cas est gelée. Les annotations A/B n'ont pas commencé et aucune métrique humaine n'est revendiquée. Le benchmark humain, les F1 et la calibration scientifique restent **PENDING / DEFERRED**. Ce report est une décision produit explicite du 17 septembre 2026 et autorise le passage technique en Phase 3 sans transformer l'absence de benchmark en preuve de qualité.

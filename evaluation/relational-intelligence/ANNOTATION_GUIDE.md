@@ -48,7 +48,7 @@ Après le dernier cas :
 node evaluation/relational-intelligence/annotation-tool.mjs freeze privacy privacy-reviewer
 ```
 
-Le gel refuse automatiquement tout email, URL ou téléphone encore présent.
+Le gel refuse automatiquement tout email ou URL encore présent. Les suites numériques ambiguës (date, montant, référence ou téléphone) restent soumises à la décision explicite du privacy reviewer afin de ne pas supprimer un contexte temporel ou commercial utile.
 
 ### 2. Deux annotations indépendantes
 

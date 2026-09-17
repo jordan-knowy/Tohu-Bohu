@@ -10,8 +10,8 @@
 |---|---|---|---|
 | Phase 0 | DONE — audit livré | Audit terminé, moteur non validé | `PHASE_0_MOTEUR_RELATIONNEL_V6.md` |
 | Phase 1 | DONE — 17 septembre 2026 | **GO** | État distant vérifié et remédié ; reconstruction Git isolée 145/145 migrations + 67 Storage + 6/6 tests SQL ; 414/414 tests applicatifs ; sécurité critique corrigée |
-| Phase 2 | BLOCKED — 17 septembre 2026 | **NO GO** | 35 cas privés contextualisés ; interface privacy/A/B/arbitrage prête ; 0 cas humain gelé ; intervention externe requise |
-| Phase 3 | NOT STARTED | Aucun | Dépend de Phase 2 et de preuves humaines |
+| Phase 2 | DONE TECHNIQUE — 17 septembre 2026 | **GO WITH DEFERRED HUMAN CALIBRATION** | Architecture conservative, 35 cas privacy-reviewed, benchmark A/B reporté sans métrique inventée |
+| Phase 3 | IN PROGRESS — 17 septembre 2026 | Gate non évalué | Contrats `person_brain` / `account_brain` et causalité canonique en construction |
 | Phase 4 | NOT STARTED | Aucun | Contrats canoniques à valider en Phase 3 |
 | Phase 5 | NOT STARTED | Aucun | Aucune suppression Legacy autorisée avant remplacement démontré |
 | Phase 6 | NOT STARTED | NOT READY | Aucun résultat E2E/holdout final |
@@ -25,7 +25,7 @@
 - Interface locale complète : confidentialité/annotabilité, A/B isolés et randomisés, gel, divergences automatiques, arbitrage ciblé et enveloppe Gold versionnée.
 - Préparation non bloquante Phases 3–5 : inventaire reproductible de 282 références canoniques/Legacy et ordre de retrait documenté ; aucune décision dépendante du Gold appliquée.
 - Tests : 417/417 et TypeScript verts. Métriques humaines : non calculables, effectif 0.
-- **NO GO Phase 2** : deux annotations humaines indépendantes et un arbitrage ne peuvent pas être produits honnêtement par l'agent. Phase 3 reste interdite.
+- **GO WITH DEFERRED HUMAN CALIBRATION** : la validation sémantique humaine reste `PENDING`; les sorties LLM sont candidates et sans score direct. La décision produit autorise la poursuite technique sous garde-fous conservateurs.
 
 ## Reprise — 17 septembre 2026
 

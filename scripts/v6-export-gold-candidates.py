@@ -19,7 +19,7 @@ query=r"""
 with memory as (
  select e.id::text source_id,e.organization_id::text,e.contact_id::text,e.author_user_id::text,
   coalesce(e.source_occurred_at,e.observed_at)::text occurred_at,coalesce(nullif(e.source_type,''),'unknown') channel,
-  e.source_direction,e.entry_type,e.source_excerpt evidence_text,c.company_id::text,c.role_title,c.title_confirmed,
+  e.source_direction,e.entry_type,e.source_excerpt evidence_text,c.company_id::text,c.role_title,c.title_confirmed,co.industry,co.account_type,
   (select jsonb_build_object('at',coalesce(p.source_occurred_at,p.observed_at),'text',p.source_excerpt,'direction',p.source_direction)
    from public.person_memory_entries p where p.contact_id=e.contact_id and p.id<>e.id and nullif(btrim(p.source_excerpt),'') is not null
    and coalesce(p.source_occurred_at,p.observed_at)<coalesce(e.source_occurred_at,e.observed_at)
@@ -28,16 +28,16 @@ with memory as (
    from public.person_memory_entries n where n.contact_id=e.contact_id and n.id<>e.id and nullif(btrim(n.source_excerpt),'') is not null
    and coalesce(n.source_occurred_at,n.observed_at)>coalesce(e.source_occurred_at,e.observed_at)
    order by coalesce(n.source_occurred_at,n.observed_at) limit 1) next_excerpt
- from public.person_memory_entries e join public.contacts c on c.id=e.contact_id
+ from public.person_memory_entries e join public.contacts c on c.id=e.contact_id left join public.companies co on co.id=c.company_id
  where nullif(btrim(e.source_excerpt),'') is not null and coalesce(e.source_occurred_at,e.observed_at) is not null
 ), message_ranked as (
- select m.organization_id::text,m.contact_id::text,c.company_id::text,m.id::text,coalesce(m.sent_at,m.created_at)::text at,
+ select m.organization_id::text,m.contact_id::text,c.company_id::text,co.industry,co.account_type,m.id::text,coalesce(m.sent_at,m.created_at)::text at,
   m.direction,m.provider,m.thread_id::text,row_number() over(partition by m.contact_id order by coalesce(m.sent_at,m.created_at) desc,m.id) rn,
   count(*) over(partition by m.contact_id) total
- from public.communication_messages m join public.contacts c on c.id=m.contact_id
+ from public.communication_messages m join public.contacts c on c.id=m.contact_id left join public.companies co on co.id=c.company_id
  where m.contact_id is not null and coalesce(m.sent_at,m.created_at) is not null
 ), sequence_groups as (
- select organization_id,contact_id,company_id,max(total) total,
+ select organization_id,contact_id,company_id,max(industry) industry,max(account_type) account_type,max(total) total,
   jsonb_agg(jsonb_build_object('id',id,'at',at,'direction',direction,'provider',provider,'thread_id',thread_id) order by at) filter(where rn<=10) events
  from message_ranked where total>=5 group by organization_id,contact_id,company_id order by contact_id limit 8
 ), identities as (
@@ -46,9 +46,9 @@ with memory as (
  union all select 'internal',p.id::text,m.organization_id::text,p.full_name,null from public.profiles p join public.memberships m on m.user_id=p.id
  union all select 'participant',id::text,organization_id::text,coalesce(display_name,name),email from public.meeting_participants
 ), transcript_rows as (
- select t.id::text,t.organization_id::text,t.meeting_id::text,t.transcript_text,m.starts_at::text,m.platform,m.status,
+ select t.id::text,t.organization_id::text,t.meeting_id::text,t.transcript_text,m.starts_at::text,m.platform,m.status,m.company_id::text,co.industry,co.account_type,
   coalesce((select jsonb_agg(jsonb_build_object('id',p.id::text,'contact_id',p.contact_id::text,'role',coalesce(p.participant_job_title,p.role_in_meeting),'current_user',p.is_current_user)) from public.meeting_participants p where p.meeting_id=t.meeting_id),'[]'::jsonb) participants
- from public.meeting_transcripts t left join public.meetings m on m.id=t.meeting_id
+ from public.meeting_transcripts t left join public.meetings m on m.id=t.meeting_id left join public.companies co on co.id=m.company_id
  where nullif(btrim(t.transcript_text),'') is not null and t.consent_status<>'revoked'
 )
 select jsonb_build_object(
@@ -105,12 +105,12 @@ for row in payload['memory']:
   source=row if key=='self' else row.get(key)
   if source: timeline.append(event(label,source.get('occurred_at') or source.get('at'),source.get('evidence_text') or source.get('text'),direction=source.get('source_direction') or source.get('direction')))
  all_text='\n'.join(x.get('text','') for x in timeline)
- cases.append({'id':pseudonym('case',row['source_id']),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':residual(all_text),'case_type':'semantic_single','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':timeline,'participants':[{'id':pseudonym('internal',row['author_user_id']),'side':'internal','role':'unknown'},{'id':pseudonym('external',row['contact_id']),'side':'external','role':sanitize(row.get('role_title')) or 'unknown','role_confirmed':bool(row.get('title_confirmed'))}],'timestamps':[x['at'] for x in timeline if x.get('at')],'channel':row['channel'],'context_before':'Adjacent verified excerpts only; original email body unavailable.','context_after':'No engine prediction, score, Legacy result or recommendation included.','context_facts':[f"source_direction={row.get('source_direction') or 'unknown'}",f"entry_type={row.get('entry_type') or 'unknown'}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
+ cases.append({'id':pseudonym('case',row['source_id']),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':residual(all_text),'case_type':'semantic_single','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':timeline,'participants':[{'id':pseudonym('internal',row['author_user_id']),'side':'internal','role':'unknown'},{'id':pseudonym('external',row['contact_id']),'side':'external','role':sanitize(row.get('role_title')) or 'unknown','role_confirmed':bool(row.get('title_confirmed'))}],'timestamps':[x['at'] for x in timeline if x.get('at')],'channel':row['channel'],'context_before':'Adjacent verified excerpts only; original email body unavailable.','context_after':'No engine prediction, score, Legacy result or recommendation included.','context_facts':[f"account={pseudonym('account',row['company_id']) if row.get('company_id') else 'unknown'}",f"industry={sanitize(row.get('industry')) or 'unknown'}",f"account_type={sanitize(row.get('account_type')) or 'unknown'}",f"source_direction={row.get('source_direction') or 'unknown'}",f"entry_type={row.get('entry_type') or 'unknown'}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
 
 for row in payload['sequences']:
  group=pseudonym('relation',f"{row['organization_id']}:{row['contact_id']}")
  timeline=[event('interaction_metadata',x['at'],None,direction=x.get('direction') or 'unknown',channel=x.get('provider') or 'unknown',thread=pseudonym('thread',x['thread_id']) if x.get('thread_id') else None) for x in row['events']]
- cases.append({'id':pseudonym('case','sequence:'+row['contact_id']),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':[],'case_type':'semantic_sequence','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':timeline,'participants':[{'id':pseudonym('external',row['contact_id']),'side':'external','role':'unknown'}],'timestamps':[x['at'] for x in timeline],'channel':'multi_event_metadata','context_before':'Ten most recent captured message metadata; message bodies are unavailable.','context_after':'Missing channels must be treated as unknown, not absent.','context_facts':[f"captured_message_count={row['total']}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
+ cases.append({'id':pseudonym('case','sequence:'+row['contact_id']),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':[],'case_type':'semantic_sequence','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':timeline,'participants':[{'id':pseudonym('external',row['contact_id']),'side':'external','role':'unknown'}],'timestamps':[x['at'] for x in timeline],'channel':'multi_event_metadata','context_before':'Ten most recent captured message metadata; message bodies are unavailable.','context_after':'Missing channels must be treated as unknown, not absent.','context_facts':[f"account={pseudonym('account',row['company_id']) if row.get('company_id') else 'unknown'}",f"industry={sanitize(row.get('industry')) or 'unknown'}",f"account_type={sanitize(row.get('account_type')) or 'unknown'}",f"captured_message_count={row['total']}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
 
 def transcript_windows(text,count=4,width=900):
  clean=sanitize(text)
@@ -126,7 +126,7 @@ for transcript in payload['transcripts']:
  group=pseudonym('meeting',transcript['meeting_id'] or transcript['id'])
  participants=[{'id':pseudonym('participant',p['id']),'side':'internal' if p.get('current_user') else 'external','role':sanitize(p.get('role')) or 'unknown'} for p in transcript.get('participants',[])]
  for index,window in enumerate(transcript_windows(transcript['transcript_text'])):
-  cases.append({'id':pseudonym('case',f"transcript:{transcript['id']}:{index}"),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':residual(window),'case_type':'semantic_sequence','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':[event('transcript_window',transcript.get('starts_at'),window)],'participants':participants,'timestamps':[transcript['starts_at']] if transcript.get('starts_at') else [],'channel':transcript.get('platform') or 'meeting_transcript','context_before':f'Systematic transcript window {index+1}; neighboring windows omitted to limit context.','context_after':'The window was selected without consulting model predictions.','context_facts':[f"meeting_status={transcript.get('status') or 'unknown'}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
+  cases.append({'id':pseudonym('case',f"transcript:{transcript['id']}:{index}"),'group_id':group,'split':'development','origin':'human_real','privacy_reviewed':False,'privacy_findings':residual(window),'case_type':'semantic_sequence','annotation_possible':True,'annotation_not_possible_reason':None,'source_completeness':'partial','events':[event('transcript_window',transcript.get('starts_at'),window)],'participants':participants,'timestamps':[transcript['starts_at']] if transcript.get('starts_at') else [],'channel':transcript.get('platform') or 'meeting_transcript','context_before':f'Systematic transcript window {index+1}; neighboring windows omitted to limit context.','context_after':'The window was selected without consulting model predictions.','context_facts':[f"account={pseudonym('account',transcript['company_id']) if transcript.get('company_id') else 'unknown'}",f"industry={sanitize(transcript.get('industry')) or 'unknown'}",f"account_type={sanitize(transcript.get('account_type')) or 'unknown'}",f"meeting_status={transcript.get('status') or 'unknown'}"],'annotator_A':None,'annotator_B':None,'arbitration':None})
 
 # Freeze a deterministic relation-level holdout before any model evaluation.
 groups=sorted({c['group_id'] for c in cases},key=lambda g:hashlib.sha256(g.encode()).hexdigest());holdout_groups=set();holdout_cases=0

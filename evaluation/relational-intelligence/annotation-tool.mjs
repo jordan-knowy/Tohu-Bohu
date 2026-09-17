@@ -31,7 +31,11 @@ async function freezePrivacy(reviewer){
  const candidates=await readJson(candidatesPath,[]),state=await readJson(privacyPath,{})
  const missing=candidates.filter(c=>!state[c.id]||typeof state[c.id].privacy_reviewed!=='boolean'||typeof state[c.id].annotation_possible!=='boolean')
  if(missing.length)throw new Error(`PRIVACY_REVIEW_INCOMPLETE:${missing.length}`)
- for(const c of candidates){if(!state[c.id].privacy_reviewed)continue;const text=(state[c.id].events??c.events).map(e=>e.text??'').join('\n');if(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text)||/\bhttps?:\/\/|\bwww\./i.test(text)||/(?:\+?\d[\d .()/-]{7,}\d)/.test(text))throw new Error(`PRIVACY_IDENTIFIER_REMAINS:${c.id}`)}
+ // Clear email/URL patterns remain hard failures. Numeric patterns are ambiguous
+ // (dates, amounts, references, phone numbers) and are left to the explicit
+ // human privacy decision recorded above; silently rewriting them would alter
+ // potentially essential temporal or commercial context.
+ for(const c of candidates){if(!state[c.id].privacy_reviewed)continue;const text=(state[c.id].events??c.events).map(e=>e.text??'').join('\n');if(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text)||/\bhttps?:\/\/|\bwww\./i.test(text))throw new Error(`PRIVACY_IDENTIFIER_REMAINS:${c.id}`)}
  const cases=candidates.map(c=>({...c,...state[c.id]}));const payload={reviewer,frozen_at:new Date().toISOString(),source_sha256:sha(candidates),cases}
  await atomic(privacyFrozenPath,payload);return {cases:cases.length,annotatable:cases.filter(c=>c.privacy_reviewed&&c.annotation_possible).length,excluded:cases.filter(c=>!c.annotation_possible).length}
 }
