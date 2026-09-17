@@ -1,6 +1,7 @@
 {
-  "timestamp": "2026-09-17T05:54:01.195451+00:00",
-  "source": "WORKING_TREE",
+  "timestamp": "2026-09-17T13:36:49.116719+00:00",
+  "source": "HEAD",
+  "resolved_git_commit": "b341d881deeab19ce498ddcdd5ce6a31adac54a1",
   "image": "public.ecr.aws/supabase/postgres:17.6.1.155",
   "network": "none",
   "cron_active_jobs": false,
@@ -712,7 +713,7 @@
     },
     {
       "path": "supabase/migrations/20260917055241_harden_privileged_contracts.sql",
-      "sha256": "6ddc7c80c729b251061393bb67bb83af1734124b648e1bfbb2b6c0d82ef27f65",
+      "sha256": "c931cde7c2fbba8e69c32df7c9529198714766b146dab78ff18d323eb7399fe1",
       "exit_code": 0
     },
     {

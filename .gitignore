@@ -5,3 +5,4 @@ dist/
 .env.*.local
 .DS_Store
 supabase/.temp/
+evaluation/relational-intelligence/private/
