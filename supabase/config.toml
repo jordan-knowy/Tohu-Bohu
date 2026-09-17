@@ -37,7 +37,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.sync-email-analysis]
-verify_jwt = false
+verify_jwt = true
 
 [functions.connect-hubspot]
 verify_jwt = false
@@ -69,10 +69,10 @@ verify_jwt = true
 [functions.enrich-contact-avatars]
 verify_jwt = true
 
-# Le cron s'authentifie lui-même avec x-cron-secret. Le chemin de test utilisateur
-# continue de valider explicitement le JWT dans la fonction.
+# Configuration observée : JWT au gateway et secret cron vérifié par le handler.
+# Les appels utilisateur gardent leur vérification explicite dans la fonction.
 [functions.send-meeting-prep]
-verify_jwt = false
+verify_jwt = true
 
 [functions.intercom-user-token]
 verify_jwt = true
@@ -81,13 +81,13 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.sync-slack]
-verify_jwt = false
+verify_jwt = true
 
 [functions.connect-notion]
 verify_jwt = false
 
 [functions.sync-notion]
-verify_jwt = false
+verify_jwt = true
 
 # V6 foundation: gateway JWT verification plus explicit handler authorization.
 [functions.classify-markers]
@@ -100,4 +100,49 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.v6-ingest-events]
+verify_jwt = true
+
+[functions.generate-briefs]
+verify_jwt = true
+
+[functions.send-weekly-digest]
+verify_jwt = true
+
+[functions.account-strategic-reading]
+verify_jwt = true
+
+[functions.send-alerts]
+verify_jwt = true
+
+[functions.send-nurturing]
+verify_jwt = true
+
+[functions.sync-google-meet]
+verify_jwt = true
+
+[functions.connect-teams]
+verify_jwt = false
+
+[functions.sync-teams-meetings]
+verify_jwt = true
+
+[functions.enrich-account-registry]
+verify_jwt = true
+
+[functions.sync-google-calendar]
+verify_jwt = true
+
+[functions.sync-google-photos]
+verify_jwt = true
+
+[functions.sync-microsoft-calendar]
+verify_jwt = true
+
+[functions.sync-google-chat]
+verify_jwt = true
+
+[functions.read-ai-webhook]
+verify_jwt = false
+
+[functions.connect-read-ai]
 verify_jwt = true
