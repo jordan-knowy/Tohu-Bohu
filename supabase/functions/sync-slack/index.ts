@@ -56,7 +56,7 @@ Deno.serve(async req => {
     if (!state.phase || state.phase === 'done') {
       const job = await checked(db.from('sync_jobs').insert({ organization_id: organizationId, connector_id: connector.id, user_id: user.id, provider: 'slack', job_type: 'slack_sync', status: 'running', current_step: 'Lecture des utilisateurs Slack', progress: 0, started_at: new Date().toISOString(), payload: {} }).select('id').single())
       const now = Date.now()
-      state = { policyVersion: 2, phase: 'users', cursor: '', users: {}, channels: [], index: 0, threads: state.threads ?? {}, threadAuthors: state.threadAuthors ?? {}, watermarks: state.watermarks ?? {}, since: state.until ?? String((now - INITIAL_LOOKBACK_DAYS * 86400000) / 1000), until: String(now / 1000), messages: 0, jobId: job.id }
+      state = { policyVersion: 2, phase: 'users', cursor: '', users: {}, channels: [], index: 0, threads: state.threads ?? {}, threadAuthors: state.threadAuthors ?? {}, watermarks: state.watermarks ?? {}, windowStart: String((now - INITIAL_LOOKBACK_DAYS * 86400000) / 1000), since: state.until ?? String((now - INITIAL_LOOKBACK_DAYS * 86400000) / 1000), until: String(now / 1000), messages: 0, jobId: job.id }
       await checked(db.from('connector_sync_state').update({ state }).eq('connector_id', connector.id))
     }
     const nextCursor = (page: any) => page.response_metadata?.next_cursor?.trim() ?? ''
@@ -90,7 +90,7 @@ Deno.serve(async req => {
       const method = state.phase === 'replies' ? 'conversations.replies' : 'conversations.history'
       let page: any
       try {
-        page = await slackApi(token, method, { channel: channel.id, limit: '15', oldest: state.watermarks?.[channel.id] ?? state.since, latest: state.until, inclusive: 'false', cursor: state.cursor, ...(threadTs ? { ts: threadTs } : {}) })
+        page = await slackApi(token, method, { channel: channel.id, limit: '15', oldest: state.watermarks?.[channel.id] ?? state.windowStart ?? String(Math.max(0, Number(state.until) - INITIAL_LOOKBACK_DAYS * 86400)), latest: state.until, inclusive: 'false', cursor: state.cursor, ...(threadTs ? { ts: threadTs } : {}) })
       } catch (error) {
         if (error instanceof SlackError && ['channel_not_found', 'not_in_channel', 'missing_scope', 'thread_not_found', 'is_archived'].includes(error.code)) {
           // Surface skipped conversations, without names of private channels in shared jobs.

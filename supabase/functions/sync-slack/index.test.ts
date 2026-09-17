@@ -44,7 +44,7 @@ beforeEach(async () => {
   rows = {
     memberships: [{ id: 'member', organization_id: 'O1', user_id: 'owner' }],
     connectors: [{ id: 'connector', organization_id: 'O1', user_id: 'owner', provider: 'slack', status: 'connected', scopes: ['channels:read', 'channels:history'], metadata: { team_id: 'T1', slack_user_id: 'U1', share_public: true } }],
-    connector_sync_state: [{ connector_id: 'connector', state: { phase: 'history', cursor: '', users: { U2: { email: 'person@example.com', name: 'Person' } }, channels: [{ id: 'C1', name: 'Project', private: false }], index: 0, threads: {}, since: '0', until: '200', messages: 0, jobId: 'job' } }],
+    connector_sync_state: [{ connector_id: 'connector', state: { policyVersion: 2, phase: 'history', cursor: '', users: { U2: { email: 'person@example.com', name: 'Person' } }, channels: [{ id: 'C1', name: 'Project', private: false }], index: 0, threads: {}, since: '0', until: '200', messages: 0, jobId: 'job' } }],
     sync_jobs: [{ id: 'job' }], contacts: [{ id: 'person', full_name: 'Person', company_id: 'company' }],
     companies: [{ id: 'company', organization_id: 'O1', normalized_domain: 'example.com' }],
   }
@@ -68,6 +68,22 @@ beforeEach(async () => {
   await import('./index')
 })
 describe('Slack synchronization handler', () => {
+  it('restarts a pre-v2 checkpoint inside the configured lookback', async () => {
+    delete rows.connector_sync_state[0].state.policyVersion
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ok:true,members:[],response_metadata:{}})))
+    await call()
+    const state = rows.connector_sync_state[0].state
+    expect(state.policyVersion).toBe(2)
+    expect(Number(state.until)-Number(state.windowStart)).toBe(90*86400)
+    expect(state.phase).toBe('channels')
+  })
+  it('a newly discovered channel uses the bounded initial window, not the last global sync', async () => {
+    rows.connector_sync_state[0].state.windowStart='20'
+    rows.connector_sync_state[0].state.since='90'
+    await call()
+    const [, options] = vi.mocked(fetch).mock.calls[0]!
+    expect((options!.body as URLSearchParams).get('oldest')).toBe('20')
+  })
   it('rejects a different organization before reading tokens or Slack', async () => {
     rows.memberships = []
     expect((await call()).status).toBe(403)
