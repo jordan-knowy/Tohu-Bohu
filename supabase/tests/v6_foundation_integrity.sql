@@ -14,6 +14,9 @@ do $$ declare f record; begin
   perform pg_temp.assert_true(not has_function_privilege('authenticated',f.oid,'EXECUTE'),f.proname||' user denied');
   perform pg_temp.assert_true(has_function_privilege('service_role',f.oid,'EXECUTE'),f.proname||' worker allowed');
  end loop;
+ perform pg_temp.assert_true(not has_function_privilege('anon','public.v6_ingest_source_page(timestamptz,uuid,uuid,integer)','EXECUTE'),'V6 ingest source denies anon');
+ perform pg_temp.assert_true(not has_function_privilege('authenticated','public.v6_ingest_source_page(timestamptz,uuid,uuid,integer)','EXECUTE'),'V6 ingest source denies users');
+ perform pg_temp.assert_true(has_function_privilege('service_role','public.v6_ingest_source_page(timestamptz,uuid,uuid,integer)','EXECUTE'),'V6 ingest source permits service role');
 end $$;
 set local role service_role;
 do $$

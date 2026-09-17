@@ -1,9 +1,10 @@
 begin;
 create function pg_temp.assert_true(ok boolean,label text) returns void language plpgsql as $$
 begin if ok is distinct from true then raise exception 'FAIL: %',label; end if; end $$;
-select pg_temp.assert_true((select count(*)=16 from cron.job where jobname like 'tohu-bohu-%'),'16 active jobs reconstructed after Legacy retirement');
+select pg_temp.assert_true((select count(*)=17 from cron.job where jobname like 'tohu-bohu-%'),'17 active jobs reconstructed after V6 ingestion scheduling');
 select pg_temp.assert_true((select count(*)=0 from cron.job where command ~ 'eyJ|bgmtzwfafcgjklgygvtx'),'no project-bound token or URL in effective jobs');
-select pg_temp.assert_true((select count(*)=16 from cron.job where command like '%private.dispatch_scheduled_edge%'),'all jobs use configured dispatcher');
+select pg_temp.assert_true((select count(*)=17 from cron.job where command like '%private.dispatch_scheduled_edge%'),'all jobs use configured dispatcher');
+select pg_temp.assert_true((select active and schedule='5-55/10 * * * *' from cron.job where jobname='tohu-bohu-v6-ingest-events'),'V6 source ingestion is scheduled before detection');
 select pg_temp.assert_true(not exists(select 1 from cron.job where command like '%dispatch_scheduled_edge(''score-batch'',%'),'legacy scoring cron removed');
 select pg_temp.assert_true(exists(select 1 from cron.job where command like '%dispatch_scheduled_edge(''score-batch-account-v6'',%'),'canonical scoring cron retained');
 select pg_temp.assert_true(not has_function_privilege('authenticated','private.dispatch_scheduled_edge(text,jsonb,integer)','EXECUTE'),'users cannot dispatch privileged workers');

@@ -38,6 +38,16 @@
 - Preuves finales : `V6_PHASE3_5_PREPARATION.md`, `PHASE_6_VALIDATION.md`, `v6-phase4-5-consumer-inventory.json`, `v6-phase6-rebuild-validation.json` et `v6-phase6-remote-verification.json`.
 - Le backend Supabase et le frontend sont publiés. Le projet Netlify `tohu-bohu`, lié au dépôt GitHub `jordan-knowy/Tohu-Bohu`, sert la production sur `https://tohu.co` ; la page publique et les règles de redirection ont été vérifiées après le push sur `main`.
 
+## Replay des sources et diagnostic des scores — 17 septembre 2026
+
+À la demande du produit, un replay distant des messages a été exécuté sans supprimer les sources. Les **4 964 messages** ont été importés dans le ledger V6, couvrant **347 dyades**. Le détecteur déterministe a produit **492 révisions de marker**, puis le calcul a confirmé **0 score de dyade** et **0 score de compte publiables**. La première passe d'import avait qualifié à tort la présence de métadonnées de message comme identité et complétude vérifiées. Cette qualification a été corrigée par des révisions immuables ; les 492 markers provisoires ont été superseded, puis les **347 dyades** et **171 comptes** recalculés. Les derniers snapshots affichables restent tous sans score.
+
+Les causes vérifiées sont distinctes de la calibration humaine : les messages ne conservent pas leur corps (`analyzed_without_body_storage`), les événements du ledger ont maintenant `identity=unknown` et `completeness=unknown`, aucune révision de rôle ni aucun rôle manuel de compte n'existe, et les quatre essais du classificateur ont échoué avec `SOURCE_TEXT_UNAVAILABLE`. Les **282 réunions** et l'unique transcript n'ont pas été promus en preuves dyadiques : les 663 statuts de réponse aux invitations sont `needsAction`, et aucun participant du transcript n'est lié à un contact. Un statut `confirmed` de réunion ne prouve pas sa tenue.
+
+L'import des nouveaux messages est désormais planifié toutes les dix minutes, avec un curseur stable `(created_at,id)` et des lots de 500. La détection, la classification et le calcul restent planifiés toutes les six heures ; ils ne peuvent publier un score que lorsque les critères V6 d'identité, de complétude, de rôle, de couverture, de fiabilité, d'axes et de preuves indépendantes sont réellement satisfaits. **Aucune date d'apparition d'une météo chiffrée ne peut donc être promise.** L'acceptation produit de la baseline V6 ne constitue pas une annotation humaine effectuée ni une preuve manquante.
+
+Validation : replay isolé **150/150 migrations**, **67/67 Storage**, **6/6 suites SQL**, **408/408 tests applicatifs**, TypeScript et build de production réussis. Le détail est dans `V6_REPLAY_SCORES_2026_09_17.md`.
+
 ## Reprise — 17 septembre 2026
 
 - HEAD de départ : `f34a7f5b216fa708c128f75ce441093b808d9ed1` ; 32 fichiers suivis modifiés et fichiers non suivis préexistants. Aucun de ces travaux n’est écrasé.
