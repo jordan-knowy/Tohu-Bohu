@@ -108,6 +108,8 @@ export interface AccountKEvent {
   isVerbatim?: boolean          // true si evidenceText est un extrait garanti fidèle (pas une paraphrase LLM)
 }
 export interface AccountDynamicsInput {
+  /** false when cadence, trend, and outcome evidence are not observable. */
+  available?: boolean
   delta30OtherDials: number     // Δ 30j de la moyenne des 5 autres cadrans
   daysSinceLast: number
   cadenceMedian: number

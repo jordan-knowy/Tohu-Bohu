@@ -151,6 +151,9 @@ export function calculateAccountWeatherCore(
   {
     const dy = input.dynamics
     const a = params.dynamics
+    if (dy.available === false) {
+      dials.d_dynamique = mkDial('d_dynamique', null, null, weights.d_dynamique, null, [])
+    } else {
     const pente = interp3(dy.delta30OtherDials, a.penteAnchors.deltaHigh, a.penteAnchors.vHigh, a.penteAnchors.deltaMid, a.penteAnchors.vMid, a.penteAnchors.deltaLow, a.penteAnchors.vLow)
     const ratio = dy.cadenceMedian > 0 ? dy.daysSinceLast / dy.cadenceMedian : (dy.daysSinceLast > 0 ? 99 : 0)
     const silence = interp3(ratio, a.silenceAnchors.r1, a.silenceAnchors.v1, a.silenceAnchors.r2, a.silenceAnchors.v2, a.silenceAnchors.r3, a.silenceAnchors.v3)
@@ -166,6 +169,7 @@ export function calculateAccountWeatherCore(
     // exposé tel quel pour l'UI (jamais un texte technique de debug dans la carte).
     d.trendDelta30d = Math.round(dy.delta30OtherDials)
     dials.d_dynamique = d
+    }
   }
 
   // An owner/CRM contact alone is not an observed relationship.
