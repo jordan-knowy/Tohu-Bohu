@@ -1,0 +1,1378 @@
+{
+  "local_count": 139,
+  "remote_count": 175,
+  "remote_only_version": [
+    {
+      "version": "20260720123236",
+      "name": "reschedule_veille_contacts_throughput"
+    },
+    {
+      "version": "20260720125856",
+      "name": "rename_knowr_cron_jobs_to_tohu_bohu"
+    },
+    {
+      "version": "20260721051747",
+      "name": "meeting_sync_unique_constraints"
+    },
+    {
+      "version": "20260722101105",
+      "name": "sync_jobs_client_insert_email_analysis"
+    },
+    {
+      "version": "20260722144009",
+      "name": "tohu_bohu_email_backfill_cron"
+    },
+    {
+      "version": "20260722144705",
+      "name": "tohu_bohu_email_incremental_cron"
+    },
+    {
+      "version": "20260723100325",
+      "name": "fix_notifications_constraints_and_digest_support"
+    },
+    {
+      "version": "20260723100650",
+      "name": "tohu_bohu_briefs_and_digest_cron"
+    },
+    {
+      "version": "20260723101019",
+      "name": "resource_locks_and_access_grants_foundation"
+    },
+    {
+      "version": "20260723110625",
+      "name": "extend_resource_lock_to_contacts_and_companies"
+    },
+    {
+      "version": "20260724045431",
+      "name": "enrichment_slots"
+    },
+    {
+      "version": "20260724054744",
+      "name": "contact_identity_suggestions"
+    },
+    {
+      "version": "20260724055901",
+      "name": "fix_detect_contact_merge_candidates_perf"
+    },
+    {
+      "version": "20260724062229",
+      "name": "fix_merge_detection_false_positives"
+    },
+    {
+      "version": "20260724062529",
+      "name": "fix_shares_surname_generic_word_false_positive"
+    },
+    {
+      "version": "20260724063313",
+      "name": "strip_generic_tokens_from_merge_detection"
+    },
+    {
+      "version": "20260724063457",
+      "name": "exclude_too_short_core_names_from_merge_detection"
+    },
+    {
+      "version": "20260724064554",
+      "name": "structured_evolving_cognitive_profiles"
+    },
+    {
+      "version": "20260724212653",
+      "name": "distinguish_relationship_longevity_from_recency"
+    },
+    {
+      "version": "20260725153738",
+      "name": "normalize_contact_full_name_casing"
+    },
+    {
+      "version": "20260726010428",
+      "name": "fix_merge_contacts_enrichment_status"
+    },
+    {
+      "version": "20260731084844",
+      "name": "cognitive_axes_v3"
+    },
+    {
+      "version": "20260731093002",
+      "name": "relationship_score_v3_and_narratives"
+    },
+    {
+      "version": "20260731155322",
+      "name": "person_key_moments"
+    },
+    {
+      "version": "20260802164213",
+      "name": "person_memory_resolve"
+    },
+    {
+      "version": "20260804214102",
+      "name": "connectors_allow_read_ai_provider"
+    },
+    {
+      "version": "20260804222440",
+      "name": "detect_account_candidates_real_exchanges_only"
+    },
+    {
+      "version": "20260805155329",
+      "name": "email_preferences_and_log"
+    },
+    {
+      "version": "20260805155407",
+      "name": "email_preferences_alerte_cap"
+    },
+    {
+      "version": "20260808160430",
+      "name": "email_dispatch_rules"
+    },
+    {
+      "version": "20260808233956",
+      "name": "sync_jobs_client_insert_transcript_analysis"
+    },
+    {
+      "version": "20260809075759",
+      "name": "contact_avatars_bucket"
+    },
+    {
+      "version": "20260818151053",
+      "name": "contact_avatars_auto_enrich"
+    },
+    {
+      "version": "20260824142310",
+      "name": "enrich_detect_account_candidates"
+    },
+    {
+      "version": "20260824143329",
+      "name": "enrich_detect_person_candidates_age"
+    },
+    {
+      "version": "20260824161207",
+      "name": "add_source_excerpt_to_person_memory_entries"
+    },
+    {
+      "version": "20260825104358",
+      "name": "add_ownership_handovers"
+    },
+    {
+      "version": "20260825180058",
+      "name": "add_ai_usage_tracking"
+    },
+    {
+      "version": "20260825232831",
+      "name": "reconcile_ai_usage_events_schema"
+    },
+    {
+      "version": "20260825233306",
+      "name": "admin_delete_user"
+    },
+    {
+      "version": "20260826092623",
+      "name": "account_health_monthly_rpc"
+    },
+    {
+      "version": "20260826100152",
+      "name": "allow_location_contact_detail_type"
+    },
+    {
+      "version": "20260826161625",
+      "name": "relationship_score_v4_five_axes"
+    },
+    {
+      "version": "20260826172010",
+      "name": "account_score_components"
+    },
+    {
+      "version": "20260828065641",
+      "name": "home_action_states_archive_snapshot"
+    },
+    {
+      "version": "20260828123737",
+      "name": "account_relation_categorization"
+    },
+    {
+      "version": "20260828213627",
+      "name": "super_admin_seat_management"
+    },
+    {
+      "version": "20260828215106",
+      "name": "team_invitation_revoke"
+    },
+    {
+      "version": "20260831083243",
+      "name": "member_removal_and_super_admin_membership_management"
+    },
+    {
+      "version": "20260831084553",
+      "name": "fiche_mutual_sharing"
+    },
+    {
+      "version": "20260902105137",
+      "name": "can_view_entity_helpers"
+    },
+    {
+      "version": "20260902105345",
+      "name": "contacts_private_by_default"
+    },
+    {
+      "version": "20260902105909",
+      "name": "person_satellite_tables_private_by_default"
+    },
+    {
+      "version": "20260902111532",
+      "name": "fiche_visions_rpcs"
+    },
+    {
+      "version": "20260902112245",
+      "name": "list_shared_with_me_display_fields"
+    },
+    {
+      "version": "20260903072302",
+      "name": "companies_private_by_default"
+    },
+    {
+      "version": "20260903072527",
+      "name": "account_satellite_tables_private_by_default"
+    },
+    {
+      "version": "20260903072631",
+      "name": "account_visions_rpcs"
+    },
+    {
+      "version": "20260903082803",
+      "name": "accept_invitations_returns_details"
+    },
+    {
+      "version": "20260904173609",
+      "name": "transfer_contact_ownership_rpc"
+    },
+    {
+      "version": "20260904175645",
+      "name": "drop_transfer_contact_ownership_rpc"
+    },
+    {
+      "version": "20260905160003",
+      "name": "account_recommendations_assigned_contact"
+    },
+    {
+      "version": "20260905210105",
+      "name": "companies_siren"
+    },
+    {
+      "version": "20260909161758",
+      "name": "notion_meeting_notes"
+    },
+    {
+      "version": "20260910105104",
+      "name": "connectors_bound_to_home_organization"
+    },
+    {
+      "version": "20260910105339",
+      "name": "fiche_visions_and_handovers"
+    },
+    {
+      "version": "20260910144012",
+      "name": "watch_off_by_default_on_tracking"
+    },
+    {
+      "version": "20260910145331",
+      "name": "fix_list_visions_ambiguous_conflict"
+    },
+    {
+      "version": "20260910154057",
+      "name": "document_person_memory_source_excerpt"
+    },
+    {
+      "version": "20260910165802",
+      "name": "dedup_person_career_entries"
+    },
+    {
+      "version": "20260910201031",
+      "name": "profile_avatars_bucket"
+    },
+    {
+      "version": "20260910203053",
+      "name": "account_score_snapshot_month"
+    },
+    {
+      "version": "20260910205423",
+      "name": "enable_rls_dedup_backup_table"
+    },
+    {
+      "version": "20260911053524",
+      "name": "meetings_scope_status_calendar_link"
+    },
+    {
+      "version": "20260911053535",
+      "name": "org_member_email_helper"
+    },
+    {
+      "version": "20260911053626",
+      "name": "resolve_contact_identity_create_if_missing"
+    },
+    {
+      "version": "20260911053722",
+      "name": "user_identity_aliases"
+    },
+    {
+      "version": "20260911053859",
+      "name": "detect_person_candidates_meeting_interactions"
+    },
+    {
+      "version": "20260911055213",
+      "name": "fix_meeting_upsert_partial_index"
+    },
+    {
+      "version": "20260911055545",
+      "name": "schedule_calendar_sync_cron"
+    },
+    {
+      "version": "20260913090112",
+      "name": "user_identity_aliases"
+    },
+    {
+      "version": "20260914160818",
+      "name": "account_facts_engine_m1"
+    },
+    {
+      "version": "20260914191224",
+      "name": "scoring_v6_shadow_schema"
+    },
+    {
+      "version": "20260914191338",
+      "name": "scoring_v6_seed_registry_params"
+    },
+    {
+      "version": "20260914194009",
+      "name": "feature_flags"
+    },
+    {
+      "version": "20260914195037",
+      "name": "marker_event_dedup_and_candidate"
+    },
+    {
+      "version": "20260914201327",
+      "name": "account_brain_rpc"
+    },
+    {
+      "version": "20260914201413",
+      "name": "account_brain_rpc_fix"
+    },
+    {
+      "version": "20260914202351",
+      "name": "reconciliation_rpcs"
+    },
+    {
+      "version": "20260915052757",
+      "name": "promote_account_facts_rpc"
+    },
+    {
+      "version": "20260915052836",
+      "name": "promote_account_facts_rpc_fix"
+    },
+    {
+      "version": "20260915071320",
+      "name": "rec_dedup_guard_flagged"
+    },
+    {
+      "version": "20260915195739",
+      "name": "score_batch_account_v6_cron"
+    },
+    {
+      "version": "20260915200342",
+      "name": "account_weather_v6_scoring_schema_rpcs"
+    },
+    {
+      "version": "20260915203003",
+      "name": "person_marker_events_rpcs"
+    },
+    {
+      "version": "20260915203221",
+      "name": "detect_dyad_markers_cron"
+    },
+    {
+      "version": "20260915205059",
+      "name": "dyad_weather_snapshots_and_account_history"
+    },
+    {
+      "version": "20260915211034",
+      "name": "account_engagement_actions"
+    },
+    {
+      "version": "20260916081927",
+      "name": "marker_event_verbatim_and_evidence_rpcs"
+    },
+    {
+      "version": "20260916081935",
+      "name": "classify_markers_cron"
+    },
+    {
+      "version": "20260916082150",
+      "name": "upsert_person_marker_events_is_verbatim"
+    },
+    {
+      "version": "20260916183629",
+      "name": "person_memory_dismiss"
+    },
+    {
+      "version": "20260916205657",
+      "name": "person_dynamique_axis"
+    }
+  ],
+  "local_only_version": [
+    {
+      "version": "20260720031500",
+      "name": "generic_email_domains_are_not_companies",
+      "path": "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+      "sha256": "75289fb9bcc3851ed2b70e6ec17b6048baae629625febbd81f96e4fe067d8ddc"
+    },
+    {
+      "version": "20260720123000",
+      "name": "reschedule_veille_contacts_throughput",
+      "path": "supabase/migrations/20260720123000_reschedule_veille_contacts_throughput.sql",
+      "sha256": "4bd4e95f4d2d006a0c6051187de7362e55baedf1ba293ebc4be24b937ab7f3e0"
+    },
+    {
+      "version": "20260720124500",
+      "name": "rename_knowr_cron_jobs_to_tohu_bohu",
+      "path": "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+      "sha256": "13c77cee99f28af44255f316c37c6c8ee268c9b21ec11c6c8d5b9cffe1e56c08"
+    },
+    {
+      "version": "20260721051423",
+      "name": "meeting_sync_unique_constraints",
+      "path": "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+      "sha256": "0eaa0fec310754c70e330aaab3a7861dad79b1642cfddc71f005067324165429"
+    },
+    {
+      "version": "20260722090000",
+      "name": "sync_jobs_client_insert_email_analysis",
+      "path": "supabase/migrations/20260722090000_sync_jobs_client_insert_email_analysis.sql",
+      "sha256": "3422a8105e221d1654d65f01b6c717f1a4dee6abe4ae5b3189acdfeaf79f3f8b"
+    },
+    {
+      "version": "20260724090000",
+      "name": "structured_evolving_cognitive_profiles",
+      "path": "supabase/migrations/20260724090000_structured_evolving_cognitive_profiles.sql",
+      "sha256": "aeeab2617bfe2ebffeeea374db8cd7837041f61748411518c6e19325b7e29159"
+    },
+    {
+      "version": "20260724110000",
+      "name": "fix_cognitive_confidence_numeric_overflow",
+      "path": "supabase/migrations/20260724110000_fix_cognitive_confidence_numeric_overflow.sql",
+      "sha256": "9326b31e24d095d5d617d5ecdf7cefee82dedcc0647f4b7648dfabcb82517b8a"
+    },
+    {
+      "version": "20260724113000",
+      "name": "allow_personalized_cognitive_mode",
+      "path": "supabase/migrations/20260724113000_allow_personalized_cognitive_mode.sql",
+      "sha256": "af28815dc22ad8e9a7104be0ecb65a93e70b9e6648ca40197beddcf1e298067f"
+    },
+    {
+      "version": "20260724120000",
+      "name": "enrichment_slots",
+      "path": "supabase/migrations/20260724120000_enrichment_slots.sql",
+      "sha256": "37a1b4cff8a292827ea976bb684b79b80f6418fd44083803de426550d2be5fbf"
+    },
+    {
+      "version": "20260724150000",
+      "name": "contact_identity_suggestions",
+      "path": "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+      "sha256": "f5edbe83319ce7c9c1f412c1a493145a7c0eaa37888f882850cd9d7838ec313a"
+    },
+    {
+      "version": "20260724153000",
+      "name": "fix_detect_contact_merge_candidates_perf",
+      "path": "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+      "sha256": "6a8337973e55aa3a1c6ba71929d30a1bf860775528e4494f28d5217e90a25dcd"
+    },
+    {
+      "version": "20260724160000",
+      "name": "fix_merge_detection_false_positives",
+      "path": "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+      "sha256": "bb484dc52cb52b19c1c186ff547d1031933ba44bed5bda606153f37763528bfe"
+    },
+    {
+      "version": "20260724163000",
+      "name": "strip_generic_tokens_from_merge_detection",
+      "path": "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+      "sha256": "c5e032125bb7a8749de72ef3e4f6caec67d635cd43f93943b0ce5570a84287b3"
+    },
+    {
+      "version": "20260724170000",
+      "name": "distinguish_relationship_longevity_from_recency",
+      "path": "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql",
+      "sha256": "ad54340cd821b83729a00bea18bbd2503a1a2f8489d29869e22d95c62c9688fb"
+    },
+    {
+      "version": "20260725090000",
+      "name": "normalize_contact_full_name_casing",
+      "path": "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql",
+      "sha256": "34a7415db18ecea5060aeda9f5f7ae8497a5fe2526c6743c74bc13591fbb1c84"
+    },
+    {
+      "version": "20260726100000",
+      "name": "fix_merge_contacts_enrichment_status",
+      "path": "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+      "sha256": "d1235f50d03b006b96042f44b3c329910d29f24f18e976349a1d012013193886"
+    },
+    {
+      "version": "20260729090000",
+      "name": "cognitive_profile_meeting_sources",
+      "path": "supabase/migrations/20260729090000_cognitive_profile_meeting_sources.sql",
+      "sha256": "1f4e233936ccdf8aa3d1e21538dd4fa06626420210829a035c94cc64c8801cf7"
+    },
+    {
+      "version": "20260731090000",
+      "name": "cognitive_axes_v3",
+      "path": "supabase/migrations/20260731090000_cognitive_axes_v3.sql",
+      "sha256": "d0c412a9a9bef22e970f3f10a2c1e4a5791d430974f228aeae7dc20f6b06c3a0"
+    },
+    {
+      "version": "20260731130000",
+      "name": "user_behavioral_profile_v3",
+      "path": "supabase/migrations/20260731130000_user_behavioral_profile_v3.sql",
+      "sha256": "3b77ee40756ba1a5260c2712956bf13bf4121f4887aef821f3831f70e79233a7"
+    },
+    {
+      "version": "20260731150000",
+      "name": "person_key_moments",
+      "path": "supabase/migrations/20260731150000_person_key_moments.sql",
+      "sha256": "6e28b419deb32d152d5317d916bc826233a8585b38894df29d66f4a5b427e070"
+    },
+    {
+      "version": "20260731170000",
+      "name": "reciprocal_email_relationships",
+      "path": "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+      "sha256": "dc4326a7cd607be1daf2906756ab15be10bc331f01d951883be941385b7b4f32"
+    },
+    {
+      "version": "20260802160000",
+      "name": "person_memory_resolve",
+      "path": "supabase/migrations/20260802160000_person_memory_resolve.sql",
+      "sha256": "08d25ef3d34508cbacb83979d5726a8ea3aa59cad20a0ba32b002ddfac0ce1a7"
+    },
+    {
+      "version": "20260809120000",
+      "name": "sync_jobs_client_insert_transcript_analysis",
+      "path": "supabase/migrations/20260809120000_sync_jobs_client_insert_transcript_analysis.sql",
+      "sha256": "bb6094d9b251448ab5b3417c0cbb232da85d7b5bd21bfe4352b992a15ce8938a"
+    },
+    {
+      "version": "20260809140000",
+      "name": "contact_avatars_bucket",
+      "path": "supabase/migrations/20260809140000_contact_avatars_bucket.sql",
+      "sha256": "b16a375b73d2a32f3e7c1d0a2c630713258220bf6e44bbe102cc4b1d6336cdd9"
+    },
+    {
+      "version": "20260818120000",
+      "name": "contact_avatars_auto_enrich",
+      "path": "supabase/migrations/20260818120000_contact_avatars_auto_enrich.sql",
+      "sha256": "22997609fa00b6ed755dc1b352cdcb26bf74b9ee9e53d61bc99637df044eb7fe"
+    },
+    {
+      "version": "20260904120000",
+      "name": "transfer_contact_ownership_rpc",
+      "path": "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+      "sha256": "e2f8d4184f624bc1531ba8ca07e442a8975898140b47f67426f33593737027d8"
+    },
+    {
+      "version": "20260904123000",
+      "name": "drop_transfer_contact_ownership_rpc",
+      "path": "supabase/migrations/20260904123000_drop_transfer_contact_ownership_rpc.sql",
+      "sha256": "494cb1742c4ea0e5f7b0fdb530ab2a034a34fc8cef3dc75c91699165959d5f27"
+    },
+    {
+      "version": "20260905090000",
+      "name": "account_recommendations_assigned_contact",
+      "path": "supabase/migrations/20260905090000_account_recommendations_assigned_contact.sql",
+      "sha256": "3b25c8a9df7c2196044c108fc07a0c81f904a5fc61d5412489edd3fef6ddc816"
+    },
+    {
+      "version": "20260905100000",
+      "name": "companies_siren",
+      "path": "supabase/migrations/20260905100000_companies_siren.sql",
+      "sha256": "536db5323cb2076becc5df5d8c56ff8b79e0c4518a04acc67a5751ff325dc6cd"
+    },
+    {
+      "version": "20260907120000",
+      "name": "schedule_meeting_prep_emails",
+      "path": "supabase/migrations/20260907120000_schedule_meeting_prep_emails.sql",
+      "sha256": "e8285e01e497a903aca531c7c773a2f04f79a7336c1f5f9a64f8497ff59b5cdb"
+    },
+    {
+      "version": "20260907123000",
+      "name": "enable_team_vision_for_all_members",
+      "path": "supabase/migrations/20260907123000_enable_team_vision_for_all_members.sql",
+      "sha256": "026d9dd8d7645a6745e94d3fb3829105ffddb569b96bab569956f8ef3a6a3976"
+    },
+    {
+      "version": "20260908160000",
+      "name": "slack_sync",
+      "path": "supabase/migrations/20260908160000_slack_sync.sql",
+      "sha256": "36562907c0784e09968da60c14407ef2f100e092f92787eeb94e7ad2b7de5f5a"
+    },
+    {
+      "version": "20260909120000",
+      "name": "fiche_visions_and_handovers",
+      "path": "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+      "sha256": "bbcf97573671ce9f117c0fae71cca67e4f5a77354e48cbe8ae49bd1e664b56c2"
+    },
+    {
+      "version": "20260909170000",
+      "name": "notion_meeting_notes",
+      "path": "supabase/migrations/20260909170000_notion_meeting_notes.sql",
+      "sha256": "aa6dd43b76a4f8e152d27c17ea8a831153f8c74393d03edc59fc37c6a62c2cb0"
+    },
+    {
+      "version": "20260910090000",
+      "name": "connectors_bound_to_home_organization",
+      "path": "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+      "sha256": "8b739f99edca58123d91205023fd02ce0e161c69423924d2ed79ce4c3f6402c6"
+    },
+    {
+      "version": "20260910110000",
+      "name": "drop_unused_tables",
+      "path": "supabase/migrations/20260910110000_drop_unused_tables.sql",
+      "sha256": "f083b80999b2c36c353c8c6e088badc798c5399774eecee0ab289e7a59bf7c35"
+    },
+    {
+      "version": "20260910130000",
+      "name": "retire_fiche_shares",
+      "path": "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+      "sha256": "df7ef826d029eeb243f25b79e920b4c2fbd8fdb274e6cf62f5edb06631b5767f"
+    },
+    {
+      "version": "20260910140000",
+      "name": "watch_off_by_default_on_tracking",
+      "path": "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql",
+      "sha256": "018f37a0e62112fb3836ec2c7412794d224ea64b689d6d644923cdc41ee2b8c1"
+    },
+    {
+      "version": "20260910150000",
+      "name": "fix_list_visions_ambiguous_conflict",
+      "path": "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql",
+      "sha256": "548d6fc18b587ba4d7559b505597bd94dceed9a6f483f528f085e89ec78b52c9"
+    },
+    {
+      "version": "20260910160000",
+      "name": "document_person_memory_source_excerpt",
+      "path": "supabase/migrations/20260910160000_document_person_memory_source_excerpt.sql",
+      "sha256": "70c7141171ff61ed4209f3dc512121e970042f88e5ab64ad9e85422a7e22f08b"
+    },
+    {
+      "version": "20260910210000",
+      "name": "profile_avatars_bucket",
+      "path": "supabase/migrations/20260910210000_profile_avatars_bucket.sql",
+      "sha256": "fa5de12501c7d7ffced433472a671c65699e228f922e1db4c24f3514e505f5be"
+    },
+    {
+      "version": "20260910220000",
+      "name": "account_score_snapshot_month",
+      "path": "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+      "sha256": "38d51eb3819262fb05ef4bd7eee52f698bc409e1968533d9fdf58fd6decfb20d"
+    },
+    {
+      "version": "20260910230000",
+      "name": "enable_rls_dedup_backup_table",
+      "path": "supabase/migrations/20260910230000_enable_rls_dedup_backup_table.sql",
+      "sha256": "f94435d7143c67641147b7a2f453a42dd76906c3ea4f60b4aaea8136a4a23ef7"
+    },
+    {
+      "version": "20260911100000",
+      "name": "user_identity_aliases",
+      "path": "supabase/migrations/20260911100000_user_identity_aliases.sql",
+      "sha256": "d746c2e46010e537054772a7e09472ffe33dfa5e8fb51a3cce797db30e16478e"
+    },
+    {
+      "version": "20260911101000",
+      "name": "meetings_scope_status_calendar_link",
+      "path": "supabase/migrations/20260911101000_meetings_scope_status_calendar_link.sql",
+      "sha256": "5118be6df25cd49c266819020bcb2b8a44d99680d02836861bee5e459c554e41"
+    },
+    {
+      "version": "20260911102000",
+      "name": "org_member_email_helper",
+      "path": "supabase/migrations/20260911102000_org_member_email_helper.sql",
+      "sha256": "1354c8fc785d17eae3c5f7a2e5494a02c348991ae6185774553e6dd8a5135b3f"
+    },
+    {
+      "version": "20260911103000",
+      "name": "resolve_contact_identity_create_if_missing",
+      "path": "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+      "sha256": "e27cd9c545cc9c8007a0bcb29af5a24589e543744338c1f27a03547908a55c1d"
+    },
+    {
+      "version": "20260911104000",
+      "name": "detect_person_candidates_meeting_interactions",
+      "path": "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+      "sha256": "eb7bc7ef1f8d34523414685303b7da31d2f70328ae9f8b9bfb9c006e4333f011"
+    },
+    {
+      "version": "20260911105000",
+      "name": "fix_meeting_upsert_partial_index",
+      "path": "supabase/migrations/20260911105000_fix_meeting_upsert_partial_index.sql",
+      "sha256": "f93d5dc21fb89d13cf020ebef1cd62e913597ae91ac8fe004ca9fca8c4729d2f"
+    },
+    {
+      "version": "20260911106000",
+      "name": "schedule_calendar_sync_cron",
+      "path": "supabase/migrations/20260911106000_schedule_calendar_sync_cron.sql",
+      "sha256": "8a2d33a689af561bf1f0b7cbea7aab8c4f6fdf0c3bcb1822f5bbcdff287241c9"
+    },
+    {
+      "version": "20260914120000",
+      "name": "account_facts_engine_m1",
+      "path": "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+      "sha256": "12087708c014880615c0dd21ff56ddbc48473f2dd4a68bb5c723174b5208affd"
+    },
+    {
+      "version": "20260914140000",
+      "name": "scoring_v6_shadow_schema",
+      "path": "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+      "sha256": "39c7045f3bbab740d975c36ecbb9bd7cb15e3daad09e1791cc2c7e7c7a1e4ae4"
+    },
+    {
+      "version": "20260914141000",
+      "name": "scoring_v6_seed_registry_params",
+      "path": "supabase/migrations/20260914141000_scoring_v6_seed_registry_params.sql",
+      "sha256": "296f76a2949e693a8db3e71e03fd8cc10d897d1cf7f711e18855026eed2a198d"
+    },
+    {
+      "version": "20260914150000",
+      "name": "feature_flags",
+      "path": "supabase/migrations/20260914150000_feature_flags.sql",
+      "sha256": "43bcfa10438a196a08466bcfc0148fd83dee443106c2d09eaf3847443014a013"
+    },
+    {
+      "version": "20260914160000",
+      "name": "marker_event_dedup_and_candidate",
+      "path": "supabase/migrations/20260914160000_marker_event_dedup_and_candidate.sql",
+      "sha256": "8dc6a0a5cc69a892603e0f996d22372316cb962302acdb00be05bc7ac2f61010"
+    },
+    {
+      "version": "20260914170000",
+      "name": "account_brain_rpc",
+      "path": "supabase/migrations/20260914170000_account_brain_rpc.sql",
+      "sha256": "e97a7ef1db7d733f38fb431573264d47c6ffe584702004761b4cd46afc540cfb"
+    },
+    {
+      "version": "20260914180000",
+      "name": "reconciliation_rpcs",
+      "path": "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+      "sha256": "457d4cb344085e16ae47a6c59db13d1696324048af10598b32b698f143b777ac"
+    },
+    {
+      "version": "20260914190000",
+      "name": "promote_account_facts_rpc",
+      "path": "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+      "sha256": "4f136c082b35e7f7cb9aa37a76b2df6b72bfb62d630223e49585828b38db3f63"
+    },
+    {
+      "version": "20260915100000",
+      "name": "rec_dedup_guard_flagged",
+      "path": "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+      "sha256": "e9f989c32fb9d7fa6bd226ffd8487bd7ec69d5a7c220f562d26d2d0c768d0a68"
+    },
+    {
+      "version": "20260916090000",
+      "name": "score_batch_account_v6_cron",
+      "path": "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+      "sha256": "f1f49ace19c5f86385763cf47fa9c249d8ed9aa6186371d48def72fb9db52a94"
+    },
+    {
+      "version": "20260916100000",
+      "name": "account_engagement_actions",
+      "path": "supabase/migrations/20260916100000_account_engagement_actions.sql",
+      "sha256": "72b2dc02cfbb695bf6cf8b94181c063c0472183f47c8f25ab6dbdf64b936e21c"
+    },
+    {
+      "version": "20260916110000",
+      "name": "marker_event_verbatim_and_evidence_rpcs",
+      "path": "supabase/migrations/20260916110000_marker_event_verbatim_and_evidence_rpcs.sql",
+      "sha256": "3dcbf554778b511641c5947f022bebdf229c067da5c2134186bcccbeb74f6b52"
+    },
+    {
+      "version": "20260916120000",
+      "name": "classify_markers_cron",
+      "path": "supabase/migrations/20260916120000_classify_markers_cron.sql",
+      "sha256": "77ece350465ff5da75ce702924cb3ae603c5da7cdd6fb53c737012ba3df238c8"
+    },
+    {
+      "version": "20260916150000",
+      "name": "person_memory_dismiss",
+      "path": "supabase/migrations/20260916150000_person_memory_dismiss.sql",
+      "sha256": "ded80f1b4a2d1b9f25095684c03666f65f22b66b8ad300e3d1a166957c412c38"
+    },
+    {
+      "version": "20260917100000",
+      "name": "v6_foundation_ledger",
+      "path": "supabase/migrations/20260917100000_v6_foundation_ledger.sql",
+      "sha256": "f72bf323c6563e9eec0b9caba4e01c72b9fe884194f795b13206f97d3cbd5edc"
+    },
+    {
+      "version": "20260917101000",
+      "name": "v6_identity_ambiguity",
+      "path": "supabase/migrations/20260917101000_v6_identity_ambiguity.sql",
+      "sha256": "27fbb8d1721bb4e984222ceb0009008c75f8da3722b4eb689882cdef5ab6e3a5"
+    },
+    {
+      "version": "20260917102000",
+      "name": "v6_marker_read_access",
+      "path": "supabase/migrations/20260917102000_v6_marker_read_access.sql",
+      "sha256": "310e1f691b6eddaa831b0568486e67d38c489b8f4e330ee1ee288142aafca2f1"
+    }
+  ],
+  "remote_only_name": [
+    {
+      "version": "20260722144009",
+      "name": "tohu_bohu_email_backfill_cron"
+    },
+    {
+      "version": "20260722144705",
+      "name": "tohu_bohu_email_incremental_cron"
+    },
+    {
+      "version": "20260723100325",
+      "name": "fix_notifications_constraints_and_digest_support"
+    },
+    {
+      "version": "20260723100650",
+      "name": "tohu_bohu_briefs_and_digest_cron"
+    },
+    {
+      "version": "20260723101019",
+      "name": "resource_locks_and_access_grants_foundation"
+    },
+    {
+      "version": "20260723110625",
+      "name": "extend_resource_lock_to_contacts_and_companies"
+    },
+    {
+      "version": "20260724062529",
+      "name": "fix_shares_surname_generic_word_false_positive"
+    },
+    {
+      "version": "20260724063457",
+      "name": "exclude_too_short_core_names_from_merge_detection"
+    },
+    {
+      "version": "20260731093002",
+      "name": "relationship_score_v3_and_narratives"
+    },
+    {
+      "version": "20260804214102",
+      "name": "connectors_allow_read_ai_provider"
+    },
+    {
+      "version": "20260804222440",
+      "name": "detect_account_candidates_real_exchanges_only"
+    },
+    {
+      "version": "20260805155329",
+      "name": "email_preferences_and_log"
+    },
+    {
+      "version": "20260805155407",
+      "name": "email_preferences_alerte_cap"
+    },
+    {
+      "version": "20260808160430",
+      "name": "email_dispatch_rules"
+    },
+    {
+      "version": "20260824142310",
+      "name": "enrich_detect_account_candidates"
+    },
+    {
+      "version": "20260824143329",
+      "name": "enrich_detect_person_candidates_age"
+    },
+    {
+      "version": "20260824161207",
+      "name": "add_source_excerpt_to_person_memory_entries"
+    },
+    {
+      "version": "20260825104358",
+      "name": "add_ownership_handovers"
+    },
+    {
+      "version": "20260825180058",
+      "name": "add_ai_usage_tracking"
+    },
+    {
+      "version": "20260825232831",
+      "name": "reconcile_ai_usage_events_schema"
+    },
+    {
+      "version": "20260825233306",
+      "name": "admin_delete_user"
+    },
+    {
+      "version": "20260826092623",
+      "name": "account_health_monthly_rpc"
+    },
+    {
+      "version": "20260826100152",
+      "name": "allow_location_contact_detail_type"
+    },
+    {
+      "version": "20260826161625",
+      "name": "relationship_score_v4_five_axes"
+    },
+    {
+      "version": "20260826172010",
+      "name": "account_score_components"
+    },
+    {
+      "version": "20260828065641",
+      "name": "home_action_states_archive_snapshot"
+    },
+    {
+      "version": "20260828123737",
+      "name": "account_relation_categorization"
+    },
+    {
+      "version": "20260828213627",
+      "name": "super_admin_seat_management"
+    },
+    {
+      "version": "20260828215106",
+      "name": "team_invitation_revoke"
+    },
+    {
+      "version": "20260831083243",
+      "name": "member_removal_and_super_admin_membership_management"
+    },
+    {
+      "version": "20260831084553",
+      "name": "fiche_mutual_sharing"
+    },
+    {
+      "version": "20260902105137",
+      "name": "can_view_entity_helpers"
+    },
+    {
+      "version": "20260902105345",
+      "name": "contacts_private_by_default"
+    },
+    {
+      "version": "20260902105909",
+      "name": "person_satellite_tables_private_by_default"
+    },
+    {
+      "version": "20260902111532",
+      "name": "fiche_visions_rpcs"
+    },
+    {
+      "version": "20260902112245",
+      "name": "list_shared_with_me_display_fields"
+    },
+    {
+      "version": "20260903072302",
+      "name": "companies_private_by_default"
+    },
+    {
+      "version": "20260903072527",
+      "name": "account_satellite_tables_private_by_default"
+    },
+    {
+      "version": "20260903072631",
+      "name": "account_visions_rpcs"
+    },
+    {
+      "version": "20260903082803",
+      "name": "accept_invitations_returns_details"
+    },
+    {
+      "version": "20260910165802",
+      "name": "dedup_person_career_entries"
+    },
+    {
+      "version": "20260914201413",
+      "name": "account_brain_rpc_fix"
+    },
+    {
+      "version": "20260915052836",
+      "name": "promote_account_facts_rpc_fix"
+    },
+    {
+      "version": "20260915200342",
+      "name": "account_weather_v6_scoring_schema_rpcs"
+    },
+    {
+      "version": "20260915203003",
+      "name": "person_marker_events_rpcs"
+    },
+    {
+      "version": "20260915203221",
+      "name": "detect_dyad_markers_cron"
+    },
+    {
+      "version": "20260915205059",
+      "name": "dyad_weather_snapshots_and_account_history"
+    },
+    {
+      "version": "20260916082150",
+      "name": "upsert_person_marker_events_is_verbatim"
+    },
+    {
+      "version": "20260916205657",
+      "name": "person_dynamique_axis"
+    }
+  ],
+  "local_only_name": [
+    {
+      "version": "20260720031500",
+      "name": "generic_email_domains_are_not_companies",
+      "path": "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+      "sha256": "75289fb9bcc3851ed2b70e6ec17b6048baae629625febbd81f96e4fe067d8ddc"
+    },
+    {
+      "version": "20260724110000",
+      "name": "fix_cognitive_confidence_numeric_overflow",
+      "path": "supabase/migrations/20260724110000_fix_cognitive_confidence_numeric_overflow.sql",
+      "sha256": "9326b31e24d095d5d617d5ecdf7cefee82dedcc0647f4b7648dfabcb82517b8a"
+    },
+    {
+      "version": "20260724113000",
+      "name": "allow_personalized_cognitive_mode",
+      "path": "supabase/migrations/20260724113000_allow_personalized_cognitive_mode.sql",
+      "sha256": "af28815dc22ad8e9a7104be0ecb65a93e70b9e6648ca40197beddcf1e298067f"
+    },
+    {
+      "version": "20260729090000",
+      "name": "cognitive_profile_meeting_sources",
+      "path": "supabase/migrations/20260729090000_cognitive_profile_meeting_sources.sql",
+      "sha256": "1f4e233936ccdf8aa3d1e21538dd4fa06626420210829a035c94cc64c8801cf7"
+    },
+    {
+      "version": "20260731130000",
+      "name": "user_behavioral_profile_v3",
+      "path": "supabase/migrations/20260731130000_user_behavioral_profile_v3.sql",
+      "sha256": "3b77ee40756ba1a5260c2712956bf13bf4121f4887aef821f3831f70e79233a7"
+    },
+    {
+      "version": "20260731170000",
+      "name": "reciprocal_email_relationships",
+      "path": "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+      "sha256": "dc4326a7cd607be1daf2906756ab15be10bc331f01d951883be941385b7b4f32"
+    },
+    {
+      "version": "20260907120000",
+      "name": "schedule_meeting_prep_emails",
+      "path": "supabase/migrations/20260907120000_schedule_meeting_prep_emails.sql",
+      "sha256": "e8285e01e497a903aca531c7c773a2f04f79a7336c1f5f9a64f8497ff59b5cdb"
+    },
+    {
+      "version": "20260907123000",
+      "name": "enable_team_vision_for_all_members",
+      "path": "supabase/migrations/20260907123000_enable_team_vision_for_all_members.sql",
+      "sha256": "026d9dd8d7645a6745e94d3fb3829105ffddb569b96bab569956f8ef3a6a3976"
+    },
+    {
+      "version": "20260908160000",
+      "name": "slack_sync",
+      "path": "supabase/migrations/20260908160000_slack_sync.sql",
+      "sha256": "36562907c0784e09968da60c14407ef2f100e092f92787eeb94e7ad2b7de5f5a"
+    },
+    {
+      "version": "20260910110000",
+      "name": "drop_unused_tables",
+      "path": "supabase/migrations/20260910110000_drop_unused_tables.sql",
+      "sha256": "f083b80999b2c36c353c8c6e088badc798c5399774eecee0ab289e7a59bf7c35"
+    },
+    {
+      "version": "20260910130000",
+      "name": "retire_fiche_shares",
+      "path": "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+      "sha256": "df7ef826d029eeb243f25b79e920b4c2fbd8fdb274e6cf62f5edb06631b5767f"
+    },
+    {
+      "version": "20260917100000",
+      "name": "v6_foundation_ledger",
+      "path": "supabase/migrations/20260917100000_v6_foundation_ledger.sql",
+      "sha256": "f72bf323c6563e9eec0b9caba4e01c72b9fe884194f795b13206f97d3cbd5edc"
+    },
+    {
+      "version": "20260917101000",
+      "name": "v6_identity_ambiguity",
+      "path": "supabase/migrations/20260917101000_v6_identity_ambiguity.sql",
+      "sha256": "27fbb8d1721bb4e984222ceb0009008c75f8da3722b4eb689882cdef5ab6e3a5"
+    },
+    {
+      "version": "20260917102000",
+      "name": "v6_marker_read_access",
+      "path": "supabase/migrations/20260917102000_v6_marker_read_access.sql",
+      "sha256": "310e1f691b6eddaa831b0568486e67d38c489b8f4e330ee1ee288142aafca2f1"
+    }
+  ],
+  "same_name_different_version": [
+    {
+      "name": "reschedule_veille_contacts_throughput",
+      "local": "20260720123000",
+      "remote": "20260720123236"
+    },
+    {
+      "name": "rename_knowr_cron_jobs_to_tohu_bohu",
+      "local": "20260720124500",
+      "remote": "20260720125856"
+    },
+    {
+      "name": "meeting_sync_unique_constraints",
+      "local": "20260721051423",
+      "remote": "20260721051747"
+    },
+    {
+      "name": "sync_jobs_client_insert_email_analysis",
+      "local": "20260722090000",
+      "remote": "20260722101105"
+    },
+    {
+      "name": "structured_evolving_cognitive_profiles",
+      "local": "20260724090000",
+      "remote": "20260724064554"
+    },
+    {
+      "name": "enrichment_slots",
+      "local": "20260724120000",
+      "remote": "20260724045431"
+    },
+    {
+      "name": "contact_identity_suggestions",
+      "local": "20260724150000",
+      "remote": "20260724054744"
+    },
+    {
+      "name": "fix_detect_contact_merge_candidates_perf",
+      "local": "20260724153000",
+      "remote": "20260724055901"
+    },
+    {
+      "name": "fix_merge_detection_false_positives",
+      "local": "20260724160000",
+      "remote": "20260724062229"
+    },
+    {
+      "name": "strip_generic_tokens_from_merge_detection",
+      "local": "20260724163000",
+      "remote": "20260724063313"
+    },
+    {
+      "name": "distinguish_relationship_longevity_from_recency",
+      "local": "20260724170000",
+      "remote": "20260724212653"
+    },
+    {
+      "name": "normalize_contact_full_name_casing",
+      "local": "20260725090000",
+      "remote": "20260725153738"
+    },
+    {
+      "name": "fix_merge_contacts_enrichment_status",
+      "local": "20260726100000",
+      "remote": "20260726010428"
+    },
+    {
+      "name": "cognitive_axes_v3",
+      "local": "20260731090000",
+      "remote": "20260731084844"
+    },
+    {
+      "name": "person_key_moments",
+      "local": "20260731150000",
+      "remote": "20260731155322"
+    },
+    {
+      "name": "person_memory_resolve",
+      "local": "20260802160000",
+      "remote": "20260802164213"
+    },
+    {
+      "name": "sync_jobs_client_insert_transcript_analysis",
+      "local": "20260809120000",
+      "remote": "20260808233956"
+    },
+    {
+      "name": "contact_avatars_bucket",
+      "local": "20260809140000",
+      "remote": "20260809075759"
+    },
+    {
+      "name": "contact_avatars_auto_enrich",
+      "local": "20260818120000",
+      "remote": "20260818151053"
+    },
+    {
+      "name": "transfer_contact_ownership_rpc",
+      "local": "20260904120000",
+      "remote": "20260904173609"
+    },
+    {
+      "name": "drop_transfer_contact_ownership_rpc",
+      "local": "20260904123000",
+      "remote": "20260904175645"
+    },
+    {
+      "name": "account_recommendations_assigned_contact",
+      "local": "20260905090000",
+      "remote": "20260905160003"
+    },
+    {
+      "name": "companies_siren",
+      "local": "20260905100000",
+      "remote": "20260905210105"
+    },
+    {
+      "name": "fiche_visions_and_handovers",
+      "local": "20260909120000",
+      "remote": "20260910105339"
+    },
+    {
+      "name": "notion_meeting_notes",
+      "local": "20260909170000",
+      "remote": "20260909161758"
+    },
+    {
+      "name": "connectors_bound_to_home_organization",
+      "local": "20260910090000",
+      "remote": "20260910105104"
+    },
+    {
+      "name": "watch_off_by_default_on_tracking",
+      "local": "20260910140000",
+      "remote": "20260910144012"
+    },
+    {
+      "name": "fix_list_visions_ambiguous_conflict",
+      "local": "20260910150000",
+      "remote": "20260910145331"
+    },
+    {
+      "name": "document_person_memory_source_excerpt",
+      "local": "20260910160000",
+      "remote": "20260910154057"
+    },
+    {
+      "name": "profile_avatars_bucket",
+      "local": "20260910210000",
+      "remote": "20260910201031"
+    },
+    {
+      "name": "account_score_snapshot_month",
+      "local": "20260910220000",
+      "remote": "20260910203053"
+    },
+    {
+      "name": "enable_rls_dedup_backup_table",
+      "local": "20260910230000",
+      "remote": "20260910205423"
+    },
+    {
+      "name": "user_identity_aliases",
+      "local": "20260911100000",
+      "remote": "20260911053722"
+    },
+    {
+      "name": "user_identity_aliases",
+      "local": "20260911100000",
+      "remote": "20260913090112"
+    },
+    {
+      "name": "meetings_scope_status_calendar_link",
+      "local": "20260911101000",
+      "remote": "20260911053524"
+    },
+    {
+      "name": "org_member_email_helper",
+      "local": "20260911102000",
+      "remote": "20260911053535"
+    },
+    {
+      "name": "resolve_contact_identity_create_if_missing",
+      "local": "20260911103000",
+      "remote": "20260911053626"
+    },
+    {
+      "name": "detect_person_candidates_meeting_interactions",
+      "local": "20260911104000",
+      "remote": "20260911053859"
+    },
+    {
+      "name": "fix_meeting_upsert_partial_index",
+      "local": "20260911105000",
+      "remote": "20260911055213"
+    },
+    {
+      "name": "schedule_calendar_sync_cron",
+      "local": "20260911106000",
+      "remote": "20260911055545"
+    },
+    {
+      "name": "account_facts_engine_m1",
+      "local": "20260914120000",
+      "remote": "20260914160818"
+    },
+    {
+      "name": "scoring_v6_shadow_schema",
+      "local": "20260914140000",
+      "remote": "20260914191224"
+    },
+    {
+      "name": "scoring_v6_seed_registry_params",
+      "local": "20260914141000",
+      "remote": "20260914191338"
+    },
+    {
+      "name": "feature_flags",
+      "local": "20260914150000",
+      "remote": "20260914194009"
+    },
+    {
+      "name": "marker_event_dedup_and_candidate",
+      "local": "20260914160000",
+      "remote": "20260914195037"
+    },
+    {
+      "name": "account_brain_rpc",
+      "local": "20260914170000",
+      "remote": "20260914201327"
+    },
+    {
+      "name": "reconciliation_rpcs",
+      "local": "20260914180000",
+      "remote": "20260914202351"
+    },
+    {
+      "name": "promote_account_facts_rpc",
+      "local": "20260914190000",
+      "remote": "20260915052757"
+    },
+    {
+      "name": "rec_dedup_guard_flagged",
+      "local": "20260915100000",
+      "remote": "20260915071320"
+    },
+    {
+      "name": "score_batch_account_v6_cron",
+      "local": "20260916090000",
+      "remote": "20260915195739"
+    },
+    {
+      "name": "account_engagement_actions",
+      "local": "20260916100000",
+      "remote": "20260915211034"
+    },
+    {
+      "name": "marker_event_verbatim_and_evidence_rpcs",
+      "local": "20260916110000",
+      "remote": "20260916081927"
+    },
+    {
+      "name": "classify_markers_cron",
+      "local": "20260916120000",
+      "remote": "20260916081935"
+    },
+    {
+      "name": "person_memory_dismiss",
+      "local": "20260916150000",
+      "remote": "20260916183629"
+    }
+  ]
+}

@@ -1,15 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { scoreWindow } from './mapping'
-import type { PersonApproachScenario, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
+import { createPortal } from 'react-dom'
+import { scoreWindow, sourceTypeLabel } from './mapping'
+import type { PersonApproachScenario, PersonCognitiveProfile, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId, RelationshipPhase } from './types'
 import { CareerSection, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import type { CareerHook } from './sections2'
-import { getSupabase } from '../lib/supabase'
-import { deletePersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
+import { dismissPersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
-import { V48Icon, formatDate, formatMonth, relativeDate, renderEmphasis, scoreTone, useBusy, useToast } from './ui'
+import { V48Icon, confidenceLevel, formatDate, formatMonth, relativeDate, renderEmphasis, scoreTone, useBusy, useToast } from './ui'
 import { ContactAvatar } from '../components/ContactAvatar'
+import { PersonWeatherDetailSection } from './PersonWeatherDetail'
 
 type ViewProps = {
   data: PersonDetailData
@@ -80,6 +80,111 @@ function toPercent(x: number, y: number): { left: string; top: string } {
 }
 
 type Tip = { left: number; top: number; above: boolean; content: ReactNode }
+
+/** Icône de connecteur/source pour une preuve de trait — dérivée du même label
+ *  humain que le reste de la fiche (sourceTypeLabel), pas d'une liste dupliquée.
+ *  Retombe sur une icône générique tant qu'aucun logo dédié n'est branché : la
+ *  structure (une icône par label réel) est prête à recevoir les vrais logos. */
+const EVIDENCE_SOURCE_ICON: Record<string, ReactNode> = {
+  Gmail: <><rect x="3.4" y="5.6" width="17.2" height="12.8" rx="2" /><path d="M3.9 7l8.1 6 8.1-6" /></>,
+  Emails: <><rect x="3.4" y="5.6" width="17.2" height="12.8" rx="2" /><path d="M3.9 7l8.1 6 8.1-6" /></>,
+  Outlook: <><rect x="3.4" y="5.6" width="17.2" height="12.8" rx="2" /><path d="M3.9 7l8.1 6 8.1-6" /></>,
+  Transcription: <><rect x="3" y="6.5" width="13" height="11" rx="2" /><path d="m16 10.5 5-3v9l-5-3Z" /></>,
+  Slack: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></>,
+  LinkedIn: <><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3" /><path d="M8 10.6v6" /><circle cx="8" cy="7.6" r="1.1" fill="currentColor" /><path d="M12 16.6v-3.4a2.2 2.2 0 0 1 4.4 0v3.4M12 16.6v-6" /></>,
+  'Note interne': <><path d="M6 4h9l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><path d="M14 4v5h5" /></>,
+  'Veille IA': <><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8" /><path d="M12 3.6a13 13 0 0 1 0 16.8a13 13 0 0 1 0-16.8" /></>,
+  'Recherche web': <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.2-3.2" /></>,
+}
+const EVIDENCE_SOURCE_ICON_FALLBACK = <circle cx="12" cy="12" r="8.4" />
+function SourceBadge({ sourceType }: { sourceType: string }) {
+  const label = sourceTypeLabel(sourceType)
+  return <span className="ev-src" title={label}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{EVIDENCE_SOURCE_ICON[label] ?? EVIDENCE_SOURCE_ICON_FALLBACK}</svg>
+    <span className="sr-only">{label}</span>
+  </span>
+}
+
+/** Popover « preuves » d'un trait : reste ouvert quand la souris passe du
+ *  déclencheur vers le contenu (petit délai de fermeture), et bascule en
+ *  tap/click sur tactile (pas de hover) — fermeture au tap extérieur. */
+function EvidencePopover({ label, evidence, sourceTypes }: { label: string; evidence: string[]; sourceTypes: string[] }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ left: number; top: number; above: boolean } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const closeTimer = useRef<number | null>(null)
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== null) { window.clearTimeout(closeTimer.current); closeTimer.current = null }
+  }
+  const scheduleClose = () => { clearCloseTimer(); closeTimer.current = window.setTimeout(() => setOpen(false), 180) }
+  const place = () => {
+    const rect = btnRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const width = 300
+    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8)
+    setPos({ left, top: rect.top > 220 ? rect.top - 10 : rect.bottom + 10, above: rect.top > 220 })
+  }
+  const openNow = () => { clearCloseTimer(); place(); setOpen(true) }
+
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => place()
+    const onDocClick = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (btnRef.current?.contains(target) || popRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    document.addEventListener('click', onDocClick)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+      document.removeEventListener('click', onDocClick)
+    }
+  }, [open])
+  useEffect(() => () => clearCloseTimer(), [])
+
+  // 2 à 5 preuves maximum dans le popover — lecture immédiate, pas une liste
+  // exhaustive (le reste du profil détaillé reste accessible par ailleurs).
+  const shortEvidence = evidence.slice(0, 5)
+  const uniqueSources = Array.from(new Set(sourceTypes))
+
+  return <span className="ev-anchor">
+    <button
+      type="button"
+      ref={btnRef}
+      className="pv"
+      aria-expanded={open}
+      onMouseEnter={openNow}
+      onMouseLeave={scheduleClose}
+      onFocus={openNow}
+      onBlur={scheduleClose}
+      onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); if (!open) place() }}
+    >preuves</button>
+    {open && pos && createPortal(
+      <div
+        ref={popRef}
+        className="ev-pop"
+        role="tooltip"
+        style={{ left: pos.left, top: pos.top, transform: pos.above ? 'translateY(-100%)' : 'none' }}
+        onMouseEnter={clearCloseTimer}
+        onMouseLeave={scheduleClose}
+      >
+        <p className="ev-pop-t">{label} · preuves</p>
+        {shortEvidence.length > 0
+          ? <ul className="ev-pop-l">{shortEvidence.map((item, index) => <li key={index}>{item}</li>)}</ul>
+          : <p className="ev-pop-empty">Aucune preuve détaillée disponible.</p>}
+        {uniqueSources.length > 0 && <div className="ev-pop-src">
+          {uniqueSources.map((source) => <SourceBadge key={source} sourceType={source} />)}
+        </div>}
+      </div>,
+      document.body,
+    )}
+  </span>
+}
 
 function BehaviorRadar({ axes, onShowTip, onHideTip }: { axes: PersonPrimaryAxis[]; onShowTip: (event: React.SyntheticEvent, content: ReactNode) => void; onHideTip: () => void }) {
   const entries = axes.slice(0, 6).map((axis, position) => {
@@ -235,29 +340,67 @@ function DoDontPager({ guidance }: { guidance: PersonApproachScenario[] }) {
   </>
 }
 
-/** Copie de lien uniquement — à ne pas confondre avec un vrai partage d'accès
- *  (fiche_shares). Le lien ne fonctionnera que pour quelqu'un qui a déjà accès
- *  à cette fiche (owner ou destinataire d'un partage), pas pour tout membre
- *  de l'organisation. */
-function ShareModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-  const link = typeof window !== 'undefined' ? window.location.href : ''
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch { /* clipboard indisponible : le lien reste affiché et copiable manuellement */ }
-  }
-  return <div className="v48-shm" onClick={onClose}>
-    <div className="v48-shp" onClick={(event) => event.stopPropagation()}>
-      <div className="v48-shp-h"><p className="v48-shp-t">Partager</p><button type="button" className="v48-shp-x" onClick={onClose}>×</button></div>
-      <p className="v48-shp-i">Une fiche relationnelle contient des inférences sur {data.person.fullName}.</p>
-      <p className="v48-shp-l">Lien interne</p>
-      <div className="v48-shp-lk"><span>{link}</span><button type="button" className="v48-shp-cp" onClick={copy}>{copied ? 'Copié' : 'Copier'}</button></div>
-      <p className="v48-shp-n">Ce lien n’ouvre la fiche qu’à ceux qui y ont déjà accès (toi, ou quelqu’un à qui tu l’as explicitement partagée).</p>
+/** Carte unifiée « Posture à adopter » : synthèse opérationnelle + règles do/don't
+ *  déduites de l'analyse comportementale (moteur v3+, cognitive.approachGuidance),
+ *  et les traits dominants du profil (cognitive.primaryAxes) en colonne latérale.
+ *  Rien n'est ici inventé : si le moteur n'a rien produit, la carte reste sobre
+ *  plutôt que d'afficher un gabarit générique. */
+function PostureCard({ data, cognitive }: { data: PersonDetailData; cognitive: PersonCognitiveProfile }) {
+  const scenario = cognitive.approachGuidance[0] ?? null
+  const synthesis = scenario?.summary || cognitive.posture.observation || null
+  // Un second segment n'est affiché que s'il apporte une information distincte
+  // du résumé principal (évite de répéter deux fois la même phrase du moteur).
+  const extra = scenario?.summary && cognitive.posture.observation && cognitive.posture.observation !== scenario.summary
+    ? cognitive.posture.observation
+    : null
+  // Lecture immédiate : 3 pills maximum, et au plus 1 « à éviter » accentuée —
+  // pas deux rangées complètes de do/don't. Les don't restants ne sont pas
+  // perdus (visibles dans le détail du profil plus bas), seulement pas mis en
+  // avant ici.
+  const maxRules = 3
+  const doSlots = scenario?.dont.length ? maxRules - 1 : maxRules
+  const rules = scenario ? [
+    ...scenario.do.slice(0, doSlots).map((text) => ({ text, tone: 'do' as const })),
+    ...(scenario.dont.length ? [{ text: scenario.dont[0]!, tone: 'dont' as const }] : []),
+  ] : []
+  const dominant = cognitive.primaryAxes
+    .filter((axis) => axis.status !== 'insufficient' && axis.activePole)
+    .slice()
+    .sort((a, b) => (b.predominancePct ?? 0) - (a.predominancePct ?? 0))
+    .slice(0, 3)
+  const analyzed = data.behavior.analyzedInteractions
+  const confidence = confidenceLevel(cognitive.posture.confidence)
+
+  return <article className="posture-card">
+    <div className="posture-main">
+      <p className="posture-label">Posture à adopter{data.behavior.updatedAt && <span className="posture-date"> · {formatDate(data.behavior.updatedAt)}</span>}</p>
+      {synthesis
+        ? <div className="posture-synthesis">
+          <p>{renderEmphasis(synthesis)}</p>
+          {extra && <p>{renderEmphasis(extra)}</p>}
+        </div>
+        : <p className="posture-synthesis empty">Le profil est encore en construction. Tohu attend davantage d’échanges observables avant de recommander une posture.</p>}
+      {rules.length > 0 && <div className="posture-rules">
+        {rules.map((rule, index) => <span key={index} className={`posture-chip ${rule.tone}`}>{rule.text}</span>)}
+      </div>}
     </div>
-  </div>
+    {dominant.length > 0 && <div className="posture-side">
+      <p className="posture-side-h">Ce qui domine</p>
+      <div className="posture-traits">
+        {dominant.map((axis) => {
+          const label = axis.activePole === 'left' ? axis.poleLeft : axis.poleRight
+          return <p key={axis.id} className="posture-trait">
+            <span className="posture-trait-score">+{axis.predominancePct}</span>{' '}
+            <b>{label}</b>{axis.observation && <> — {axis.observation}</>}
+          </p>
+        })}
+      </div>
+      {analyzed > 0 && <p className="posture-side-foot">
+        {confidence && <>Confiance de l’analyse : {confidence} · </>}
+        {analyzed} échange{analyzed > 1 ? 's' : ''} analysé{analyzed > 1 ? 's' : ''}
+      </p>}
+    </div>}
+  </article>
 }
 
 export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverride }: ViewProps) {
@@ -267,23 +410,8 @@ export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverrid
   const evidenceThresholdReached = data.behavior.analyzedInteractions >= data.behavior.profileMinimumInteractions
   const hasProfile = evidenceThresholdReached && observedPrimary.length > 0
   const emerging = hasProfile && data.behavior.analyzedInteractions < data.behavior.minimumInteractions
-  // « Posture à adopter » = conseil d'adaptation RÉELLEMENT déduit de l'analyse
-  // (résumé du 1er scénario d'approche, ou observation de posture). Aucun gabarit
-  // générique : à défaut, la carte affiche « profil en construction ».
-  const posture = cognitive.approachGuidance[0]?.summary || cognitive.posture.observation || null
-
-  const nextMeeting = useMemo(() => {
-    const now = Date.now()
-    // Une réunion collective (standup, webinar) ne compte jamais comme "prochain
-    // rendez-vous" individuel, même si cette personne y est identifiée.
-    const upcoming = data.history.filter((event) => event.type === 'meeting' && event.meetingScope !== 'collective' && new Date(event.occurredAt).getTime() > now)
-    return upcoming.length ? upcoming.reduce((soonest, event) => new Date(event.occurredAt) < new Date(soonest.occurredAt) ? event : soonest) : null
-  }, [data.history])
 
   const [tip, setTip] = useState<Tip | null>(null)
-  const [shareOpen, setShareOpen] = useState(false)
-  const toast = useToast()
-  const [preparingBriefing, busyPrepareBriefing] = useBusy()
   // Sélecteur de source du radar (P6.3) : proposé seulement si une analyse par
   // source a produit au moins un axe observé (mail et/ou réunion).
   const [radarSource, setRadarSource] = useState<'all' | 'email' | 'meeting'>('all')
@@ -300,35 +428,7 @@ export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverrid
   const hideTip = () => setTip(null)
 
   return <div className="v48-person-profile">
-    <div className="now">
-      <article className="rdv">
-        <span className="rdv-icon"><V48Icon name="calendar" /></span>
-        <div>
-          <p className="rdv-l">Prochain rendez-vous <span className="lvb2"><span className="lvd" />Live</span></p>
-          {nextMeeting
-            ? <><p className="rdv-t">{formatDate(nextMeeting.occurredAt)}</p><p className="rdv-s">{nextMeeting.title}{nextMeeting.sourceLabel ? ` · ${nextMeeting.sourceLabel}` : ''}</p></>
-            : data.calendarConnected
-              ? <><p className="rdv-t">Aucun prochain rendez-vous planifié.</p><p className="rdv-s">Rien à venir dans l’agenda connecté pour cette personne.</p></>
-              : <><p className="rdv-t">Connecte ton agenda pour afficher tes prochains rendez-vous.</p><p className="rdv-s">Google Calendar ou Microsoft 365, depuis les connecteurs.</p></>}
-        </div>
-        {nextMeeting
-          ? <div className="rdv-actions">
-              {nextMeeting.meetingUrl && <a className="rdv-b" href={nextMeeting.meetingUrl} target="_blank" rel="noreferrer"><V48Icon name="video" />Rejoindre</a>}
-              <button type="button" className="rdv-b" disabled={preparingBriefing === 'prepare'} onClick={() => busyPrepareBriefing('prepare', async () => {
-                const { error } = await getSupabase().functions.invoke('send-meeting-prep', { body: { organizationId: data.person.workspaceId, contactId: data.person.id } })
-                if (error) throw error
-                toast('Antisèche envoyée par email.')
-              })}><V48Icon name="sparkle" />{preparingBriefing === 'prepare' ? 'Préparation…' : 'Préparer'}</button>
-              {nextMeeting.calendarLink && <a className="rdv-b" href={nextMeeting.calendarLink} target="_blank" rel="noreferrer"><V48Icon name="external-link" />Ouvrir dans l’agenda</a>}
-              <button type="button" className="rdv-b" onClick={() => setShareOpen(true)}><V48Icon name="share" />Partager</button>
-            </div>
-          : !data.calendarConnected && <Link className="rdv-b" to="/app/connectors"><V48Icon name="calendar" />Connecter mon agenda</Link>}
-      </article>
-      <article className="po">
-        <p className="po-l">Posture à adopter</p>
-        <p className="po-t">{posture ? renderEmphasis(posture) : 'Le profil est encore en construction. Tohu attend davantage d’échanges observables avant de recommander une posture.'}</p>
-      </article>
-    </div>
+    <PostureCard data={data} cognitive={cognitive} />
 
     <section className="sec bhv">
       <div className="sec-h">
@@ -391,20 +491,7 @@ export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverrid
                 <p className="cs2-n">{activePoleLabel}{axis.status !== 'insufficient' && <span className="cs2-i">{AXIS_TIER_WORD[tier]}</span>}</p>
                 <p className="cs2-d">{axis.observation || 'Observation en cours de consolidation.'}</p>
               </div>
-              {axis.evidence.length > 0 && <button
-                type="button"
-                className="pv"
-                onMouseEnter={(event) => showTip(event, <>
-                  <p className="v48-tipx-t">{axis.label} · preuves</p>
-                  <ul className="v48-tipx-e">{axis.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul>
-                </>)}
-                onFocus={(event) => showTip(event, <>
-                  <p className="v48-tipx-t">{axis.label} · preuves</p>
-                  <ul className="v48-tipx-e">{axis.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul>
-                </>)}
-                onMouseLeave={hideTip}
-                onBlur={hideTip}
-              >preuves</button>}
+              {axis.evidence.length > 0 && <EvidencePopover label={axis.label} evidence={axis.evidence} sourceTypes={axis.sourceTypes} />}
             </div>
           })}
         </div>
@@ -427,79 +514,7 @@ export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverrid
     </details>}
 
     {tip && <div className="v48-tipx" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : 'none' }}>{tip.content}</div>}
-    {shareOpen && <ShareModal data={data} onClose={() => setShareOpen(false)} />}
   </div>
-}
-
-const SCORE_PERIODS = [6, 12, 36] as const
-type ScorePeriod = (typeof SCORE_PERIODS)[number]
-
-function ScoreChart({ data }: { data: PersonDetailData }) {
-  const [months, setMonths] = useState<ScorePeriod>(12)
-  const [hover, setHover] = useState<{ index: number; left: number } | null>(null)
-  // Correction ajoutée au centrage (translateX(-50%)) de .ch-tip pour qu'elle ne
-  // déborde jamais du cadre du graphique sur le dernier point (bord droit) —
-  // mesurée sur le rendu réel (offsetWidth, indépendant du transform) donc
-  // fiable quelle que soit la longueur du contenu.
-  const [tipOffset, setTipOffset] = useState(0)
-  const chartRef = useRef<HTMLDivElement>(null)
-  const tipRef = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    if (!hover || !chartRef.current || !tipRef.current) return
-    const chartWidth = chartRef.current.clientWidth
-    const tipWidth = tipRef.current.offsetWidth
-    const margin = 6
-    const desiredLeftEdge = hover.left - tipWidth / 2
-    const clampedLeftEdge = Math.min(Math.max(desiredLeftEdge, margin), chartWidth - tipWidth - margin)
-    setTipOffset(clampedLeftEdge - desiredLeftEdge)
-  }, [hover])
-  const points = useMemo(() => scoreWindow(data.scoreHistory, months, new Date()), [data.scoreHistory, months])
-  const exchangesByMonth = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const event of data.history) {
-      if (event.type !== 'meeting' && event.type !== 'email') continue
-      const key = event.occurredAt.slice(0, 7)
-      map.set(key, (map.get(key) ?? 0) + 1)
-    }
-    return map
-  }, [data.history])
-  const momentByMonth = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const moment of data.keyMoments) { const key = moment.occurredAt.slice(0, 7); if (!map.has(key)) map.set(key, moment.title) }
-    return map
-  }, [data.keyMoments])
-  const firstMonthKey = data.relationship.firstInteractionAt?.slice(0, 7) ?? null
-  const first = points[0]?.monthKey
-  const last = points.at(-1)?.monthKey
-  const hovered = hover ? points[hover.index] : null
-  const previousScore = hover ? points.slice(0, hover.index).reverse().find((point) => point.score !== null)?.score ?? null : null
-  const delta = hovered && hovered.score !== null && previousScore !== null ? hovered.score - previousScore : null
-  const hoveredExchanges = hovered ? exchangesByMonth.get(hovered.monthKey) ?? 0 : 0
-  const hoveredMoment = hovered ? momentByMonth.get(hovered.monthKey) : undefined
-  const hoveredIsStart = hovered ? hovered.monthKey === firstMonthKey : false
-  return <>
-    <div className="seg" role="tablist" aria-label="Période affichée">
-      {SCORE_PERIODS.map((period) => <span key={period} role="tab" aria-selected={months === period} className={months === period ? 'on' : ''} onClick={() => setMonths(period)}>{period} M</span>)}
-    </div>
-    <div className="chart" role="img" ref={chartRef} aria-label={points.map((point) => `${formatMonth(point.monthKey)} : ${point.score ?? 'sans donnée'}`).join(', ')}>
-      {points.map((point, index) => <i
-        key={point.monthKey}
-        tabIndex={0}
-        style={{ height: point.score === null ? 8 : Math.max(6, Math.round(120 * point.score / 100)), background: point.score === null ? '#E3DEF2' : index === points.length - 1 ? 'linear-gradient(180deg,#2EA86A,#4FBD85)' : 'linear-gradient(180deg,#3FAEBE,#2896A8)' }}
-        onMouseEnter={(event) => setHover({ index, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 })}
-        onMouseLeave={() => setHover(null)}
-        onFocus={(event) => setHover({ index, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 })}
-        onBlur={() => setHover(null)}
-      />)}
-      {hover && hovered && <div ref={tipRef} className="ch-tip" style={{ left: hover.left, transform: `translateX(calc(-50% + ${tipOffset}px))` }}>
-        <div className="ch-tip-m">{formatMonth(hovered.monthKey)}{hoveredIsStart ? ' · début' : ''}</div>
-        {hovered.score !== null && <div className="ch-tip-v">{hovered.score}<small>/100</small>{delta !== null && <span className={delta >= 0 ? 'up' : 'down'}>{delta >= 0 ? `↗ +${delta}` : `↘ ${delta}`} pts</span>}</div>}
-        <div className="ch-tip-s">{hoveredIsStart ? 'Début de la relation' : hoveredExchanges > 0 ? `${hoveredExchanges} échange${hoveredExchanges > 1 ? 's' : ''} ce mois` : 'Aucun échange ce mois'}</div>
-        {hoveredMoment && <div className="ch-tip-x">✦ {hoveredMoment}</div>}
-      </div>}
-    </div>
-    <div className="ch-x"><span>{first ? formatMonth(first) : ''}</span><span>{last ? formatMonth(last) : ''}</span></div>
-  </>
 }
 
 function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
@@ -541,26 +556,12 @@ const EG_CROSS = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const SCORE_CONFIRM_MIN_INTERACTIONS = 5
 const SCORE_CONFIRM_MIN_CONFIDENCE = 40
 
-function quartile(sorted: number[], q: number): number {
-  const pos = (sorted.length - 1) * q
-  const base = Math.floor(pos)
-  const next = sorted[base + 1]
-  return Math.round(next === undefined ? sorted[base]! : sorted[base]! + (pos - base) * (next - sorted[base]!))
-}
-
-/** Fourchette RÉELLEMENT observée (Q1–Q3) sur l'historique de score — jamais un
- *  intervalle de confiance inventé. null sous 5 points datés ou si plat. */
-function observedScoreRange(scores: Array<number | null>): { q1: number; q3: number } | null {
-  const clean = scores.filter((value): value is number => value !== null && Number.isFinite(value)).sort((a, b) => a - b)
-  if (clean.length < 5) return null
-  const q1 = quartile(clean, 0.25)
-  const q3 = quartile(clean, 0.75)
-  return q3 > q1 ? { q1, q3 } : null
-}
-
 // Trois états lisibles, partagés par les deux types d'engagement (retour testing
-// P2.6) : À faire (violet) · Glissé = échéance passée (rouge) · Tenu (vert).
-type EngagementState = { cls: 'late' | 'open' | 'done'; label: string }
+// P2.6, puis §3 du brief « Ce qu'il faut faire ») : Glissé = échéance dépassée
+// sans preuve de réalisation (rouge) · En cours = échéance à venir (violet clair)
+// · À caler = nécessaire mais sans échéance connue (violet/gris) · Tenu (vert).
+type ActionStatusId = 'glisse' | 'en_cours' | 'a_caler' | 'tenu'
+type ActionStatus = { status: ActionStatusId; label: string; cls: 'late' | 'open' | 'caler' | 'done'; priority: number }
 
 function isOverdue(dueISO: string | null): boolean {
   if (!dueISO) return false
@@ -568,10 +569,25 @@ function isOverdue(dueISO: string | null): boolean {
   return Number.isFinite(due) && due < Date.now()
 }
 
-function engagementStatus(item: PersonRecommendation): EngagementState {
-  if (item.status === 'completed') return { cls: 'done', label: 'Tenu' }
-  if (isOverdue(item.dueAt)) return { cls: 'late', label: 'Glissé' }
-  return { cls: 'open', label: 'À faire' }
+/** Fonction centralisée (§3 du brief) : le statut d'une action « Ce qu'il faut
+ *  faire » dépend uniquement de deux faits réels — a-t-elle une échéance connue,
+ *  cette échéance est-elle dépassée, est-elle marquée tenue — jamais d'un texte
+ *  décoratif calculé séparément par composant. */
+function getActionStatus(dueAt: string | null, done: boolean): ActionStatus {
+  if (done) return { status: 'tenu', label: 'Tenu', cls: 'done', priority: 3 }
+  if (isOverdue(dueAt)) return { status: 'glisse', label: 'Glissé', cls: 'late', priority: 0 }
+  if (!dueAt) return { status: 'a_caler', label: 'À caler', cls: 'caler', priority: 1 }
+  return { status: 'en_cours', label: 'En cours', cls: 'open', priority: 2 }
+}
+
+/** Impact relationnel (§5 du brief) : n'affiche jamais de label si aucun lien
+ *  réel n'est établi. Seule la dimension « Confiance » est mesurée pour une
+ *  personne (voir MethodologyModal : « Peut-on réellement compter l'un sur
+ *  l'autre ? Engagements tenus… ») — un engagement glissé l'affecte directement.
+ *  Pas de Fiabilité/Dynamique/Satisfaction inventées : ces axes ne sont pas
+ *  calculés au niveau personne (voir PersonWeatherDetailSection). */
+function getActionImpact(status: ActionStatusId): string | null {
+  return status === 'glisse' ? 'Corrige confiance' : null
 }
 
 /** Échéance encodée en fin de contenu (« … — échéance AAAA-MM-JJ ») par l'analyse :
@@ -645,7 +661,8 @@ function EngagementAvatar({ name, photoUrl }: { name: string; photoUrl?: string 
 function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommendation; data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
   const toast = useToast()
   const [busy, run] = useBusy()
-  const status = engagementStatus(item)
+  const status = getActionStatus(item.dueAt, item.status === 'completed')
+  const impact = getActionImpact(status.status)
   const [proofOpen, setProofOpen] = useState(false)
   const act = (next: 'completed' | 'dismissed') => run(item.id, async () => {
     await updatePersonRecommendationStatus(data, item.id, userId, next)
@@ -656,6 +673,7 @@ function EngagementReco({ item, data, userId, refresh }: { item: PersonRecommend
     <span className="eg-s">{status.label}</span>
     <div className="eg-c">
       <p className="eg-t">{item.title}</p>
+      {impact && <span className="eg-impact">{impact}</span>}
       <p className="eg-d">{item.recommendedAction || item.justification}</p>
       {item.dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(item.dueAt)}</p>}
       <p className="eg-src">↳ {item.provenance.sourceLabel}</p>
@@ -684,21 +702,23 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
       : { name: data.person.primaryOwnerName ?? 'Owner à confirmer', photo: null }
   const [proofOpen, setProofOpen] = useState(false)
   const { title, dueAt } = memoryDue(item.content)
-  const status: EngagementState = isOverdue(dueAt) ? { cls: 'late', label: 'Glissé' } : { cls: 'open', label: 'À faire' }
+  const status = getActionStatus(dueAt, false)
+  const impact = getActionImpact(status.status)
   const resolve = () => run(item.id, async () => {
     await resolvePersonMemoryEntry(data, userId, item.id)
     toast('Engagement tenu — conservé dans la mémoire relationnelle.')
     await refresh()
   })
-  const remove = () => run(item.id, async () => {
-    await deletePersonMemoryEntry(data, item.id)
-    toast('Engagement supprimé.')
+  const dismiss = () => run(item.id, async () => {
+    await dismissPersonMemoryEntry(data, userId, item.id)
+    toast('Écarté — conservé dans la mémoire relationnelle.')
     await refresh()
   })
   return <div className={`eg ${status.cls}`}>
     <span className="eg-s">{status.label}</span>
     <div className="eg-c">
       <p className="eg-t">{title}</p>
+      {impact && <span className="eg-impact">{impact}</span>}
       {dueAt && <p className={`eg-due${status.cls === 'late' ? ' over' : ''}`}>{status.cls === 'late' ? 'Échéance dépassée' : 'Échéance'} · {formatDate(dueAt)}</p>}
       <p className="eg-src">↳ {source} · {formatDate(item.sourceOccurredAt ?? item.createdAt)}</p>
     </div>
@@ -706,7 +726,7 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
     <div className="eg-b">
       <button type="button" className="info" aria-expanded={proofOpen} title="D’où vient cet engagement ?" onClick={() => setProofOpen((value) => !value)}>i</button>
       <button type="button" className="ok" title="Tenu — garder en mémoire" disabled={busy !== null} onClick={resolve}>{EG_CHECK}</button>
-      <button type="button" className="no" title="Supprimer" disabled={busy !== null} onClick={remove}>{EG_CROSS}</button>
+      <button type="button" className="no" title="Écarter (reste en mémoire)" disabled={busy !== null} onClick={dismiss}>{EG_CROSS}</button>
     </div>
     {proofOpen && <div className="eg-proof">
       <div className="eg-proof-meta"><span>{source}</span><span>· {formatDate(item.sourceOccurredAt ?? item.createdAt)}</span><span>· {item.sourceType === 'manual' ? 'Noté manuellement' : 'Détecté automatiquement'}</span></div>
@@ -717,13 +737,52 @@ function EngagementMemory({ item, data, userId, refresh }: { item: PersonMemoryE
   </div>
 }
 
+/** §1/§11 du brief : carte unique « Ce qu'il faut faire », tri déterministe
+ *  (Glissé → À caler → En cours → Tenu, puis échéance la plus proche/la plus
+ *  dépassée en premier) sur les mêmes engagements réels que les chips de
+ *  RelationOverviewCard — pas de second calcul, pas de donnée fabriquée. */
+function PersonActionsSection({ data, userId, refresh, commitments, engagementRecos }: {
+  data: PersonDetailData
+  userId: string
+  refresh: () => Promise<void>
+  commitments: PersonMemoryEntry[]
+  engagementRecos: PersonRecommendation[]
+}) {
+  type Entry = { key: string; status: ActionStatus; node: ReactNode }
+  const entries: Entry[] = [
+    ...commitments.map((item): Entry => {
+      const status = getActionStatus(memoryDue(item.content).dueAt, false)
+      return { key: `m-${item.id}`, status, node: <EngagementMemory key={`m-${item.id}`} item={item} data={data} userId={userId} refresh={refresh} /> }
+    }),
+    ...engagementRecos.map((item): Entry => {
+      const status = getActionStatus(item.dueAt, item.status === 'completed')
+      return { key: `r-${item.id}`, status, node: <EngagementReco key={`r-${item.id}`} item={item} data={data} userId={userId} refresh={refresh} /> }
+    }),
+  ].sort((a, b) => a.status.priority - b.status.priority)
+
+  return <section className="sec">
+    <div className="sec-h">
+      <span className="sec-ic"><V48Icon name="commitment" /></span>
+      <p className="sec-t">Ce qu’il faut faire</p>
+      <span className="cnt"><b>{entries.length}</b> à trier</span>
+    </div>
+    <div className="sec-b">
+      {entries.length
+        ? <div className="eng">{entries.map((entry) => entry.node)}</div>
+        : <EmptyState>Rien à traiter pour le moment. Aucun engagement ou signal ne nécessite d’action.</EmptyState>}
+    </div>
+  </section>
+}
+
 export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   const relation = data.relationship
-  const commitments = data.memoryEntries.filter((item) => ['commitment', 'decision', 'engagement'].includes(item.entryType) && !item.resolvedAt)
-  const openRecos = data.recommendations.filter((item) => ['open', 'in_progress', 'postponed'].includes(item.status))
-  // Un engagement = promesse tirée des échanges (posture/coaching ou reco déclenchée par un
-  // signal de contenu). « Renouer le contact » (reco fondée sur le score, sans signal) n'en est pas un.
-  const engagementRecos = openRecos.filter((item) => item.kind === 'coaching' || item.triggerSignal !== null)
+  const commitments = data.memoryEntries.filter((item) => ['commitment', 'decision', 'engagement'].includes(item.entryType) && !item.resolvedAt && !item.dismissedAt)
+  // Le moteur de recommandations ne pose aujourd'hui ni kind='coaching' ni
+  // trigger_signal (constaté en base : 100 % des recos ouvertes sont kind='action',
+  // trigger_signal toujours null) — un filtre sur ces champs viderait la liste à
+  // chaque fois. Toute recommandation ouverte de Tohu est une action réelle à
+  // traiter (catégories réellement produites : relationnel, ancrage, opportunité).
+  const engagementRecos = data.recommendations.filter((item) => ['open', 'in_progress', 'postponed'].includes(item.status))
   const engagementCount = commitments.length + engagementRecos.length
   const delta = relation.phaseDelta
   const [methodologyOpen, setMethodologyOpen] = useState(false)
@@ -740,51 +799,131 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
     return () => { cancelled = true }
   }, [data.person.workspaceId, data.person.id, relation.score])
 
-  const ageLabel = relation.relationshipAgeDays === null ? null
-    : relation.relationshipAgeDays < 30 ? `${relation.relationshipAgeDays} j`
-      : `~${Math.round(relation.relationshipAgeDays / 30)} mois`
-  const scoreRange = useMemo(() => observedScoreRange(data.scoreHistory.map((point) => point.score)), [data.scoreHistory])
+  // Faits vérifiables pour les chips — jamais une interprétation libre : friction
+  // réelle (keyMoments), engagements réellement en retard / sans date (mêmes
+  // items que la logique d'engagement ci-dessus), source réellement déconnectée.
+  const lastFriction = data.keyMoments.filter((moment) => moment.impact === 'friction').sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())[0] ?? null
+  const overdueCount = engagementRecos.filter((item) => isOverdue(item.dueAt)).length
+    + commitments.filter((item) => isOverdue(memoryDue(item.content).dueAt)).length
+  const noDateCount = engagementRecos.filter((item) => !item.dueAt).length
+    + commitments.filter((item) => memoryDue(item.content).dueAt === null).length
+  const disconnectedSource = data.sources.find((source) => source.status !== 'connected') ?? null
+  const relationChips: Array<{ text: string; tone: 'critical' | 'neutral' }> = [
+    ...(lastFriction ? [{ text: lastFriction.title, tone: 'critical' as const }] : []),
+    ...(overdueCount > 0 ? [{ text: `${overdueCount} engagement${overdueCount > 1 ? 's' : ''} en retard`, tone: 'critical' as const }] : []),
+    ...(noDateCount > 0 ? [{ text: `${noDateCount} engagement${noDateCount > 1 ? 's' : ''} sans date`, tone: 'neutral' as const }] : []),
+    ...(disconnectedSource ? [{ text: `${disconnectedSource.label} non connecté`, tone: 'neutral' as const }] : []),
+  ].slice(0, 4)
+
+  // Delta réellement daté : comparé au point de score précédent réellement connu
+  // (granularité mensuelle des snapshots), jamais un « sur 30 j » approximatif.
+  const scoredHistory = data.scoreHistory.filter((point) => point.score !== null)
+  const previousScoredMonth = scoredHistory.length >= 2 ? scoredHistory.at(-2)!.monthKey : null
 
   return <div className="v48-person-relation">
-    <div className="cols">
-      <section className="sec rel-card">
-        <div className="sec-h"><span className="sec-ic"><V48Icon name="pulse" /></span><p className="sec-t">Notre relation</p>
-          <button type="button" className="det det-i" aria-label="Détail du calcul du score" onClick={() => setMethodologyOpen(true)}>i</button></div>
-        <div className="sec-b">
-          <div className="rel-top">
-            <p className="big" style={{ color: scoreTone(relation.score) }}>{relation.score ?? '—'}</p>
-            {delta !== null && <span className={`evo ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '↗ +' : '↘ '}{Math.abs(delta)} pts</span>}
-            {relation.score !== null && (relation.totalInteractions < SCORE_CONFIRM_MIN_INTERACTIONS || (relation.confidence !== null && relation.confidence < SCORE_CONFIRM_MIN_CONFIDENCE)) &&
-              <span className="rel-tbc" title={`Score établi sur ${relation.totalInteractions} échange${relation.totalInteractions > 1 ? 's' : ''}${relation.confidence !== null ? ` · confiance ${relation.confidence}%` : ''} — à confirmer avec plus d’historique.`}>à confirmer</span>}
-          </div>
-          <div className="mini">
-            {ageLabel && <span><b>{ageLabel}</b> d’ancienneté</span>}
-            <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''}</span>
-            {scoreRange && <span title="Fourchette réellement observée sur l’historique du score (Q1–Q3) — pas une prédiction.">fourchette <b>{scoreRange.q1}–{scoreRange.q3}</b></span>}
-          </div>
-          {relation.score !== null && <p className="rel-narrative">
-            {narrativeState === 'loading' ? 'Analyse de l’évolution en cours…' : narrativeState === 'error' ? 'Synthèse indisponible pour le moment.' : narrative}
-          </p>}
-          <ScoreChart data={data} />
-          <div className="lvs"><p className="lvs-h"><i className="lvs-i" />Dernière synchronisation : <b>{relativeDate(relation.computedAt).toLowerCase()}</b></p><span className="lvs-bar" /></div>
-        </div>
-      </section>
-
-      <section className="sec">
-        <div className="sec-h"><span className="sec-ic"><V48Icon name="commitment" /></span><p className="sec-t">Engagements pris</p><span className="cnt"><b>{engagementCount}</b> à suivre</span></div>
-        <div className="sec-b">
-          <p className="hint-l">Ce qui a été promis dans les échanges. Garde ce qui compte, écarte le reste.</p>
-          {engagementCount > 0
-            ? <div className="eng">
-              {engagementRecos.map((item) => <EngagementReco key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}
-              {commitments.map((item) => <EngagementMemory key={item.id} item={item} data={data} userId={userId} refresh={refresh} />)}
-            </div>
-            : <EmptyState>Aucun engagement n’a encore été extrait des échanges. Ils apparaîtront après l’analyse du contenu des emails et réunions.</EmptyState>}
-        </div>
-      </section>
-    </div>
+    <RelationOverviewCard
+      data={data}
+      relation={relation}
+      delta={delta}
+      narrative={narrative}
+      narrativeState={narrativeState}
+      previousScoredMonth={previousScoredMonth}
+      chips={relationChips}
+      onOpenMethodology={() => setMethodologyOpen(true)}
+    />
+    <PersonWeatherDetailSection data={data} />
+    <PersonActionsSection data={data} userId={userId} refresh={refresh} commitments={commitments} engagementRecos={engagementRecos} />
     <HistoryCard data={data} memory={<MemoryCard data={data} userId={userId} refresh={refresh} embedded />} />
     {methodologyOpen && <MethodologyModal data={data} onClose={() => setMethodologyOpen(false)} />}
+  </div>
+}
+
+const WEATHER_ICON: Record<RelationshipPhase, ReactNode> = {
+  growing: <><circle cx="12" cy="12" r="4.6" /><path d="M12 3.4v2.4M12 18.2v2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3.4 12h2.4M18.2 12h2.4M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7" /></>,
+  stable: <path d="M6.8 16.8h10.4a3.4 3.4 0 0 0 0-6.8 4.9 4.9 0 0 0-9.4-1.5A3.9 3.9 0 0 0 6.8 16.8Z" />,
+  declining: <><path d="M6.8 13.6h9.6a3.1 3.1 0 0 0 0-6.2 4.5 4.5 0 0 0-8.6-1.4A3.5 3.5 0 0 0 6.8 13.6Z" /><path d="M9 17l-1 2.6M13 17l-1 2.6M17 17l-1 2.6" /></>,
+  unknown: <><circle cx="12" cy="12" r="8.2" /><path d="M9.6 9.4a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1.1.9-1.1 1.7M12 16.2v.1" /></>,
+}
+
+/** Carte « Où on en est / Météo de la relation » (2e bloc de l'onglet Relation) :
+ *  fusionne les anciennes cartes « Notre relation » + « Engagements pris ». Le
+ *  détail des engagements (commitments/engagementRecos, calculés une seule fois
+ *  dans V48PersonRelationView) nourrit à la fois les chips ci-dessous et, plus
+ *  bas dans l'onglet, la carte « Ce qu'il faut faire » (PersonActionsSection). */
+function RelationOverviewCard({ data, relation, delta, narrative, narrativeState, previousScoredMonth, chips, onOpenMethodology }: {
+  data: PersonDetailData
+  relation: PersonDetailData['relationship']
+  delta: number | null
+  narrative: string | null
+  narrativeState: 'idle' | 'loading' | 'error'
+  previousScoredMonth: string | null
+  chips: Array<{ text: string; tone: 'critical' | 'neutral' }>
+  onOpenMethodology: () => void
+}) {
+  const needsConfirm = relation.score !== null && (relation.totalInteractions < SCORE_CONFIRM_MIN_INTERACTIONS || (relation.confidence !== null && relation.confidence < SCORE_CONFIRM_MIN_CONFIDENCE))
+  const synthesis = relation.score === null
+    ? 'Données insuffisantes pour établir une synthèse relationnelle.'
+    : narrativeState === 'loading' ? 'Analyse de l’évolution en cours…'
+      : narrativeState === 'error' ? 'Synthèse indisponible pour le moment.'
+        : narrative
+
+  return <article className="rel-overview">
+    <div className="rel-overview-main">
+      <div className="rel-overview-head">
+        <p className="rel-overview-label">Où on en est{relation.computedAt && <span className="rel-overview-date"> · {formatDate(relation.computedAt)}</span>}</p>
+        <span className="rel-lens" role="group" aria-label="Échelle de la relation">
+          <span className="on">Vous</span>
+          <span aria-disabled="true" title="Pas encore de score de relation distinct pour l’équipe.">Équipe</span>
+        </span>
+      </div>
+      {synthesis && <p className="rel-overview-text">{renderEmphasis(synthesis)}</p>}
+      {chips.length > 0 && <div className="rel-overview-chips">
+        {chips.map((chip, index) => <span key={index} className={`rel-overview-chip ${chip.tone}`}>{chip.text}</span>)}
+      </div>}
+    </div>
+    <div className="rel-overview-side">
+      <div className="rel-weather-head">
+        <span className="rel-weather-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{WEATHER_ICON[relation.phase]}</svg></span>
+        <p className="rel-weather-score" style={{ color: scoreTone(relation.score) }}>{relation.score ?? '—'}<small>/100</small></p>
+        <button type="button" className="rel-weather-info" aria-label="Détail du calcul du score" onClick={onOpenMethodology}>i</button>
+      </div>
+      <p className="rel-weather-label">Météo de la relation{needsConfirm && <span className="rel-tbc">à confirmer</span>}</p>
+      {delta !== null && <p className={`rel-weather-delta ${delta >= 0 ? 'up' : 'down'}`}>
+        {delta >= 0 ? '↑ +' : '↓ '}{Math.abs(delta)}{previousScoredMonth ? <span> depuis {formatMonth(previousScoredMonth)}</span> : null}
+      </p>}
+      <RelationTrendChart data={data} />
+    </div>
+  </article>
+}
+
+function RelationTrendChart({ data }: { data: PersonDetailData }) {
+  const points = useMemo(() => scoreWindow(data.scoreHistory, 12, new Date()), [data.scoreHistory])
+  const scored = points.filter((point): point is PersonScorePoint & { score: number } => point.score !== null)
+  if (scored.length < 2) return null
+  const width = 220
+  const height = 46
+  const min = Math.min(...scored.map((point) => point.score))
+  const max = Math.max(...scored.map((point) => point.score))
+  const span = Math.max(1, max - min)
+  const coords = scored.map((point, index) => ({
+    x: (index / (scored.length - 1)) * width,
+    y: height - 4 - ((point.score - min) / span) * (height - 8),
+  }))
+  const linePath = coords.map((c, index) => `${index === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
+  const areaPath = `${linePath} L${coords.at(-1)!.x.toFixed(1)},${height} L0,${height} Z`
+  const last = coords.at(-1)!
+  const first = scored[0]!
+  const latest = scored.at(-1)!
+  const peak = scored.reduce((best, point) => point.score > best.score ? point : best, scored[0]!)
+
+  return <div className="rel-trend">
+    <svg className="rel-trend-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`Évolution du score, de ${formatMonth(first.monthKey)} à ${formatMonth(latest.monthKey)}`}>
+      <path d={areaPath} className="rel-trend-area" />
+      <path d={linePath} className="rel-trend-line" />
+      <circle cx={last.x} cy={last.y} r="2.6" className="rel-trend-dot" />
+    </svg>
+    <div className="rel-trend-x"><span>{formatMonth(first.monthKey)}</span><span>{formatMonth(latest.monthKey)}</span></div>
+    <p className="rel-trend-sum">{scored.length} mois · {latest.score - first.score >= 0 ? '+' : ''}{latest.score - first.score} · {first.score} → {latest.score} · pic {peak.score} en {formatMonth(peak.monthKey)}</p>
   </div>
 }
 

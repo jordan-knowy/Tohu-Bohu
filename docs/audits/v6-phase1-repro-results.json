@@ -1,0 +1,48 @@
+{
+  "note": "Observations of CURRENT code; Phase 0 baseline is archived in v6-phase0-repro-results.json. NOT human-annotated gold data.",
+  "oppositeOrder": {
+    "positiveFirst": 50,
+    "negativeFirst": 50
+  },
+  "matureWithoutMarkers": {
+    "score": null,
+    "reliability": 0,
+    "verdictAllowed": false,
+    "passesBatchActiveFilter": false
+  },
+  "sixYearOldCriticalMarker": {
+    "satisfaction": 20,
+    "capped": true
+  },
+  "unknownMarkers": {
+    "score": null,
+    "count": 0,
+    "verdictAllowed": false
+  },
+  "futureMeetingCountsAsChannel": [
+    {
+      "markerId": "A01",
+      "scope": "person",
+      "sense": -1,
+      "observedAt": "2026-09-17T00:00:00.000Z",
+      "evidenceRef": "channels",
+      "evidenceText": "1 canal/canaux actif(s) : email",
+      "measure": {
+        "channelCount": 1,
+        "channels": [
+          "email"
+        ]
+      },
+      "detectorVersion": "detectors-v1",
+      "confidence": 0.8,
+      "status": "accepted"
+    }
+  ],
+  "replayWithPresentDayContext": {
+    "rejected": "DATED_LEDGER_REQUIRED"
+  },
+  "accountWithOwnerAndUncontactedContact": {
+    "score": null,
+    "dynamics": null
+  }
+}

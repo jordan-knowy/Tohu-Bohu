@@ -1,0 +1,54 @@
+{
+  "note": "Synthetic observations of current code; NOT human-annotated gold data.",
+  "oppositeOrder": {
+    "positiveFirst": 56,
+    "negativeFirst": 44
+  },
+  "matureWithoutMarkers": {
+    "score": 50,
+    "reliability": 0,
+    "verdictAllowed": false,
+    "passesBatchActiveFilter": true
+  },
+  "sixYearOldCriticalMarker": {
+    "satisfaction": 20,
+    "capped": true
+  },
+  "unknownMarkers": {
+    "score": 50,
+    "count": 5,
+    "verdictAllowed": true
+  },
+  "futureMeetingCountsAsChannel": [
+    {
+      "markerId": "A01",
+      "scope": "person",
+      "sense": 1,
+      "observedAt": "2026-09-17T00:00:00.000Z",
+      "evidenceRef": "channels",
+      "evidenceText": "2 canal/canaux actif(s) : email, meeting",
+      "measure": {
+        "channelCount": 2,
+        "channels": [
+          "email",
+          "meeting"
+        ]
+      },
+      "detectorVersion": "detectors-v1",
+      "confidence": 0.8,
+      "status": "accepted"
+    }
+  ],
+  "replayWithPresentDayContext": [
+    {
+      "at": "2026-08-01T00:00:00Z",
+      "snapshotMonth": "2026-08-01",
+      "score": 53,
+      "verdictAllowed": false
+    }
+  ],
+  "accountWithOwnerAndUncontactedContact": {
+    "score": 24,
+    "dynamics": 70
+  }
+}

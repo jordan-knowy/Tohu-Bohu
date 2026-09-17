@@ -35,7 +35,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     participantsResult, messagesResult, connectorsResult, feedbackResult, lockResult,
     nameSuggestionResult, mergeSuggestionsResult, participantCountResult,
     messageCountResult, authoredMessageCountResult, keyMomentsResult,
-    dyadWeatherResult,
+    dyadWeatherResult, markerEventsResult,
   ] = await Promise.all([
     client.from('contacts').select('*,companies(*)').eq('organization_id', workspaceId).eq('id', personId).is('merged_into_contact_id', null).maybeSingle(),
     client.from('person_settings').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).maybeSingle(),
@@ -64,6 +64,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     client.from('communication_messages').select('id', { count: 'exact', head: true }).eq('organization_id', workspaceId).eq('contact_id', personId).eq('metadata->>user_id', visionOwnerId).eq('direction', 'inbound'),
     client.from('person_key_moments').select('*').eq('organization_id', workspaceId).eq('contact_id', personId).order('occurred_at', { ascending: false }).limit(12),
     client.rpc('get_dyad_weather_snapshot', { p_contact_id: personId }),
+    client.rpc('get_person_marker_events', { p_contact_id: personId }),
   ])
 
   if (contactResult.error) {
@@ -131,6 +132,7 @@ export async function getPersonDetail(workspaceId: string, personId: string, vis
     legacyCareer,
     relationshipSnapshots,
     dyadWeatherSnapshot,
+    markerEvents: markerEventsResult.error ? [] : rows(markerEventsResult.data),
     cognitiveProfile: cognitiveProfiles[0] ?? {},
     behavioralSignals: rows(behavioralResult.data),
     recommendations,
@@ -697,10 +699,13 @@ export async function resolvePersonMemoryEntry(data: PersonDetailData, userId: s
   if (error) throw error
 }
 
-/** Suppression définitive d'une entrée de mémoire (engagement écarté). */
-export async function deletePersonMemoryEntry(data: PersonDetailData, entryId: string): Promise<void> {
+/** Engagement écarté : sorti du suivi actif, jamais supprimé (audit + évite de
+ *  recréer la même recommandation), même mécanique que resolvePersonMemoryEntry. */
+export async function dismissPersonMemoryEntry(data: PersonDetailData, userId: string, entryId: string): Promise<void> {
+  const now = new Date().toISOString()
   const { error } = await getSupabase().from('person_memory_entries')
-    .delete().eq('id', entryId).eq('organization_id', data.person.workspaceId)
+    .update({ dismissed_at: now, dismissed_by: userId, updated_at: now })
+    .eq('id', entryId).eq('organization_id', data.person.workspaceId)
   if (error) throw error
 }
 

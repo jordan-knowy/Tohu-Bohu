@@ -1,6 +1,7 @@
 // Mapping pur des lignes Supabase vers PersonDetailData.
 // Aucune requête ici : tout est testable sans réseau.
 
+import { V6_PRODUCT_AUTHORITY } from '../services/scoring/productAuthority'
 import { formatPersonName } from '../lib/names'
 import { isCalendarConnected } from '../services/connector-calendar'
 import { signalTitle } from '../services/signal-labels'
@@ -534,6 +535,7 @@ export function buildMemoryEntries(memoryRows: Row[], profileNames: Map<string, 
     sourceLabel: text(row.source_label),
     visibility: text(row.visibility) ?? 'workspace',
     resolvedAt: text(row.resolved_at),
+    dismissedAt: text(row.dismissed_at),
     createdAt: text(row.created_at) ?? new Date().toISOString(),
     sourceExcerpt: text(row.source_excerpt),
     sourceOccurredAt: text(row.source_occurred_at) ?? text(row.observed_at),
@@ -658,6 +660,7 @@ export type PersonDetailRaw = {
   // il n'est pas cold-start et que le verdict est autorisé (mêmes règles P5/P7
   // que la Météo du compte) ; sinon repli sur la chaîne legacy existante.
   dyadWeatherSnapshot: Row
+  markerEvents: Row[]
   cognitiveProfile: Row
   behavioralSignals: Row[]
   recommendations: Row[]
@@ -695,13 +698,12 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const legacyHistory = raw.legacyScores.length ? raw.legacyScores : raw.relationshipSnapshots
   const scoreHistory = buildScoreHistory(canonical, legacyHistory)
 
-  // Dyade V6 (mêmes règles P5/P7 que la Météo du compte) : score et 5 axes
-  // PRIORITAIRES sur la chaîne legacy quand la dyade n'est pas cold-start et
-  // que le verdict est autorisé — jamais un score V6 immature affiché comme
-  // définitif, jamais un vide affiché quand le legacy a une vraie valeur.
+  // Phase 1: Legacy remains user authority. Contact-only V6 snapshots cannot
+  // be mixed with Legacy history/delta. Foundation state is shadow-only until
+  // the complete same-version contract is wired in Phase 2.
   const dyad = raw.dyadWeatherSnapshot
   const dyadAxes = object(dyad.axes)
-  const dyadUsable = text(dyad.status) !== null && text(dyad.status) !== 'cold_start' && bool(dyad.verdict_allowed) && num(dyad.score) !== null
+  const dyadUsable = V6_PRODUCT_AUTHORITY && text(dyad.status) !== null && text(dyad.status) !== 'cold_start' && bool(dyad.verdict_allowed) && num(dyad.score) !== null
 
   const axisValue = (axis: string): number | null => {
     const a = object(dyadAxes[axis])
@@ -739,6 +741,16 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   // valeur brute fausse.
   const persistedLocation = contactDetails.find((detail) => detail.type === 'location')
   const resolvedLocation = persistedLocation ? text(persistedLocation.value) : text(contact.location)
+
+  const dimensionValues = {
+    confiance: dyadUsable ? axisValue('confiance') : (num(latestSnapshot.confiance_score) ?? num(latestHistory.score_confiance) ?? num(cognitiveProfile.score_confiance)),
+    satisfaction: dyadUsable ? axisValue('satisfaction') : (num(latestSnapshot.satisfaction_score) ?? num(latestHistory.score_satisfaction) ?? num(cognitiveProfile.score_satisfaction)),
+    engagement: dyadUsable ? axisValue('engagement') : (num(latestSnapshot.engagement_score) ?? num(latestHistory.score_engagement) ?? num(cognitiveProfile.score_engagement)),
+    reciprocite: dyadUsable ? axisValue('reciprocite') : (num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite)),
+    ancrage: dyadUsable ? axisValue('ancrage') : (num(latestSnapshot.ancrage_score) ?? num(latestHistory.score_ancrage) ?? num(cognitiveProfile.score_ancrage)),
+  }
+  const confianceMeasured = dyadUsable ? raw.markerEvents.some((row) => text(row.marker_id)?.startsWith('C')) : num(cognitiveProfile.trust_score) !== null
+  const satisfactionMeasured = dyadUsable ? raw.markerEvents.some((row) => text(row.marker_id)?.startsWith('S')) : num(cognitiveProfile.satisfaction_score) !== null
 
   return {
     generatedAt: new Date().toISOString(),
@@ -794,15 +806,47 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
       // analyse IA n'existe) — `*Measured` distingue ce cas du signal IA réel
       // (cognitive_profiles.trust_score/satisfaction_score, jamais fabriqué).
       dimensions: {
-        confiance: dyadUsable ? axisValue('confiance') : (num(latestSnapshot.confiance_score) ?? num(latestHistory.score_confiance) ?? num(cognitiveProfile.score_confiance)),
-        satisfaction: dyadUsable ? axisValue('satisfaction') : (num(latestSnapshot.satisfaction_score) ?? num(latestHistory.score_satisfaction) ?? num(cognitiveProfile.score_satisfaction)),
-        engagement: dyadUsable ? axisValue('engagement') : (num(latestSnapshot.engagement_score) ?? num(latestHistory.score_engagement) ?? num(cognitiveProfile.score_engagement)),
-        reciprocite: dyadUsable ? axisValue('reciprocite') : (num(latestSnapshot.reciprocity_score) ?? num(latestHistory.score_reciprocite) ?? num(cognitiveProfile.score_reciprocite)),
-        ancrage: dyadUsable ? axisValue('ancrage') : (num(latestSnapshot.ancrage_score) ?? num(latestHistory.score_ancrage) ?? num(cognitiveProfile.score_ancrage)),
+        ...dimensionValues,
         ancrageCarriers: num(latestSnapshot.ancrage_carriers),
-        confianceMeasured: num(cognitiveProfile.trust_score) !== null,
-        satisfactionMeasured: num(cognitiveProfile.satisfaction_score) !== null,
+        confianceMeasured,
+        satisfactionMeasured,
       },
+      weatherDimensions: {
+        confiance: confianceMeasured ? dimensionValues.confiance : null,
+        satisfaction: satisfactionMeasured ? dimensionValues.satisfaction : null,
+        // Dynamique réemploie l'axe Engagement existant, sans nouveau calcul.
+        dynamique: dimensionValues.engagement,
+        reciprocite: dimensionValues.reciprocite,
+        // Fiabilité du snapshot mesure la qualité des données, pas la relation.
+        // influence_level est une catégorie déclarative, pas un score 0–100.
+        fiabilite: null,
+        influence: null,
+      },
+      dimensionHistory: dyadUsable ? [] : [...raw.legacyScores.map((row) => ({
+        at: text(row.snapshot_date),
+        confiance: num(row.score_confiance), satisfaction: num(row.score_satisfaction),
+        dynamique: num(row.score_engagement), reciprocite: num(row.score_reciprocite),
+      })), ...raw.scoreSnapshots.map((row) => ({
+        at: text(row.computed_at),
+        confiance: num(row.confiance_score), satisfaction: num(row.satisfaction_score),
+        dynamique: num(row.engagement_score), reciprocite: num(row.reciprocity_score),
+      }))].filter((row): row is typeof row & { at: string } => row.at !== null).sort((a, b) => a.at.localeCompare(b.at)),
+      dimensionEvidence: {
+        confiance: dyadUsable ? [] : stringList(cognitiveProfile.trust_evidence),
+        satisfaction: dyadUsable ? [] : stringList(cognitiveProfile.satisfaction_evidence),
+      },
+      markerEvidence: (dyadUsable ? raw.markerEvents : []).flatMap((row) => {
+        const markerId = text(row.marker_id)
+        const observedAt = text(row.observed_at)
+        const evidenceText = text(row.evidence_text)
+        const sourceRef = text(row.evidence_ref)
+        const message = sourceRef ? raw.messages.find((item) => text(item.id) === sourceRef) : null
+        const meeting = sourceRef ? raw.meetings.find((item) => text(item.id) === sourceRef) : null
+        const source = message ? (text(message.provider) ?? 'Mail') : meeting ? 'Réunion' : 'Marqueur Tohu'
+        return markerId && observedAt && evidenceText
+          ? [{ markerId, observedAt, text: evidenceText, sourceRef, source }]
+          : []
+      }),
       axisInterpretation: text(latestSnapshot.axis_interpretation),
     },
     scoreHistory,

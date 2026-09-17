@@ -8,7 +8,7 @@ import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, grantPe
 import { V48PersonLiveView, V48PersonProfileView, V48PersonRelationView } from './V48PersonViews'
 import { DECISION_ROLES, RELATIONSHIP_TYPES, type PersonContactDetail, type PersonDetailData } from './types'
 import { FicheSkeleton } from '../components/FicheSkeleton'
-import { ToastProvider, confidenceLevel, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
+import { ToastProvider, formatDate, phaseLabel, provenanceLabel, relativeDate, useBusy, useToast } from './ui'
 import { setTopbarHeader } from '../shell/topbarHeaderSignal'
 
 type PageContext = { workspaceId: string; userId: string }
@@ -261,8 +261,6 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
   const toast = useToast()
   const [busy, run] = useBusy()
   const person = data.person
-  const relation = data.relationship
-  const confLevel = confidenceLevel(relation.confidence)
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const startEditName = () => { setNameValue(person.fullName); setEditingName(true) }
@@ -295,7 +293,11 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
             <i aria-hidden="true" />
           </div>
           <div className="v48-identity-copy">
-            <div className="v48-eyebrow">Personnes / {person.fullName}</div>
+            {data.employment && <Link className="v48-org-eyebrow" to={`/app/accounts/${data.employment.accountId}`}>
+              <span className="v48-org-eyebrow-badge">{initials(data.employment.accountName)}</span>
+              <span className="v48-org-eyebrow-name">{data.employment.accountName}</span>
+              <span aria-hidden="true">→</span>
+            </Link>}
             <div className="v48-name-row">
               <div className="hero-name">
               {editingName
@@ -305,13 +307,14 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
                   <button className="contact-copy" disabled={busy !== null}>OK</button>
                   <button type="button" className="contact-copy" onClick={() => setEditingName(false)}>✕</button>
                 </form>
-                : <>{person.fullName}<button type="button" className="hero-name-edit-btn" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button></>}
+                : person.fullName}
               <FavoriteRow data={data} userId={userId} refresh={refresh} />
               </div>
             </div>
             <div className="hero-sub">
               <span>{subtitle || 'Fonction à confirmer'}</span>
               {person.location && <><span className="hero-dot" /><span>{person.location}</span></>}
+              {!editingName && <button type="button" className="hero-edit-discreet" onClick={startEditName} aria-label="Modifier le nom" title="Modifier le nom">✎</button>}
             </div>
           </div>
         </div>
@@ -330,23 +333,9 @@ function Hero({ data, userId, refresh, readOnly }: { data: PersonDetailData; use
             options={DECISION_ROLES.map((value) => ({ value, hint: ROLE_POWER[value] ?? '' }))}
             onSelect={setRole}
           />
-          {data.employment && <Link className="v48-account-chip" to={`/app/accounts/${data.employment.accountId}`}>
-            <span className="v48-account-chip-label">Entreprise</span>
-            <span className="v48-account-chip-logo">{initials(data.employment.accountName)}</span>
-            <strong>{data.employment.accountName}</strong>
-            <span>→</span>
-          </Link>}
         </div>
       </div>
       <div className="hero-right v48-identity-right">
-        <div className="v48-reliability">
-          <span>Indice de fiabilité</span>
-          <strong className={`v48-reliability-${confLevel ?? 'none'}`}>{confLevel ? confLevel.charAt(0).toUpperCase() + confLevel.slice(1) : 'À confirmer'}</strong>
-          <div>
-            <span><b>{relation.meetingInteractions}</b> réunion{relation.meetingInteractions > 1 ? 's' : ''}</span>
-            <span><b>{relation.totalInteractions}</b> échange{relation.totalInteractions > 1 ? 's' : ''} retrouvé{relation.totalInteractions > 1 ? 's' : ''}</span>
-          </div>
-        </div>
         {!readOnly && <OwnerAffectation data={data} userId={userId} refresh={refresh} />}
       </div>
     </div>

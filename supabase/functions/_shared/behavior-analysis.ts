@@ -519,8 +519,12 @@ export async function persistContactProfile(
     last_analyzed_at: now,
     updated_from: updatedFrom,
     updated_at: now,
-    ...(trust ? { trust_score: pct(trust.score), trust_reasoning: trust.observation ?? null, trust_analyzed_at: now } : {}),
-    ...(satisfaction ? { satisfaction_score: pct(satisfaction.score), satisfaction_reasoning: satisfaction.observation ?? null, satisfaction_analyzed_at: now } : {}),
+    // evidence : faits datés concrets ayant réellement motivé le score (voir prompt
+    // trust/satisfaction plus haut) — distinct de `observation` (synthèse générale).
+    // Non écrasé par `[]`/absent : un run qui ne retrouve pas de preuve fraîche ne
+    // doit pas effacer une preuve réelle déjà persistée par un run précédent.
+    ...(trust ? { trust_score: pct(trust.score), trust_reasoning: trust.observation ?? null, trust_analyzed_at: now, ...(trust.evidence?.length ? { trust_evidence: trust.evidence } : {}) } : {}),
+    ...(satisfaction ? { satisfaction_score: pct(satisfaction.score), satisfaction_reasoning: satisfaction.observation ?? null, satisfaction_analyzed_at: now, ...(satisfaction.evidence?.length ? { satisfaction_evidence: satisfaction.evidence } : {}) } : {}),
     ...(accountRelation ? { account_relation_hint: accountRelation.category, account_relation_hint_confidence: pct(accountRelation.confidence), account_relation_hint_reasoning: accountRelation.observation ?? null, account_relation_hint_analyzed_at: now } : {}),
   }, { onConflict: 'organization_id,contact_id,profile_version' }).select('id').single()
   if (profileError || !cognitiveProfile) throw profileError ?? new Error('Profil cognitif non enregistré')

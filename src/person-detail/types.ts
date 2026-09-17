@@ -181,6 +181,7 @@ export type PersonMemoryEntry = {
   sourceLabel: string | null
   visibility: string
   resolvedAt: string | null
+  dismissedAt: string | null
   createdAt: string
   // Preuve verbatim (renseignée à partir de l'analyse email v36+) : phrase source
   // exacte + date/direction du message d'origine. null pour les engagements
@@ -339,6 +340,13 @@ export interface PersonDetailData {
       confianceMeasured: boolean
       satisfactionMeasured: boolean
     }
+    /** Projection de la Météo du bloc Relation. Les axes sans moteur restent null. */
+    weatherDimensions: { confiance: number | null; satisfaction: number | null; dynamique: number | null; reciprocite: number | null; fiabilite: number | null; influence: number | null }
+    /** Historique daté des axes réellement persistés, pour comparer à 30 jours. */
+    dimensionHistory: Array<{ at: string; confiance: number | null; satisfaction: number | null; dynamique: number | null; reciprocite: number | null }>
+    /** Preuves textuelles produites par l'analyse, quand le moteur en a identifié. */
+    dimensionEvidence: { confiance: string[]; satisfaction: string[] }
+    markerEvidence: Array<{ markerId: string; observedAt: string; text: string; sourceRef: string | null; source: string }>
     /** Phrase déterministe générée depuis les 5 axes (voir score-batch), jamais un simple "score/100". */
     axisInterpretation: string | null
   }

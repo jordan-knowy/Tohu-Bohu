@@ -73,6 +73,8 @@ function buildSelfDetail(profile: ProfileRow, behavior: Behavior, workspaceId: s
       computedAt: updatedAt, totalInteractions: analyzed, emailInteractions: analyzed, meetingInteractions: 0,
       firstInteractionAt: null, lastInteractionAt: updatedAt, relationshipAgeDays: null,
       dimensions: { confiance: null, satisfaction: null, engagement: null, reciprocite: null, ancrage: null, ancrageCarriers: null, confianceMeasured: false, satisfactionMeasured: false },
+      weatherDimensions: { confiance: null, satisfaction: null, dynamique: null, reciprocite: null, fiabilite: null, influence: null },
+      dimensionHistory: [], dimensionEvidence: { confiance: [], satisfaction: [] }, markerEvidence: [],
       axisInterpretation: null,
     },
     scoreHistory: [],

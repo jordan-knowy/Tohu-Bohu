@@ -21,6 +21,7 @@ function raw(overrides: Partial<PersonDetailRaw> = {}): PersonDetailRaw {
     legacyCareer: [],
     relationshipSnapshots: [],
     dyadWeatherSnapshot: {},
+    markerEvents: [],
     cognitiveProfile: {},
     behavioralSignals: [],
     recommendations: [],
@@ -86,6 +87,32 @@ describe('buildPersonDetail — score backend, jamais calculé côté front', ()
     expect(data.relationship.dimensions.engagement).toBe(61)
     expect(data.relationship.dimensions.confianceMeasured).toBe(true)
     expect(data.relationship.dimensions.satisfactionMeasured).toBe(false)
+  })
+
+  it('raccorde les preuves et l’historique au score legacy sans mêler les marqueurs V6 shadow', () => {
+    const data = buildPersonDetail(raw({
+      scoreSnapshots: [{ score: 67, computed_at: '2026-09-15T00:00:00Z', confiance_score: 72, engagement_score: 64 }],
+      legacyScores: [{ score: 61, snapshot_date: '2026-08-15', score_confiance: 66, score_engagement: 54 }],
+      cognitiveProfile: { trust_score: 72, trust_evidence: ['Promesse tenue le 12/09.'] },
+      markerEvents: [{ marker_id: 'C01', observed_at: '2026-09-12', evidence_text: 'Échange V6', evidence_ref: 'mail-1' }],
+    }))
+    expect(data.relationship.dimensionHistory.map((point) => point.at)).toEqual(['2026-08-15', '2026-09-15T00:00:00Z'])
+    expect(data.relationship.dimensionEvidence.confiance).toEqual(['Promesse tenue le 12/09.'])
+    expect(data.relationship.weatherDimensions).toEqual({ confiance: 72, satisfaction: null, dynamique: 64, reciprocite: null, fiabilite: null, influence: null })
+    expect(data.relationship.markerEvidence).toEqual([])
+  })
+
+  it('Phase 1 keeps Legacy authority even when an old contact-only V6 snapshot exists', () => {
+    const data = buildPersonDetail(raw({
+      scoreSnapshots: [{score:67,computed_at:'2026-09-15',confiance_score:72,engagement_score:64}],
+      dyadWeatherSnapshot: {status:'active',verdict_allowed:true,score:77,axes:{confiance:{value:78}}},
+      cognitiveProfile: {trust_score:72,trust_evidence:['Promesse tenue.']},
+      markerEvents: [{marker_id:'C01',observed_at:'2026-09-12',evidence_text:'Shadow',evidence_ref:'mail-1'}],
+    }))
+    expect(data.relationship.score).toBe(67)
+    expect(data.relationship.dimensions.confiance).toBe(72)
+    expect(data.relationship.dimensionEvidence.confiance).toEqual(['Promesse tenue.'])
+    expect(data.relationship.markerEvidence).toEqual([])
   })
 
   it('compte les interactions réelles (emails + réunions) et bornes de dates', () => {

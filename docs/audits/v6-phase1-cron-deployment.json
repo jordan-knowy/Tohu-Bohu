@@ -1,0 +1,219 @@
+{
+  "timestamp": "2026-09-17T05:50:25.397285+00:00",
+  "migration": "supabase/migrations/20260917053806_reconstruct_scheduled_workers.sql",
+  "sha256": "24b3215a14247fa76dd5806f9b85ba7b32c533153cb7c663d84d6391465c4c10",
+  "runtime_configured_names": [
+    "edge_base_url",
+    "edge_gateway_key"
+  ],
+  "before": [
+    {
+      "jobname": "tohu-bohu-alerts",
+      "schedule": "50 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-briefs",
+      "schedule": "*/30 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-classify-markers",
+      "schedule": "13 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-contact-avatars",
+      "schedule": "30 */2 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-detect-dyad-markers",
+      "schedule": "10 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-digest",
+      "schedule": "*/15 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-email-backfill",
+      "schedule": "45 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-email-incremental",
+      "schedule": "*/10 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-google-calendar-sync",
+      "schedule": "*/15 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-meeting-prep",
+      "schedule": "*/5 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-microsoft-calendar-sync",
+      "schedule": "3-59/15 * * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-nurturing",
+      "schedule": "0 7 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-score",
+      "schedule": "15 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-score-v6-account",
+      "schedule": "20 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-veille-auto",
+      "schedule": "0 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-veille-contacts",
+      "schedule": "30 */6 * * *",
+      "active": true
+    },
+    {
+      "jobname": "tohu-bohu-weekly-digest",
+      "schedule": "0 6 * * 1",
+      "active": true
+    }
+  ],
+  "after": [
+    {
+      "jobname": "tohu-bohu-alerts",
+      "schedule": "50 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-briefs",
+      "schedule": "*/30 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-classify-markers",
+      "schedule": "13 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-contact-avatars",
+      "schedule": "30 */2 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-detect-dyad-markers",
+      "schedule": "10 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-digest",
+      "schedule": "*/15 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-email-backfill",
+      "schedule": "45 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-email-incremental",
+      "schedule": "*/10 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-google-calendar-sync",
+      "schedule": "*/15 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-meeting-prep",
+      "schedule": "*/5 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-microsoft-calendar-sync",
+      "schedule": "3-59/15 * * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-nurturing",
+      "schedule": "0 7 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-score",
+      "schedule": "15 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-score-v6-account",
+      "schedule": "20 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-veille-auto",
+      "schedule": "0 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-veille-contacts",
+      "schedule": "30 */6 * * *",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    },
+    {
+      "jobname": "tohu-bohu-weekly-digest",
+      "schedule": "0 6 * * 1",
+      "active": true,
+      "configured_dispatcher": true,
+      "embeds_token_or_project": false
+    }
+  ],
+  "schedules_and_active_states_preserved": true,
+  "manual_dispatches": 0
+}

@@ -1,0 +1,376 @@
+{
+  "captured_at": "2026-09-16T22:13:06.784899+00:00",
+  "source": "Supabase Management API /database/query/read-only",
+  "role": "supabase_read_only_user",
+  "query": "SELECT p.oid,n.nspname AS schema,p.proname,pg_catalog.pg_get_function_identity_arguments(p.oid) AS identity_arguments,pg_catalog.pg_get_function_arguments(p.oid) AS arguments,pg_catalog.pg_get_function_result(p.oid) AS returns,pg_catalog.pg_get_userbyid(p.proowner) AS owner,p.prosecdef,p.proconfig,p.proacl,pg_catalog.pg_get_functiondef(p.oid) AS definition,\npg_catalog.has_function_privilege('anon',p.oid,'EXECUTE') AS anon_execute,pg_catalog.has_function_privilege('authenticated',p.oid,'EXECUTE') AS authenticated_execute,pg_catalog.has_function_privilege('service_role',p.oid,'EXECUTE') AS service_execute,\n(SELECT jsonb_agg(jsonb_build_object('grantor',pg_catalog.pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee) END,'privilege',a.privilege_type,'grantable',a.is_grantable)) FROM pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) a) AS expanded_acl,\n(SELECT jsonb_agg(jsonb_build_object('type',d.deptype,'object',pg_catalog.pg_describe_object(d.refclassid,d.refobjid,d.refobjsubid))) FROM pg_catalog.pg_depend d WHERE d.classid='pg_catalog.pg_proc'::regclass AND d.objid=p.oid) AS catalog_dependencies\nFROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE p.proname IN ('upsert_person_marker_events','upsert_dyad_weather_snapshot','upsert_account_weather_snapshot','get_account_prev_weather_score','get_dyad_weather_snapshot','get_account_dyad_snapshots','account_health_monthly') ORDER BY 2,3,4;\n",
+  "result": [
+    {
+      "oid": 40163,
+      "schema": "public",
+      "proname": "account_health_monthly",
+      "identity_arguments": "p_company_id uuid, p_months integer",
+      "arguments": "p_company_id uuid, p_months integer DEFAULT 12",
+      "returns": "jsonb",
+      "owner": "postgres",
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=public"
+      ],
+      "proacl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.account_health_monthly(p_company_id uuid, p_months integer DEFAULT 12)\n RETURNS jsonb\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\nwith nowu as (select (now() at time zone 'utc') as t),\ntotal as (\n  select count(*)::numeric n from contacts\n  where company_id = p_company_id and is_tracked and merged_into_contact_id is null\n),\nmonths as (\n  select gs as idx,\n    date_trunc('month',(select t from nowu)) - (gs||' month')::interval as m_start,\n    least(date_trunc('month',(select t from nowu)) - (gs||' month')::interval + interval '1 month' - interval '1 second',\n          (select t from nowu)) as cutoff\n  from generate_series(greatest(p_months,1)-1, 0, -1) gs\n),\nct as (\n  select id from contacts\n  where company_id = p_company_id and is_tracked and merged_into_contact_id is null\n),\nper as (\n  select m.idx, m.m_start, m.cutoff, c.id as contact_id,\n    (select h.score from contact_score_history h\n       where h.contact_id = c.id and h.snapshot_date <= m.cutoff::date\n       order by h.snapshot_date desc limit 1) as score,\n    (select count(*) from communication_messages cm\n       where cm.contact_id = c.id and cm.sent_at <= m.cutoff) as emails,\n    (select max(cm.sent_at) from communication_messages cm\n       where cm.contact_id = c.id and cm.sent_at <= m.cutoff) as last_email\n  from months m cross join ct c\n),\nmt as (\n  select m.idx, max(mt.starts_at) filter (where mt.starts_at <= m.cutoff) as last_meet\n  from months m left join meetings mt on mt.company_id = p_company_id\n  group by m.idx\n),\nagg as (\n  select p.idx, p.m_start, p.cutoff,\n    count(*) filter (where p.score is not null) as engaged,\n    sum(p.score*(1+p.emails)) filter (where p.score is not null) as wsum,\n    sum(1+p.emails) filter (where p.score is not null) as wden,\n    max(p.last_email) as last_email\n  from per p group by p.idx, p.m_start, p.cutoff\n)\nselect coalesce(jsonb_agg(jsonb_build_object(\n    'ym', to_char(a.m_start,'YYYY-MM'),\n    'engaged', a.engaged,\n    'score', case\n      when a.engaged = 0 or (select n from total) = 0 then null\n      else round( least(1, greatest(0,\n            (a.wsum/nullif(a.wden,0)/100)*0.55\n          + (a.engaged::numeric/(select n from total))*0.25\n          + coalesce(exp(-(ln(2)/90.0) * (extract(epoch from (a.cutoff - greatest(a.last_email, mt.last_meet)))/86400.0)), 0)*0.20\n        )) * 100 )::int\n    end\n  ) order by a.m_start), '[]'::jsonb)\nfrom agg a left join mt on mt.idx = a.idx;\n$function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "PUBLIC",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56230,
+      "schema": "public",
+      "proname": "get_account_dyad_snapshots",
+      "identity_arguments": "p_company_id uuid",
+      "arguments": "p_company_id uuid",
+      "returns": "jsonb",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_account_dyad_snapshots(p_company_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\n  select coalesce(jsonb_agg(jsonb_build_object(\n      'contact_id', contact_id, 'score', score, 'reliability', reliability,\n      'verdict_allowed', verdict_allowed, 'status', status\n    )), '[]'::jsonb)\n  from (\n    select distinct on (contact_id) contact_id, score, reliability, verdict_allowed, status\n    from scoring.score_snapshot\n    where entity_type = 'dyad' and account_id = p_company_id\n    order by contact_id, at desc\n  ) latest\n$function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56148,
+      "schema": "public",
+      "proname": "get_account_prev_weather_score",
+      "identity_arguments": "p_company_id uuid, p_snapshot_month date, p_params_version text, p_registry_version text",
+      "arguments": "p_company_id uuid, p_snapshot_month date, p_params_version text, p_registry_version text",
+      "returns": "numeric",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_account_prev_weather_score(p_company_id uuid, p_snapshot_month date, p_params_version text, p_registry_version text)\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\n  select score from scoring.score_snapshot\n  where entity_type = 'account' and entity_id = p_company_id and snapshot_month = p_snapshot_month\n    and params_version = p_params_version and registry_version = p_registry_version\n  limit 1\n$function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56229,
+      "schema": "public",
+      "proname": "get_dyad_weather_snapshot",
+      "identity_arguments": "p_contact_id uuid",
+      "arguments": "p_contact_id uuid",
+      "returns": "jsonb",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_dyad_weather_snapshot(p_contact_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\n  select jsonb_build_object(\n    'score', score, 'reliability', reliability, 'verdict_allowed', verdict_allowed,\n    'status', status, 'axes', axes_or_dials, 'at', at\n  )\n  from scoring.score_snapshot\n  where entity_type = 'dyad' and entity_id = p_contact_id\n  order by at desc limit 1\n$function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56149,
+      "schema": "public",
+      "proname": "upsert_account_weather_snapshot",
+      "identity_arguments": "p_organization_id uuid, p_company_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_dials jsonb, p_score numeric, p_weakest_dial text, p_delta_30d numeric",
+      "arguments": "p_organization_id uuid, p_company_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_dials jsonb, p_score numeric, p_weakest_dial text, p_delta_30d numeric",
+      "returns": "void",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.upsert_account_weather_snapshot(p_organization_id uuid, p_company_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_dials jsonb, p_score numeric, p_weakest_dial text, p_delta_30d numeric)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\nbegin\n  insert into scoring.score_snapshot(\n    organization_id, entity_type, entity_id, account_id, at, snapshot_month,\n    params_version, registry_version, axes_or_dials, score, reliability, verdict_allowed,\n    weakest_dial, delta_30d\n  ) values (\n    p_organization_id, 'account', p_company_id, p_company_id, p_at, p_snapshot_month,\n    p_params_version, p_registry_version, p_dials, p_score, null, false,\n    p_weakest_dial, p_delta_30d\n  )\n  on conflict (entity_type, entity_id, snapshot_month, params_version, registry_version)\n  do update set at = excluded.at, axes_or_dials = excluded.axes_or_dials, score = excluded.score,\n    weakest_dial = excluded.weakest_dial, delta_30d = excluded.delta_30d;\nend $function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "language plpgsql"
+        },
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56228,
+      "schema": "public",
+      "proname": "upsert_dyad_weather_snapshot",
+      "identity_arguments": "p_organization_id uuid, p_contact_id uuid, p_account_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_axes jsonb, p_score numeric, p_reliability numeric, p_verdict_allowed boolean, p_status text",
+      "arguments": "p_organization_id uuid, p_contact_id uuid, p_account_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_axes jsonb, p_score numeric, p_reliability numeric, p_verdict_allowed boolean, p_status text",
+      "returns": "void",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.upsert_dyad_weather_snapshot(p_organization_id uuid, p_contact_id uuid, p_account_id uuid, p_at timestamp with time zone, p_snapshot_month date, p_params_version text, p_registry_version text, p_axes jsonb, p_score numeric, p_reliability numeric, p_verdict_allowed boolean, p_status text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\nbegin\n  insert into scoring.score_snapshot(\n    organization_id, entity_type, entity_id, account_id, contact_id, at, snapshot_month,\n    params_version, registry_version, axes_or_dials, score, reliability, verdict_allowed, status\n  ) values (\n    p_organization_id, 'dyad', p_contact_id, p_account_id, p_contact_id, p_at, p_snapshot_month,\n    p_params_version, p_registry_version, coalesce(p_axes, '{}'::jsonb), p_score, p_reliability, p_verdict_allowed, p_status\n  )\n  on conflict (entity_type, entity_id, snapshot_month, params_version, registry_version)\n  do update set at = excluded.at, axes_or_dials = excluded.axes_or_dials, score = excluded.score,\n    reliability = excluded.reliability, verdict_allowed = excluded.verdict_allowed, status = excluded.status;\nend $function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "language plpgsql"
+        },
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    },
+    {
+      "oid": 56167,
+      "schema": "public",
+      "proname": "upsert_person_marker_events",
+      "identity_arguments": "p_organization_id uuid, p_events jsonb",
+      "arguments": "p_organization_id uuid, p_events jsonb",
+      "returns": "integer",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, scoring, pg_temp"
+      ],
+      "proacl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.upsert_person_marker_events(p_organization_id uuid, p_events jsonb)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'scoring', 'pg_temp'\nAS $function$\ndeclare\n  v_count int := 0;\nbegin\n  insert into scoring.marker_event(\n    organization_id, registry_version, marker_id, scope, contact_id, account_id,\n    observed_at, sense, measure, source, evidence_ref, evidence_text, detector_version,\n    is_candidate, is_verbatim, dedup_key\n  )\n  select\n    p_organization_id, 'reg-v6.0', e->>'marker_id', 'person',\n    (e->>'contact_id')::uuid, (e->>'account_id')::uuid,\n    (e->>'observed_at')::timestamptz, (e->>'sense')::int,\n    coalesce(e->'measure', '{}'::jsonb), e->>'source', e->>'evidence_ref', e->>'evidence_text',\n    e->>'detector_version', coalesce((e->>'is_candidate')::boolean, false),\n    coalesce((e->>'is_verbatim')::boolean, false), e->>'dedup_key'\n  from jsonb_array_elements(p_events) as e\n  on conflict (organization_id, dedup_key) where dedup_key is not null do nothing;\n  get diagnostics v_count = row_count;\n  return v_count;\nend $function$\n",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true,
+      "expanded_acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "catalog_dependencies": [
+        {
+          "type": "n",
+          "object": "language plpgsql"
+        },
+        {
+          "type": "n",
+          "object": "schema public"
+        }
+      ]
+    }
+  ]
+}

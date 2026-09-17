@@ -1,0 +1,3495 @@
+{
+  "method": "Lexical references across all 139 migration contents, not proof of matching DDL or successful replay",
+  "objects": [
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "subscription_usage",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260618163704_subscription_usage_security_invoker.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "private",
+      "name": "super_admin_email_allowlist",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "stripe_webhook_events",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719231807_harden_account_center_rpc_access.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "organization_invitations",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "email_dispatch_rules",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_deletion_requests",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "subscription_change_history",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260719234115_harden_subscription_history_trigger.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "user_identity_aliases",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260911100000_user_identity_aliases.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "company_signals",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260614074045_create_company_signals.sql",
+        "supabase/migrations/20260618163511_plans_entitlements_and_profile_quota.sql",
+        "supabase/migrations/20260619153430_add_tester_plan.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716113949_preserve_duplicate_signal_confidence.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "profiles",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260621195957_super_admin_read_profiles_memberships.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260715000907_add_profiles_onboarding_completed.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260905090000_account_recommendations_assigned_contact.sql",
+        "supabase/migrations/20260907123000_enable_team_vision_for_all_members.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "organizations",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260526181911_profile_contexts_for_llm_memory.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530203532_create_meeting_post_summaries.sql",
+        "supabase/migrations/20260601144528_create_user_behavior_events.sql",
+        "supabase/migrations/20260614074045_create_company_signals.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260621200126_nps_snapshots.sql",
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260623141914_org_logo_branding.sql",
+        "supabase/migrations/20260715001442_create_signal_feedback.sql",
+        "supabase/migrations/20260715183151_secure_email_behavior_profiles.sql",
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260731150000_person_key_moments.sql",
+        "supabase/migrations/20260908160000_slack_sync.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911100000_user_identity_aliases.sql",
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260917100000_v6_foundation_ledger.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_facts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "memberships",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530203532_create_meeting_post_summaries.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260621195957_super_admin_read_profiles_memberships.sql",
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260623141914_org_logo_branding.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260907123000_enable_team_vision_for_all_members.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911102000_org_member_email_helper.sql",
+        "supabase/migrations/20260917100000_v6_foundation_ledger.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "notification_preferences",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_fact_evidence",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "app_secrets",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260620085029_veille_cron_infra.sql",
+        "supabase/migrations/20260620085333_schedule_veille_cron.sql",
+        "supabase/migrations/20260621153716_schedule_veille_contacts_cron.sql",
+        "supabase/migrations/20260621204803_schedule_score_cron.sql",
+        "supabase/migrations/20260720123000_reschedule_veille_contacts_throughput.sql",
+        "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+        "supabase/migrations/20260818120000_contact_avatars_auto_enrich.sql",
+        "supabase/migrations/20260907120000_schedule_meeting_prep_emails.sql",
+        "supabase/migrations/20260911106000_schedule_calendar_sync_cron.sql",
+        "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+        "supabase/migrations/20260916120000_classify_markers_cron.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "oauth_accounts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260715183151_secure_email_behavior_profiles.sql",
+        "supabase/migrations/20260715183607_oauth_token_vault_functions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "communication_messages",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260530203535_add_subject_to_communication_messages.sql",
+        "supabase/migrations/20260620062447_communication_messages_member_update.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260908160000_slack_sync.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "companies",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260613132940_add_account_type_to_companies.sql",
+        "supabase/migrations/20260614074045_create_company_signals.sql",
+        "supabase/migrations/20260620085029_veille_cron_infra.sql",
+        "supabase/migrations/20260620171550_add_enrichment_data_jsonb.sql",
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260905100000_companies_siren.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "briefs",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260618163511_plans_entitlements_and_profile_quota.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "meeting_transcripts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260719223256_remove_unused_tables.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260909170000_notion_meeting_notes.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "audit_logs",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "communication_threads",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530203535_add_subject_to_communication_messages.sql",
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_fact_user_state",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "subscription_plans",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260618163511_plans_entitlements_and_profile_quota.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260619153430_add_tester_plan.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232105_align_annual_prices_without_discount.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_recommendations",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260905090000_account_recommendations_assigned_contact.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "subscriptions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260719234115_harden_subscription_history_trigger.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_facts_live",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "meetings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530203532_create_meeting_post_summaries.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911101000_meetings_scope_status_calendar_link.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260911105000_fix_meeting_upsert_partial_index.sql",
+        "supabase/migrations/20260911106000_schedule_calendar_sync_cron.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "meeting_participants",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260911105000_fix_meeting_upsert_partial_index.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_recommendation_user_state",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_relationship_score_snapshots",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260724170000_distinguish_relationship_longevity_from_recency.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "resource_lock",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "access_grant",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "enrichment_slots",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724120000_enrichment_slots.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "connectors",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260620091120_connectors_status_check_broaden.sql",
+        "supabase/migrations/20260710002712_add_slack_connector_provider.sql",
+        "supabase/migrations/20260715184130_migrate_plaintext_oauth_tokens.sql",
+        "supabase/migrations/20260715184408_block_plaintext_connector_tokens.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260908160000_slack_sync.sql",
+        "supabase/migrations/20260909170000_notion_meeting_notes.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contacts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260530212126_add_email_analysis_to_contacts.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260620171550_add_enrichment_data_jsonb.sql",
+        "supabase/migrations/20260621153414_contacts_last_monitored_at.sql",
+        "supabase/migrations/20260621153716_schedule_veille_contacts_cron.sql",
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql",
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260720123000_reschedule_veille_contacts_throughput.sql",
+        "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+        "supabase/migrations/20260724120000_enrichment_slots.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+        "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260731150000_person_key_moments.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260809140000_contact_avatars_bucket.sql",
+        "supabase/migrations/20260818120000_contact_avatars_auto_enrich.sql",
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260905090000_account_recommendations_assigned_contact.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917100000_v6_foundation_ledger.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "scoring",
+      "name": "marker_registry",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914141000_scoring_v6_seed_registry_params.sql",
+        "supabase/migrations/20260917100000_v6_foundation_ledger.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "scoring",
+      "name": "scoring_params",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914141000_scoring_v6_seed_registry_params.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "fiche_shares",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260904123000_drop_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "scoring",
+      "name": "score_snapshot",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916090000_score_batch_account_v6_cron.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "scoring",
+      "name": "marker_event",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260914160000_marker_event_dedup_and_candidate.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260916110000_marker_event_verbatim_and_evidence_rpcs.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_career_path",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "enrichment_cache",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621123134_enrichment_cache_global.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_merge_suggestions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_name_suggestions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "feature_flags",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "cognitive_profiles",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260724090000_structured_evolving_cognitive_profiles.sql",
+        "supabase/migrations/20260724113000_allow_personalized_cognitive_mode.sql",
+        "supabase/migrations/20260729090000_cognitive_profile_meeting_sources.sql",
+        "supabase/migrations/20260731090000_cognitive_axes_v3.sql",
+        "supabase/migrations/20260916201852_cognitive_profiles_axis_evidence.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_score_history",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_relationship_score_snapshots",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260910220000_account_score_snapshot_month.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_user_preferences",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_watch_settings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_settings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_transfers",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "signal_feedback",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715001442_create_signal_feedback.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "insight_feedback",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "connector_sync_state",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "connector_oauth_states",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "home_action_states",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "user_behavioral_profiles",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715183151_secure_email_behavior_profiles.sql",
+        "supabase/migrations/20260731130000_user_behavioral_profile_v3.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "sync_jobs",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260722090000_sync_jobs_client_insert_email_analysis.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260809120000_sync_jobs_client_insert_transcript_analysis.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "behavioral_signals",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260618163511_plans_entitlements_and_profile_quota.sql",
+        "supabase/migrations/20260619153430_add_tester_plan.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716112012_name_recent_activity_signals.sql",
+        "supabase/migrations/20260716112153_refine_recent_activity_titles.sql",
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "ai_usage_events",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260618163539_recreate_subscription_usage_view.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_key_moments",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260731150000_person_key_moments.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260916110000_marker_event_verbatim_and_evidence_rpcs.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "notifications",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "fiche_visions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "fiche_vision_grants",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "fiche_handovers",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_memory_entries",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260802160000_person_memory_resolve.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910160000_document_person_memory_source_excerpt.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260916150000_person_memory_dismiss.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "email_preferences",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "super_admins",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260529191156_create_super_admins.sql",
+        "supabase/migrations/20260601144528_create_user_behavior_events.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260621195957_super_admin_read_profiles_memberships.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260623141914_org_logo_branding.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "relationship_snapshots",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260529191752_v2_new_tables_complete.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "contact_identity_aliases",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260911100000_user_identity_aliases.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_strategic_readings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_settings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_user_settings",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_summaries",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_recommendations",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_contact_detail_revisions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_career_entries",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_contact_roles",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_memory_entries",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "person_contact_details",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_firmographic_facts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "email_log",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "relation",
+      "schema": "public",
+      "name": "account_relationship_score_snapshots_dedup_backup_20260910",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910220000_account_score_snapshot_month.sql",
+        "supabase/migrations/20260910230000_enable_rls_dedup_backup_table.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_identity_email",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260911102000_org_member_email_helper.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_company_domain",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_entity_name",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_company_identity",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "resolve_company_identity",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "validate_person_detail_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260716194331_harden_person_detail_scope_function.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_fiche_vision_owner",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_seat_quantity",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_fiche_vision",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "validate_account_detail_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "revoke_organization_invitation",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_fiche_entity",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "email_dispatch_allowed",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_get_email_dispatch_rules",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_email_dispatch_rule",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_fiche_meeting",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "handle_new_user_workspace",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260526052226_revoke_signup_trigger_rpc_access.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "remove_organization_member",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_list_user_memberships",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_list_organizations",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_add_user_to_organization",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_remove_user_from_organization",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_membership_role",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "is_locked_for",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "is_org_member_email",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260911102000_org_member_email_helper.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_fiche_shares",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "revoke_fiche_share",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "resolve_contact_identity",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260911102000_org_member_email_helper.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "upsert_account_weather_snapshot",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_person_marker_events",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260916110000_marker_event_verbatim_and_evidence_rpcs.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "upsert_person_marker_events",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_contact",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "is_org_member",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260526181911_profile_contexts_for_llm_memory.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260530160321_contact_merge_revoke_anon.sql",
+        "supabase/migrations/20260614074045_create_company_signals.sql",
+        "supabase/migrations/20260620062447_communication_messages_member_update.sql",
+        "supabase/migrations/20260621200126_nps_snapshots.sql",
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql",
+        "supabase/migrations/20260715001442_create_signal_feedback.sql",
+        "supabase/migrations/20260715183151_secure_email_behavior_profiles.sql",
+        "supabase/migrations/202607160011_account_strategic_readings.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql",
+        "supabase/migrations/20260722090000_sync_jobs_client_insert_email_analysis.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260731150000_person_key_moments.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260802160000_person_memory_resolve.sql",
+        "supabase/migrations/20260809120000_sync_jobs_client_insert_transcript_analysis.sql",
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql",
+        "supabase/migrations/20260911100000_user_identity_aliases.sql",
+        "supabase/migrations/20260911102000_org_member_email_helper.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "is_org_admin",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "acquire_enrichment_slot",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724120000_enrichment_slots.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "release_enrichment_slot",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724120000_enrichment_slots.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "account_brain",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914150000_feature_flags.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "entity_name_shares_surname",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "merge_contacts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260530160321_contact_merge_revoke_anon.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "unmerge_contact",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260530160321_contact_merge_revoke_anon.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "is_super_admin",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260529191156_create_super_admins.sql",
+        "supabase/migrations/20260601144528_create_user_behavior_events.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "can_view_company",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql",
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql",
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "detect_contact_merge_candidates",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "set_fiche_vision_visibility",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "format_person_full_name",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "share_fiche",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260904123000_drop_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_fiche_visions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_contact_full_name",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_shared_with_me",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_account_visions",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_fiche_vision_grants",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "is_super_admin_caller",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_list_users",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "claim_connector_sync",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "list_shared_accounts_with_me",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "super_admin_ai_usage",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_super_admin_kpis",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_delete_user",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "accept_my_organization_invitations",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719231807_harden_account_center_rpc_access.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_team_vision_members",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260907123000_enable_team_vision_for_all_members.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_user_access",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "set_fiche_vision_grant",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910130000_retire_fiche_shares.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "handover_fiches",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_super_admin_console",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_account_center",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719231807_harden_account_center_rpc_access.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "account_health_monthly",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "reconcile_account_facts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "reconcile_marker_events",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "submit_account_deletion_request",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_my_account_deletion_request",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_list_account_deletion_requests",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_update_account_deletion_request",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "flag_enabled_for_org",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "account_rec_dedup_guard",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_user_plan",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "set_org_logo",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260623141914_org_logo_branding.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "record_subscription_change",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260719234115_harden_subscription_history_trigger.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_account_k_marker_events",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260916110000_marker_event_verbatim_and_evidence_rpcs.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "generate_user_notifications",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "admin_set_super_admin",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260715001954_harden_security_definer_functions.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "store_oauth_tokens_server",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715183607_oauth_token_vault_functions.sql",
+        "supabase/migrations/20260715184130_migrate_plaintext_oauth_tokens.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_oauth_tokens_server",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715183607_oauth_token_vault_functions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "sanitize_connector_metadata",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715184408_block_plaintext_connector_tokens.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_account_prev_weather_score",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "validate_home_action_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "touch_home_updated_at",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "validate_signal_feedback_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "remember_behavioral_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "remember_company_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716113949_preserve_duplicate_signal_confidence.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "home_organization_id",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "private",
+      "name": "enforce_connector_home_organization",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "ensure_fiche_vision_from_interaction",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "add_tracked_contact",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "detect_person_candidates",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "behavioral_signal_deduplication_key",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "set_tracked_companies",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "name_recent_activity_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716112012_name_recent_activity_signals.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "recent_activity_title",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716112012_name_recent_activity_signals.sql",
+        "supabase/migrations/20260716112153_refine_recent_activity_titles.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "normalize_signal_content",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "company_signal_deduplication_key",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716113949_preserve_duplicate_signal_confidence.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "add_tracked_company",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "detect_account_candidates",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "promote_account_facts",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql"
+      ]
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "upsert_dyad_weather_snapshot",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_dyad_weather_snapshot",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "function",
+      "schema": "public",
+      "name": "get_account_dyad_snapshots",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "auth",
+      "name": "on_auth_user_created_create_workspace",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "remember_company_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716113949_preserve_duplicate_signal_confidence.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "communication_messages_ensure_fiche_vision",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "normalize_company_identity",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_rec_dedup_guard_trg",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_recommendations_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "subscriptions_record_change",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "meetings_ensure_fiche_vision",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "meeting_participants_ensure_fiche_vision",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_relationship_score_snapshots_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "connectors_enforce_home_organization",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "sanitize_connector_metadata_tokens",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715184408_block_plaintext_connector_tokens.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "trg_normalize_contact_full_name",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_user_preferences_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_watch_settings_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_settings_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "signal_feedback_validate_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "insight_feedback_touch_updated_at",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "home_action_states_touch_updated_at",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "home_action_states_validate_scope",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "name_recent_activity_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716112012_name_recent_activity_signals.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "remember_behavioral_signal",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql"
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_memory_entries_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_settings_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_user_settings_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_summaries_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_recommendations_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_contact_detail_revisions_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_career_entries_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_contact_roles_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_memory_entries_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "person_contact_details_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "public",
+      "name": "account_firmographic_facts_validate_scope",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "stripe_webhook_events_no_client_access",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231807_harden_account_center_rpc_access.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "organization_invitations_member_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719231602_account_billing_team_center.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_deletion_requests_read_own",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719232709_account_deletion_requests.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "subscription_change_history_no_direct_access",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260719234115_harden_subscription_history_trigger.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "user_identity_aliases_delete_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260911100000_user_identity_aliases.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "user_identity_aliases_insert_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260911100000_user_identity_aliases.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "user_identity_aliases_select_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260911100000_user_identity_aliases.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "company_signals_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "profiles_insert_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "profiles_select_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "profiles_super_admin_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621195957_super_admin_read_profiles_memberships.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "profiles_update_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "organizations_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_facts_member_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260916100000_account_engagement_actions.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_facts_select_can_view",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "memberships_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "memberships_super_admin_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621195957_super_admin_read_profiles_memberships.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "notification_preferences_owner",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_fact_evidence_select_can_view",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "oauth_accounts_owner",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "communication_messages_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "communication_messages_update_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "communication_messages_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "slack_messages_private",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_member_delete",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_member_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_member_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_visible_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "companies_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "briefs_member_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meeting_transcripts_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260721051423_meeting_sync_unique_constraints.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meeting_transcripts_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "audit_logs_insert_member",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "audit_logs_select_admin",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "communication_threads_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "slack_threads_private",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260908160000_slack_sync.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_fact_user_state_rw",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "subscription_plans_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_recommendations_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_recommendations_update_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "subscriptions_read_own_org",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "subscriptions_super_admin_read",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "subscriptions_super_admin_update",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meetings_member_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meetings_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meeting_participants_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "meeting_participants_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_recommendation_user_state_rw",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914120000_account_facts_engine_m1.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_relationship_score_snapshots_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "resource_lock_owner_insert",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "resource_lock_owner_release",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "resource_lock_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "access_grant_involved_select",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "access_grant_owner_insert",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "access_grant_owner_revoke",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "connectors_owner",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050754_optimize_auth_rls_policies.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_member_delete",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_member_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_member_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_owner_write",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_shared_select",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_visible_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contacts_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "scoring",
+      "name": "marker_registry_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "scoring",
+      "name": "scoring_params_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_shares_member_select",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "scoring",
+      "name": "score_snapshot_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "scoring",
+      "name": "marker_event_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914140000_scoring_v6_shadow_schema.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_career_path_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "enrichment_cache_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621123134_enrichment_cache_global.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_merge_suggestions_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_name_suggestions_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "feature_flags_read",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260914150000_feature_flags.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "cognitive_profiles_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_score_history_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_score_history_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_relationship_score_snapshots_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_preferences_owner_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_preferences_owner_write",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_watch_settings_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_watch_settings_write_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_settings_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_settings_write_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_transfers_member",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260621200559_contacts_owner_user_id_handoff.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "signal_feedback_owner_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715001442_create_signal_feedback.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "insight_feedback_owner_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "home_action_states_owner_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "user_behavioral_profiles_select_self",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260715183151_secure_email_behavior_profiles.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "sync_jobs_member_insert_email_analysis",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260722090000_sync_jobs_client_insert_email_analysis.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "sync_jobs_member_insert_transcript_analysis",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260809120000_sync_jobs_client_insert_transcript_analysis.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "sync_jobs_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526051201_move_rls_helpers_to_private_schema.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "behavioral_signals_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "ai_usage_events_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "ai_usage_events_read_own_org",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_key_moments_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "notif_delete",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "notif_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "notif_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "notif_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_visions_owner_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_visions_owner_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_visions_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_vision_grants_participant_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "fiche_handovers_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_author_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_author_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_delete_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_entries_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_memory_update_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "email_preferences_self_select",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "email_preferences_self_update",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "email_preferences_self_upsert",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "super_admin_self_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260529191156_create_super_admins.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "relationship_snapshots_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "contact_identity_aliases_select_member",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_strategic_readings_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_settings_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_settings_write_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_user_settings_owner_all",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_summaries_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_recommendations_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_recommendations_update_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_contact_detail_revisions_author_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_contact_detail_revisions_member_select",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_career_entries_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_career_entries_write_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_contact_roles_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_contact_roles_write_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_memory_author_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_memory_author_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260717012619_account_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_memory_entries_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_memory_entries_vision_restrictive",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_contact_details_member_insert",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_contact_details_member_select",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "person_contact_details_member_update",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716193854_person_detail_p0.sql"
+      ]
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_facts_validate_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "name": "account_firmographic_facts_select_can_view",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "extension",
+      "schema": "pg_catalog",
+      "name": "plpgsql",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql",
+        "supabase/migrations/20260526052047_create_user_workspace_on_signup.sql",
+        "supabase/migrations/20260530155854_contact_merge_support.sql",
+        "supabase/migrations/20260618163618_seed_free_subscriptions_and_autocreate.sql",
+        "supabase/migrations/20260618170317_super_admin_email_allowlist_on_signup.sql",
+        "supabase/migrations/20260623071033_superadmin_user_management_rpcs.sql",
+        "supabase/migrations/20260623134207_add_maxime_optee_to_superadmin_whitelist.sql",
+        "supabase/migrations/20260623141914_org_logo_branding.sql",
+        "supabase/migrations/20260715183607_oauth_token_vault_functions.sql",
+        "supabase/migrations/20260715184408_block_plaintext_connector_tokens.sql",
+        "supabase/migrations/20260716021355_home_foundation_real_tables.sql",
+        "supabase/migrations/20260716090545_home_account_detection_and_tracking_rpcs.sql",
+        "supabase/migrations/20260716112012_name_recent_activity_signals.sql",
+        "supabase/migrations/20260716113717_persistent_signal_deduplication.sql",
+        "supabase/migrations/20260716113949_preserve_duplicate_signal_confidence.sql",
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql",
+        "supabase/migrations/20260716115211_resolve_professional_email_aliases.sql",
+        "supabase/migrations/20260716193854_person_detail_p0.sql",
+        "supabase/migrations/20260717012619_account_detail_p0.sql",
+        "supabase/migrations/20260719220959_super_admin_platform_roles.sql",
+        "supabase/migrations/20260719222203_super_admin_kpis.sql",
+        "supabase/migrations/20260719230244_super_admin_console.sql",
+        "supabase/migrations/20260719231602_account_billing_team_center.sql",
+        "supabase/migrations/20260719232709_account_deletion_requests.sql",
+        "supabase/migrations/20260719234027_separate_admin_role_and_subscription_history.sql",
+        "supabase/migrations/20260720003025_explicit_contact_tracking.sql",
+        "supabase/migrations/20260720031500_generic_email_domains_are_not_companies.sql",
+        "supabase/migrations/20260724120000_enrichment_slots.sql",
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql",
+        "supabase/migrations/20260724153000_fix_detect_contact_merge_candidates_perf.sql",
+        "supabase/migrations/20260724160000_fix_merge_detection_false_positives.sql",
+        "supabase/migrations/20260724163000_strip_generic_tokens_from_merge_detection.sql",
+        "supabase/migrations/20260725090000_normalize_contact_full_name_casing.sql",
+        "supabase/migrations/20260726100000_fix_merge_contacts_enrichment_status.sql",
+        "supabase/migrations/20260731170000_reciprocal_email_relationships.sql",
+        "supabase/migrations/20260904120000_transfer_contact_ownership_rpc.sql",
+        "supabase/migrations/20260908160000_slack_sync.sql",
+        "supabase/migrations/20260909120000_fiche_visions_and_handovers.sql",
+        "supabase/migrations/20260910090000_connectors_bound_to_home_organization.sql",
+        "supabase/migrations/20260910110000_drop_unused_tables.sql",
+        "supabase/migrations/20260910140000_watch_off_by_default_on_tracking.sql",
+        "supabase/migrations/20260910150000_fix_list_visions_ambiguous_conflict.sql",
+        "supabase/migrations/20260910200335_fix_super_admin_functions_dropped_user_behavior_events.sql",
+        "supabase/migrations/20260911103000_resolve_contact_identity_create_if_missing.sql",
+        "supabase/migrations/20260911104000_detect_person_candidates_meeting_interactions.sql",
+        "supabase/migrations/20260914170000_account_brain_rpc.sql",
+        "supabase/migrations/20260914180000_reconciliation_rpcs.sql",
+        "supabase/migrations/20260914190000_promote_account_facts_rpc.sql",
+        "supabase/migrations/20260915100000_rec_dedup_guard_flagged.sql",
+        "supabase/migrations/20260916100000_account_engagement_actions.sql",
+        "supabase/migrations/20260917100000_v6_foundation_ledger.sql",
+        "supabase/migrations/20260917101000_v6_identity_ambiguity.sql",
+        "supabase/migrations/20260917102000_v6_marker_read_access.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "pg_stat_statements",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "uuid-ossp",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526051202_recover_untracked_core_tables.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "pgcrypto",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "vault",
+      "name": "supabase_vault",
+      "local_files_mentioning_name": []
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "vector",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260526050651_core_p0_schema.sql",
+        "supabase/migrations/20260526050732_hardening_and_fk_indexes.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "pg_catalog",
+      "name": "pg_cron",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260620085029_veille_cron_infra.sql",
+        "supabase/migrations/20260720124500_rename_knowr_cron_jobs_to_tohu_bohu.sql",
+        "supabase/migrations/20260907120000_schedule_meeting_prep_emails.sql",
+        "supabase/migrations/20260911106000_schedule_calendar_sync_cron.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "public",
+      "name": "pg_net",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260620085029_veille_cron_infra.sql",
+        "supabase/migrations/20260907120000_schedule_meeting_prep_emails.sql",
+        "supabase/migrations/20260911106000_schedule_calendar_sync_cron.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "unaccent",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260716114940_entity_identity_resolution.sql"
+      ]
+    },
+    {
+      "kind": "extension",
+      "schema": "extensions",
+      "name": "pg_trgm",
+      "local_files_mentioning_name": [
+        "supabase/migrations/20260724150000_contact_identity_suggestions.sql"
+      ]
+    }
+  ]
+}

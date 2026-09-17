@@ -1,0 +1,128 @@
+{
+  "captured_at": "2026-09-16T22:17:29.033918+00:00",
+  "source": "Supabase Management API /database/query/read-only",
+  "role": "supabase_read_only_user",
+  "query": "SELECT jsonb_build_object(\n 'by_organization',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT o.id AS organization_id,(SELECT count(*) FROM public.companies c WHERE c.organization_id=o.id) accounts,(SELECT count(*) FROM public.contacts c WHERE c.organization_id=o.id) contacts,(SELECT count(*) FROM scoring.marker_event m WHERE m.organization_id=o.id) markers,(SELECT count(*) FROM scoring.score_snapshot s WHERE s.organization_id=o.id) snapshots FROM public.organizations o) x),\n 'reference_kinds',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT source,CASE WHEN evidence_ref ~ '^[0-9a-fA-F-]{36}$' THEN 'uuid' WHEN evidence_ref IN ('channels','continuity') THEN evidence_ref ELSE 'other' END AS ref_kind,count(*) n FROM scoring.marker_event GROUP BY 1,2) x),\n 'source_reference_check',(SELECT jsonb_build_object('uuid_refs',count(*) FILTER(WHERE m.evidence_ref ~ '^[0-9a-fA-F-]{36}$'),'uuid_refs_not_found',count(*) FILTER(WHERE m.evidence_ref ~ '^[0-9a-fA-F-]{36}$' AND NOT EXISTS(SELECT 1 FROM public.communication_messages x WHERE x.id::text=m.evidence_ref) AND NOT EXISTS(SELECT 1 FROM public.communication_threads x WHERE x.id::text=m.evidence_ref) AND NOT EXISTS(SELECT 1 FROM public.meetings x WHERE x.id::text=m.evidence_ref) AND NOT EXISTS(SELECT 1 FROM public.person_key_moments x WHERE x.id::text=m.evidence_ref) AND NOT EXISTS(SELECT 1 FROM public.person_memory_entries x WHERE x.id::text=m.evidence_ref))) FROM scoring.marker_event m),\n 'duplicate_groups',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT marker_id,sense,count(*) AS n,count(distinct source) AS source_variants FROM scoring.marker_event GROUP BY organization_id,contact_id,account_id,marker_id,sense,evidence_ref HAVING count(*)>1) x),\n 'untracked_dyad_snapshots',(SELECT count(*) FROM scoring.score_snapshot s JOIN public.contacts c ON c.id=s.contact_id WHERE s.entity_type='dyad' AND NOT c.is_tracked),\n 'account_without_admissible_dyad',(SELECT count(*) FROM scoring.score_snapshot s WHERE s.entity_type='account' AND s.score IS NOT NULL AND NOT EXISTS(SELECT 1 FROM scoring.score_snapshot d WHERE d.entity_type='dyad' AND d.account_id=s.account_id AND d.organization_id=s.organization_id AND d.snapshot_month=s.snapshot_month AND d.params_version=s.params_version AND d.registry_version=s.registry_version AND d.score IS NOT NULL AND d.verdict_allowed AND d.reliability>=0.6 AND d.status IN ('actif','ralenti'))),\n 'same_month',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT snapshot_month,entity_type,count(*) n FROM scoring.score_snapshot GROUP BY 1,2) x),\n 'null_coverage_fields',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT min((axes_or_dials->'d_couverture'->>'value')::numeric) AS min_value,max((axes_or_dials->'d_couverture'->>'value')::numeric) AS max_value, count(*) FILTER(WHERE (axes_or_dials->'d_couverture'->>'value')::numeric=0) AS zero_values FROM scoring.score_snapshot WHERE entity_type='account') x)\n) AS additional_integrity;\n",
+  "result": [
+    {
+      "additional_integrity": {
+        "same_month": [
+          {
+            "n": 223,
+            "entity_type": "account",
+            "snapshot_month": "2026-09-01"
+          },
+          {
+            "n": 224,
+            "entity_type": "dyad",
+            "snapshot_month": "2026-09-01"
+          }
+        ],
+        "by_organization": [
+          {
+            "markers": 41,
+            "accounts": 31,
+            "contacts": 87,
+            "snapshots": 15,
+            "organization_id": "10d6a550-8ee0-4e81-9356-875cb6ad8c80"
+          },
+          {
+            "markers": 345,
+            "accounts": 217,
+            "contacts": 456,
+            "snapshots": 432,
+            "organization_id": "a4a85f3e-7759-4c5d-94b1-42f013ae35cb"
+          }
+        ],
+        "reference_kinds": [
+          {
+            "n": 2,
+            "source": "detector:communication_messages",
+            "ref_kind": "channels"
+          },
+          {
+            "n": 99,
+            "source": "detector:detectors-v1",
+            "ref_kind": "continuity"
+          },
+          {
+            "n": 88,
+            "source": "detector:detectors-v1",
+            "ref_kind": "channels"
+          },
+          {
+            "n": 186,
+            "source": "detector:detectors-v1",
+            "ref_kind": "uuid"
+          },
+          {
+            "n": 3,
+            "source": "detector:communication_messages",
+            "ref_kind": "continuity"
+          },
+          {
+            "n": 6,
+            "source": "classifier:extract",
+            "ref_kind": "uuid"
+          },
+          {
+            "n": 2,
+            "source": "detector:communication_messages",
+            "ref_kind": "uuid"
+          }
+        ],
+        "duplicate_groups": [
+          {
+            "n": 2,
+            "sense": -1,
+            "marker_id": "A01",
+            "source_variants": 2
+          },
+          {
+            "n": 2,
+            "sense": -1,
+            "marker_id": "A02",
+            "source_variants": 2
+          },
+          {
+            "n": 2,
+            "sense": -1,
+            "marker_id": "S04",
+            "source_variants": 2
+          },
+          {
+            "n": 2,
+            "sense": 1,
+            "marker_id": "A01",
+            "source_variants": 2
+          },
+          {
+            "n": 2,
+            "sense": 1,
+            "marker_id": "A02",
+            "source_variants": 2
+          },
+          {
+            "n": 2,
+            "sense": -1,
+            "marker_id": "A02",
+            "source_variants": 2
+          }
+        ],
+        "null_coverage_fields": [
+          {
+            "max_value": 100,
+            "min_value": 0,
+            "zero_values": 81
+          }
+        ],
+        "source_reference_check": {
+          "uuid_refs": 194,
+          "uuid_refs_not_found": 0
+        },
+        "untracked_dyad_snapshots": 210,
+        "account_without_admissible_dyad": 220
+      }
+    }
+  ]
+}

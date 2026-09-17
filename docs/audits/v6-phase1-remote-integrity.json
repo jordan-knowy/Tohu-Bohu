@@ -1,0 +1,353 @@
+{
+  "captured_at": "2026-09-16T22:15:31.862470+00:00",
+  "source": "Supabase Management API /database/query/read-only",
+  "role": "supabase_read_only_user",
+  "query": "WITH m AS (SELECT e.*, r.marker_id AS known_marker,r.deprecated_at AS registry_deprecated,r.axis_or_dial FROM scoring.marker_event e LEFT JOIN scoring.marker_registry r ON (r.registry_version,r.marker_id)=(e.registry_version,e.marker_id)), eligible AS (SELECT * FROM m WHERE NOT is_candidate AND deprecated_at IS NULL AND resolved_at IS NULL AND known_marker IS NOT NULL AND registry_deprecated IS NULL AND nullif(btrim(evidence_ref),'') IS NOT NULL AND nullif(btrim(evidence_text),'') IS NOT NULL AND observed_at<=now())\nSELECT jsonb_build_object(\n 'marker_total',(SELECT count(*) FROM m),\n 'marker_groups',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT scope,marker_id,is_candidate,is_verbatim,detector_version,source,count(*) AS n FROM m GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3) x),\n 'marker_integrity',(SELECT jsonb_build_object('unknown_registry_marker',count(*) FILTER(WHERE known_marker IS NULL),'deprecated_registry',count(*) FILTER(WHERE registry_deprecated IS NOT NULL),'resolved',count(*) FILTER(WHERE resolved_at IS NOT NULL),'deprecated',count(*) FILTER(WHERE deprecated_at IS NOT NULL),'candidate',count(*) FILTER(WHERE is_candidate),'future',count(*) FILTER(WHERE observed_at>now()),'missing_evidence_ref',count(*) FILTER(WHERE nullif(btrim(evidence_ref),'') IS NULL),'missing_evidence_text',count(*) FILTER(WHERE nullif(btrim(evidence_text),'') IS NULL),'missing_collaborator',count(*) FILTER(WHERE scope='person' AND collaborator_user_id IS NULL),'missing_dyad',count(*) FILTER(WHERE scope='person' AND dyad_id IS NULL),'missing_dedup_key',count(*) FILTER(WHERE dedup_key IS NULL),'distinct_contacts',count(distinct contact_id),'distinct_accounts',count(distinct account_id),'distinct_collaborators',count(distinct collaborator_user_id)) FROM m),\n 'marker_organization_mismatch',(SELECT count(*) FROM m LEFT JOIN public.contacts c ON c.id=m.contact_id LEFT JOIN public.companies a ON a.id=m.account_id WHERE c.organization_id IS DISTINCT FROM m.organization_id AND m.contact_id IS NOT NULL OR a.organization_id IS DISTINCT FROM m.organization_id AND m.account_id IS NOT NULL),\n 'dedup_key_groups',(SELECT count(*) FROM (SELECT organization_id,dedup_key FROM m WHERE dedup_key IS NOT NULL GROUP BY 1,2 HAVING count(*)>1) x),\n 'same_event_marker_groups',(SELECT count(*) FROM (SELECT organization_id,contact_id,account_id,marker_id,sense,evidence_ref FROM m GROUP BY 1,2,3,4,5,6 HAVING count(*)>1) x),\n 'eligible_now',(SELECT count(*) FROM eligible),\n 'snapshot_groups',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT entity_type,status,params_version,registry_version,count(*) AS n,count(*) FILTER(WHERE score IS NOT NULL) AS scored,count(*) FILTER(WHERE reliability IS NULL) AS reliability_null,min(reliability) AS reliability_min,max(reliability) AS reliability_max,count(*) FILTER(WHERE verdict_allowed) AS verdict_true,count(distinct entity_id) AS entities,min(at) AS first_at,max(at) AS last_at FROM scoring.score_snapshot GROUP BY 1,2,3,4 ORDER BY 1,2) x),\n 'snapshot_integrity',(SELECT jsonb_build_object('future',count(*) FILTER(WHERE at>now()),'score_out_of_range',count(*) FILTER(WHERE score<0 OR score>100),'reliability_out_of_range',count(*) FILTER(WHERE reliability<0 OR reliability>1),'dyad_entity_not_contact',count(*) FILTER(WHERE entity_type='dyad' AND entity_id IS DISTINCT FROM contact_id),'account_entity_not_account',count(*) FILTER(WHERE entity_type='account' AND entity_id IS DISTINCT FROM account_id),'verdict_without_score',count(*) FILTER(WHERE verdict_allowed AND score IS NULL),'verdict_reliability_null_or_below_06',count(*) FILTER(WHERE verdict_allowed AND (reliability IS NULL OR reliability<0.6))) FROM scoring.score_snapshot),\n 'snapshot_duplicate_groups',(SELECT count(*) FROM (SELECT entity_type,entity_id,snapshot_month,params_version,registry_version FROM scoring.score_snapshot GROUP BY 1,2,3,4,5 HAVING count(*)>1) x),\n 'dyad_scored_without_eligible_at',(SELECT count(*) FROM scoring.score_snapshot s WHERE s.entity_type='dyad' AND s.score IS NOT NULL AND NOT EXISTS(SELECT 1 FROM eligible e WHERE e.scope='person' AND e.organization_id=s.organization_id AND e.contact_id=s.contact_id AND e.registry_version=s.registry_version AND e.observed_at<=s.at)),\n 'dyad_verdict_under_5_distinct_refs',(SELECT count(*) FROM scoring.score_snapshot s WHERE s.entity_type='dyad' AND s.verdict_allowed AND (SELECT count(distinct e.evidence_ref) FROM eligible e WHERE e.scope='person' AND e.organization_id=s.organization_id AND e.contact_id=s.contact_id AND e.registry_version=s.registry_version AND e.observed_at<=s.at)<5),\n 'account_scored_without_any_eligible_at',(SELECT count(*) FROM scoring.score_snapshot s WHERE s.entity_type='account' AND s.score IS NOT NULL AND NOT EXISTS(SELECT 1 FROM eligible e WHERE e.organization_id=s.organization_id AND e.account_id=s.account_id AND e.registry_version=s.registry_version AND e.observed_at<=s.at)),\n 'coverage_columns',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='scoring' AND table_name='score_snapshot' AND column_name IN ('extraction_window','reliability','axes_or_dials','collaborator_user_id','dyad_id')) x),\n 'snapshot_extraction_window_null',(SELECT count(*) FROM scoring.score_snapshot WHERE extraction_window IS NULL),\n 'snapshot_dials_coverage',(SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT entity_type,count(*) n,count(*) FILTER(WHERE axes_or_dials ? 'd_couverture') has_coverage_dial,count(*) FILTER(WHERE axes_or_dials ? 'd_couverture' AND axes_or_dials->'d_couverture'->>'value' IS NOT NULL) measured_coverage_dial FROM scoring.score_snapshot GROUP BY entity_type) x),\n 'roles',(SELECT jsonb_build_object('total',count(*),'active',count(*) FILTER(WHERE active),'no_observed_at',count(*) FILTER(WHERE observed_at IS NULL),'no_confidence',count(*) FILTER(WHERE confidence IS NULL),'no_decision_role',count(*) FILTER(WHERE nullif(btrim(decision_role),'') IS NULL)) FROM public.account_contact_roles),\n 'contact_population',(SELECT jsonb_build_object('all',count(*),'tracked',count(*) FILTER(WHERE is_tracked),'merged',count(*) FILTER(WHERE merged_into_contact_id IS NOT NULL),'no_account',count(*) FILTER(WHERE company_id IS NULL),'no_owner',count(*) FILTER(WHERE owner_user_id IS NULL)) FROM public.contacts),\n 'source_integrity',(SELECT jsonb_build_object('messages',count(*),'body_missing',count(*) FILTER(WHERE body_text IS NULL),'source_owner_missing',count(*) FILTER(WHERE source_owner_user_id IS NULL),'metadata_user_missing',count(*) FILTER(WHERE metadata->>'user_id' IS NULL),'contact_missing',count(*) FILTER(WHERE contact_id IS NULL)) FROM public.communication_messages),\n 'flags',(SELECT jsonb_agg(to_jsonb(f)) FROM public.feature_flags f)\n) AS integrity;\n",
+  "result": [
+    {
+      "integrity": {
+        "flags": [
+          {
+            "key": "account_facts_engine",
+            "enabled": false,
+            "rollout": {
+              "mode": "off"
+            },
+            "updated_at": "2026-09-14T19:40:09.007818+00:00",
+            "updated_by": null,
+            "description": "M\u00e9moire account_facts (M2) branch\u00e9e en lecture"
+          },
+          {
+            "key": "scoring_v6_shadow",
+            "enabled": false,
+            "rollout": {
+              "mode": "off"
+            },
+            "updated_at": "2026-09-14T19:40:09.007818+00:00",
+            "updated_by": null,
+            "description": "\u00c9criture des marker_event + score_snapshot V6 en shadow"
+          },
+          {
+            "key": "relevance_engine_v1",
+            "enabled": false,
+            "rollout": {
+              "mode": "off"
+            },
+            "updated_at": "2026-09-14T19:40:09.007818+00:00",
+            "updated_by": null,
+            "description": "Priorit\u00e9s calcul\u00e9es par le relevance engine v1"
+          },
+          {
+            "key": "account_brain_v2",
+            "enabled": false,
+            "rollout": {
+              "mode": "off"
+            },
+            "updated_at": "2026-09-14T19:40:09.007818+00:00",
+            "updated_by": null,
+            "description": "Fiche compte servie par l'RPC account_brain"
+          },
+          {
+            "key": "scoring_v6_ui",
+            "enabled": true,
+            "rollout": {
+              "mode": "orgs",
+              "org_ids": [
+                "10d6a550-8ee0-4e81-9356-875cb6ad8c80",
+                "a4a85f3e-7759-4c5d-94b1-42f013ae35cb"
+              ]
+            },
+            "updated_at": "2026-09-15T05:24:58.08174+00:00",
+            "updated_by": null,
+            "description": "Affichage de la M\u00e9t\u00e9o/score V6 dans l'UI"
+          },
+          {
+            "key": "scoring_v6_dedup",
+            "enabled": true,
+            "rollout": {
+              "mode": "orgs",
+              "org_ids": [
+                "10d6a550-8ee0-4e81-9356-875cb6ad8c80",
+                "a4a85f3e-7759-4c5d-94b1-42f013ae35cb"
+              ]
+            },
+            "updated_at": "2026-09-15T07:13:20.748942+00:00",
+            "updated_by": null,
+            "description": "D\u00e9dup recos : une reco terminale (completed/dismissed) ne revient pas sans nouveau fait significatif post\u00e9rieur (org_ids = organisations t\u00e9moins)"
+          }
+        ],
+        "roles": {
+          "total": 0,
+          "active": 0,
+          "no_confidence": 0,
+          "no_observed_at": 0,
+          "no_decision_role": 0
+        },
+        "eligible_now": 342,
+        "marker_total": 386,
+        "marker_groups": [
+          {
+            "n": 2,
+            "scope": "person",
+            "source": "detector:communication_messages",
+            "marker_id": "A01",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 88,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "A01",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 99,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "A02",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 3,
+            "scope": "person",
+            "source": "detector:communication_messages",
+            "marker_id": "A02",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 2,
+            "scope": "person",
+            "source": "classifier:extract",
+            "marker_id": "E02",
+            "is_verbatim": true,
+            "is_candidate": false,
+            "detector_version": "semantic-classifier-v1"
+          },
+          {
+            "n": 3,
+            "scope": "person",
+            "source": "classifier:extract",
+            "marker_id": "E04",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "semantic-classifier-v1"
+          },
+          {
+            "n": 1,
+            "scope": "person",
+            "source": "classifier:extract",
+            "marker_id": "E04",
+            "is_verbatim": true,
+            "is_candidate": false,
+            "detector_version": "semantic-classifier-v1"
+          },
+          {
+            "n": 25,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "E05",
+            "is_verbatim": false,
+            "is_candidate": true,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 1,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "R01",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 19,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "R02",
+            "is_verbatim": false,
+            "is_candidate": true,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 2,
+            "scope": "person",
+            "source": "detector:communication_messages",
+            "marker_id": "S04",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          },
+          {
+            "n": 141,
+            "scope": "person",
+            "source": "detector:detectors-v1",
+            "marker_id": "S04",
+            "is_verbatim": false,
+            "is_candidate": false,
+            "detector_version": "detectors-v1"
+          }
+        ],
+        "snapshot_groups": [
+          {
+            "n": 223,
+            "scored": 223,
+            "status": null,
+            "last_at": "2026-09-16T18:20:01.867+00:00",
+            "entities": 223,
+            "first_at": "2026-09-16T18:20:01.867+00:00",
+            "entity_type": "account",
+            "verdict_true": 0,
+            "params_version": "params-v6.0-palier",
+            "reliability_max": null,
+            "reliability_min": null,
+            "registry_version": "reg-v6.0",
+            "reliability_null": 223
+          },
+          {
+            "n": 8,
+            "scored": 8,
+            "status": "actif",
+            "last_at": "2026-09-16T18:20:01.867+00:00",
+            "entities": 8,
+            "first_at": "2026-09-16T18:20:01.867+00:00",
+            "entity_type": "dyad",
+            "verdict_true": 2,
+            "params_version": "params-v6.0-palier",
+            "reliability_max": 0.875,
+            "reliability_min": 0.125,
+            "registry_version": "reg-v6.0",
+            "reliability_null": 0
+          },
+          {
+            "n": 146,
+            "scored": 0,
+            "status": "cold_start",
+            "last_at": "2026-09-16T18:20:01.867+00:00",
+            "entities": 146,
+            "first_at": "2026-09-16T00:20:00.492+00:00",
+            "entity_type": "dyad",
+            "verdict_true": 0,
+            "params_version": "params-v6.0-palier",
+            "reliability_max": 0.375,
+            "reliability_min": 0,
+            "registry_version": "reg-v6.0",
+            "reliability_null": 0
+          },
+          {
+            "n": 2,
+            "scored": 2,
+            "status": "ralenti",
+            "last_at": "2026-09-16T18:20:01.867+00:00",
+            "entities": 2,
+            "first_at": "2026-09-16T18:20:01.867+00:00",
+            "entity_type": "dyad",
+            "verdict_true": 1,
+            "params_version": "params-v6.0-palier",
+            "reliability_max": 0.625,
+            "reliability_min": 0.5,
+            "registry_version": "reg-v6.0",
+            "reliability_null": 0
+          },
+          {
+            "n": 68,
+            "scored": 68,
+            "status": "rompu",
+            "last_at": "2026-09-16T18:20:01.867+00:00",
+            "entities": 68,
+            "first_at": "2026-09-16T00:20:00.492+00:00",
+            "entity_type": "dyad",
+            "verdict_true": 6,
+            "params_version": "params-v6.0-palier",
+            "reliability_max": 1,
+            "reliability_min": 0,
+            "registry_version": "reg-v6.0",
+            "reliability_null": 0
+          }
+        ],
+        "coverage_columns": [
+          {
+            "data_type": "jsonb",
+            "column_name": "extraction_window"
+          },
+          {
+            "data_type": "jsonb",
+            "column_name": "axes_or_dials"
+          },
+          {
+            "data_type": "numeric",
+            "column_name": "reliability"
+          }
+        ],
+        "dedup_key_groups": 0,
+        "marker_integrity": {
+          "future": 0,
+          "resolved": 0,
+          "candidate": 44,
+          "deprecated": 0,
+          "missing_dyad": 386,
+          "distinct_accounts": 96,
+          "distinct_contacts": 155,
+          "missing_dedup_key": 0,
+          "deprecated_registry": 0,
+          "missing_collaborator": 379,
+          "missing_evidence_ref": 0,
+          "missing_evidence_text": 0,
+          "distinct_collaborators": 1,
+          "unknown_registry_marker": 0
+        },
+        "source_integrity": {
+          "messages": 4942,
+          "body_missing": 4942,
+          "contact_missing": 0,
+          "source_owner_missing": 4942,
+          "metadata_user_missing": 0
+        },
+        "contact_population": {
+          "all": 543,
+          "merged": 0,
+          "tracked": 50,
+          "no_owner": 0,
+          "no_account": 115
+        },
+        "snapshot_integrity": {
+          "future": 0,
+          "score_out_of_range": 0,
+          "verdict_without_score": 0,
+          "dyad_entity_not_contact": 0,
+          "reliability_out_of_range": 0,
+          "account_entity_not_account": 0,
+          "verdict_reliability_null_or_below_06": 0
+        },
+        "snapshot_dials_coverage": [
+          {
+            "n": 224,
+            "entity_type": "dyad",
+            "has_coverage_dial": 0,
+            "measured_coverage_dial": 0
+          },
+          {
+            "n": 223,
+            "entity_type": "account",
+            "has_coverage_dial": 223,
+            "measured_coverage_dial": 223
+          }
+        ],
+        "same_event_marker_groups": 6,
+        "snapshot_duplicate_groups": 0,
+        "marker_organization_mismatch": 0,
+        "dyad_scored_without_eligible_at": 13,
+        "snapshot_extraction_window_null": 447,
+        "dyad_verdict_under_5_distinct_refs": 0,
+        "account_scored_without_any_eligible_at": 127
+      }
+    }
+  ]
+}

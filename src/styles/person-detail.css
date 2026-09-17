@@ -1993,6 +1993,17 @@
 .person-hero .v48-eyebrow{margin-bottom:7px}
 .ra-content .pp>.v48-identity-card.person-hero .hero-name{margin-bottom:7px}
 .ra-content .pp>.v48-identity-card.person-hero .hero-sub{margin-bottom:0}
+/* Ligne organisation qui remplace le fil d'ariane « Personnes / Nom » du header
+   Fiche Personne : pastille + nom de compte + flèche, mène vers la fiche Compte. */
+.v48-org-eyebrow{display:inline-flex;align-items:center;gap:7px;margin-bottom:9px;text-decoration:none;cursor:pointer}
+.v48-org-eyebrow-badge{width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--violet);color:#fff;font-family:var(--font);font-size:8.5px;font-weight:800}
+.v48-org-eyebrow-name{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--violet)}
+.v48-org-eyebrow>span:last-child{color:var(--violet);font-size:11px}
+.v48-org-eyebrow:hover .v48-org-eyebrow-name{text-decoration:underline}
+/* Action d'édition du nom, relocalisée discrètement en fin de ligne descriptive
+   (l'ancien crayon collé au nom rompait la lecture éditoriale du header). */
+.hero-edit-discreet{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:2px;padding:0;background:none;border:0;border-radius:5px;color:#b9b2cc;cursor:pointer;font-size:10px;opacity:.7;flex:none}
+.hero-edit-discreet:hover{opacity:1;background:#f4f1fc;color:var(--violet)}
 /* Avatar centré sur le nom (gras, gros), pas sur l'ensemble fil d'ariane + nom :
    décalé du haut de la hauteur du fil d'ariane, moins la moitié de l'écart de
    hauteur avatar/nom. Retour testing. */
@@ -2118,30 +2129,37 @@
 
 /* V48 — Profil */
 .v48-person-profile{display:grid;gap:12px}
-/* Blocs « Prochain RDV » et « Posture à adopter » indépendants (pas 2 blocs dans un bloc blanc). Retour testing P3.5. */
-.v48-person-profile .now{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;margin-bottom:12px;align-items:stretch}
-/* min-height (pas height) : la grille étire les deux cartes sur la même hauteur — celle
-   de la plus haute des deux — quel que soit le contenu (ex. « Aucun rendez-vous
-   synchronisé » plus long que la date d'un rendez-vous réel). Les textes sont bornés
-   ci-dessous (1 puis 2 lignes) pour que cette hauteur reste stable dans les deux états. */
-.v48-person-profile .rdv,.v48-person-profile .po{min-height:104px;border-radius:12px}
-.v48-person-profile .rdv{display:flex;align-items:center;gap:14px;padding:15px 18px;background:var(--violet);color:#fff}
-.v48-person-profile .rdv-icon{flex:0 0 auto}.v48-person-profile .rdv-icon svg{width:22px;height:22px}
-.v48-person-profile .rdv>div{min-width:0;flex:1}.v48-person-profile .rdv-l{margin:0;display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;opacity:.72}
-.v48-person-profile .rdv-t{margin:3px 0 2px;font-family:var(--font);font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.v48-person-profile .rdv-s{margin:0;opacity:.78;font-size:10px;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
-.v48-person-profile .lvb2{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.16);font-family:var(--mono);font-size:8px;letter-spacing:.1em}
-.v48-person-profile .lvd{width:5px;height:5px;border-radius:50%;background:#96ddb8;animation:v48-pulse 1.9s ease-in-out infinite}
-.v48-person-profile .rdv-b{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;border:1px solid #fff;border-radius:999px;padding:7px 13px;white-space:nowrap;background:#fff;color:var(--violet);cursor:pointer;text-decoration:none}
-.v48-person-profile .rdv-b svg{width:14px;height:14px}.v48-person-profile .rdv-b:hover{background:rgba(255,255,255,.88)}
-.v48-person-profile .rdv-b:disabled{opacity:.6;cursor:default;pointer-events:none}
-.v48-person-profile .rdv-actions{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.v48-person-profile .rdv-actions .rdv-b{margin-left:0}
-.v48-person-profile .po{padding:18px 20px;background:var(--lav);display:flex;flex-direction:column;justify-content:center}
-.v48-person-profile .po-l{margin:0;display:flex;align-items:center;gap:10px;color:var(--violet);font-size:9px;letter-spacing:.18em;text-transform:uppercase}
-.v48-person-profile .po-t{margin:9px 0 0;font-family:var(--font);font-size:16px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
-.v48-person-profile .po-t em{font-style:normal;color:var(--violet)}
-@media (max-width:1080px){.v48-person-profile .now{grid-template-columns:1fr}}
+
+/* Carte unifiée « Posture à adopter » (2e bloc du Profil) : une seule grande carte
+   indigo/violet nuit, plutôt que les deux cartes « Prochain RDV » + « Posture »
+   d'avant — la posture devient le sujet du bloc, pas l'agenda. */
+.v48-person-profile .posture-card{
+  display:flex;align-items:flex-start;gap:28px;margin-bottom:12px;padding:20px 26px;
+  border-radius:20px;background:linear-gradient(150deg,var(--night),var(--night2));
+  color:#fff;box-shadow:0 12px 28px rgba(26,16,64,.2);
+}
+.v48-person-profile .posture-main{flex:3 1 0;min-width:0}
+.v48-person-profile .posture-label{margin:0;display:flex;align-items:center;flex-wrap:wrap;color:#C9B8FF;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.v48-person-profile .posture-date{color:rgba(201,184,255,.6);font-weight:400}
+.v48-person-profile .posture-synthesis{margin:8px 0 0;display:grid;gap:3px}
+.v48-person-profile .posture-synthesis p{margin:0;font-family:var(--font);font-size:15px;font-weight:700;line-height:1.5;letter-spacing:-.005em}
+.v48-person-profile .posture-synthesis p:not(:first-child){font-weight:400;color:rgba(255,255,255,.72)}
+.v48-person-profile .posture-synthesis em{font-style:normal;font-weight:800;color:#C9B8FF}
+.v48-person-profile .posture-synthesis.empty{font-family:var(--sans);font-size:13px;font-weight:400;color:rgba(255,255,255,.7);line-height:1.55}
+.v48-person-profile .posture-rules{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.v48-person-profile .posture-chip{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-family:var(--font);font-size:10.5px;font-weight:600;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.92)}
+.v48-person-profile .posture-chip.dont{background:rgba(217,79,99,.14);border-color:rgba(217,79,99,.3);color:#F3B9C2}
+.v48-person-profile .posture-side{flex:1 1 0;min-width:0;padding-left:24px;border-left:1px solid rgba(255,255,255,.14)}
+.v48-person-profile .posture-side-h{margin:0;color:rgba(255,255,255,.48);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.v48-person-profile .posture-traits{display:grid;gap:6px;margin-top:8px}
+.v48-person-profile .posture-trait{margin:0;font-family:var(--sans);font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.8);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.v48-person-profile .posture-trait-score{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--violet-l)}
+.v48-person-profile .posture-trait b{color:#fff;font-family:var(--font);font-weight:800}
+.v48-person-profile .posture-side-foot{margin:10px 0 0;padding-top:9px;border-top:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.42);font-family:var(--mono);font-size:9px;letter-spacing:.03em;line-height:1.5}
+@media (max-width:900px){
+  .v48-person-profile .posture-card{flex-direction:column;gap:16px;padding:20px}
+  .v48-person-profile .posture-side{flex:1 1 auto;padding-left:0;padding-top:16px;border-left:0;border-top:1px solid rgba(255,255,255,.14)}
+}
 
 /* Primitives de carte V57 partagées par tous les onglets Personne (Profil ET Relation).
    Pas de margin-top ici : l'espacement vertical vient du gap des grilles parentes
@@ -2177,9 +2195,19 @@
 .v48-tipx-d{font-size:11.5px;line-height:1.5;margin:0}
 .v48-tipx-p{font-size:11.5px;line-height:1.5;margin:7px 0 0;padding-top:7px;border-top:1px solid #35275F}
 .v48-tipx-p b{color:#C9BCF2}
-.v48-tipx-e{margin:0;padding:0;list-style:none}
-.v48-tipx-e li{font-size:11.5px;line-height:1.5;padding:4px 0 4px 13px;position:relative}
-.v48-tipx-e li::before{content:"";position:absolute;left:0;top:11px;width:5px;height:5px;border-radius:50%;background:var(--violet)}
+
+/* Popover « preuves » d'un trait (bloc « Le profil en détail ») : preuves +
+   logos des connecteurs source, dans l'esprit violet nuit premium de la fiche. */
+.ev-anchor{display:inline-flex;flex:0 0 auto}
+.ev-pop{position:fixed;z-index:220;width:300px;max-width:calc(100vw - 16px);background:linear-gradient(150deg,var(--night),var(--night2));color:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 16px 36px rgba(26,16,64,.32);}
+.ev-pop-t{margin:0 0 9px;font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#C9B8FF}
+.ev-pop-l{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.ev-pop-l li{font-family:var(--sans);font-size:12px;line-height:1.5;color:rgba(255,255,255,.88);padding-left:13px;position:relative}
+.ev-pop-l li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:var(--violet-l)}
+.ev-pop-empty{margin:0;font-family:var(--sans);font-size:12px;color:rgba(255,255,255,.6)}
+.ev-pop-src{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(255,255,255,.12)}
+.ev-src{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.7)}
+.ev-src svg{width:12px;height:12px}
 
 .v48-tab-panel .lvs{margin-top:auto;padding-top:14px}
 .v48-tab-panel .lvs-h{display:flex;align-items:center;gap:9px;margin:0 0 8px;color:var(--t2);font-family:var(--mono);font-size:9px}
@@ -2271,20 +2299,6 @@
 .v48-person-profile .dm-v{font-family:var(--font);font-weight:800;font-size:14.5px;text-align:right;color:var(--dc,var(--violet))}
 @media (max-width:760px){.v48-person-profile .dm{grid-template-columns:86px 1fr 30px}.v48-person-profile .dm-p{display:none}}
 
-.v48-shm{position:fixed;inset:0;z-index:500;background:rgba(26,16,64,.32);display:flex;align-items:center;justify-content:center;padding:24px}
-.v48-shp{width:min(430px,100%);max-height:86vh;overflow:auto;background:#fff;border:1px solid var(--grid);border-radius:18px;padding:22px 24px 24px}
-.v48-shp-h{display:flex;align-items:center;margin:0 0 10px}
-.v48-shp-t{font-family:var(--font);font-weight:800;font-size:17px;margin:0;letter-spacing:-.015em}
-.v48-shp-x{margin-left:auto;width:28px;height:28px;border-radius:50%;border:1px solid var(--grid);background:#fff;color:var(--t2);cursor:pointer;font-size:15px;line-height:1;padding:0}
-.v48-shp-x:hover{border-color:var(--violet);color:var(--violet)}
-.v48-shp-i{margin:0 0 18px;font-size:12px;line-height:1.55;color:var(--t2)}
-.v48-shp-l{margin:0 0 8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3)}
-.v48-shp-lk{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--grid);border-radius:11px;background:var(--lav);margin-bottom:8px}
-.v48-shp-lk span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px;color:var(--t2)}
-.v48-shp-cp{flex:0 0 auto;padding:6px 12px;border:1px solid var(--grid);border-radius:999px;background:#fff;color:var(--violet);font-family:var(--mono);font-size:9.5px;cursor:pointer}
-.v48-shp-cp:hover{background:var(--violet);border-color:var(--violet);color:#fff}
-.v48-shp-n{margin:0;font-size:10.5px;color:var(--t3)}
-.v48-shp-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:16px}
 
 /* V48 — Relation */
 .v48-person-relation,.v48-account-relation{display:grid;gap:12px}
@@ -2301,24 +2315,93 @@
 .v48-commitment-list article>span,.v48-strategy-list article>div>span{color:var(--violet);font-size:9px;letter-spacing:.1em;text-transform:uppercase}.v48-commitment-list h3,.v48-strategy-list h3{margin:5px 0;font-family:var(--font);font-size:14px}
 .v48-commitment-list p,.v48-strategy-list p{margin:0;color:#5f5878;font-size:11px;line-height:1.5}.v48-commitment-list small,.v48-strategy-list small{display:block;margin-top:7px;color:#8b84a3;font-size:9px}
 
-/* V57 — carte de score personne (onglet Relation) */
-.v48-person-relation .cols{display:grid;grid-template-columns:minmax(0,42fr) minmax(0,58fr);gap:16px;align-items:stretch}
-.v48-person-relation .cols>.sec>.sec-b{display:flex;flex-direction:column}
-@media (max-width:1080px){.v48-person-relation .cols{grid-template-columns:1fr}}
-.v48-person-relation .rel-top{display:flex;align-items:baseline;gap:14px;margin:0 0 4px}
-.v48-person-relation .big{margin:0;font-family:var(--font);font-weight:800;font-size:56px;line-height:1;letter-spacing:-.03em}
-.v48-person-relation .evo{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:#EEF8F2;color:#1E6B47;font-size:10px}
-.v48-person-relation .evo.down{background:#FDF1F3;color:#A6303F}
-.v48-person-relation .rel-tbc{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;background:var(--bg2);color:var(--t2);border:1px dashed var(--grid);font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;cursor:help;align-self:center}
-.v48-person-relation .mini{display:flex;gap:18px;margin:0 0 10px;font-family:var(--mono);font-size:11px;color:var(--t2)}
-.v48-person-relation .mini b{font-family:var(--font);font-weight:800;color:var(--t1)}
-.v48-person-relation .rel-narrative{margin:0 0 16px;padding:10px 12px;border-radius:11px;background:var(--lav);color:var(--t2);font-size:11.5px;line-height:1.55}
-.v48-person-relation .seg{display:inline-flex;margin-left:auto;background:#F2EFFA;border-radius:9px;padding:3px}
-.v48-person-relation .seg span{font-size:10.5px;letter-spacing:.08em;color:var(--t2);padding:6px 13px;border-radius:7px;cursor:pointer}
-.v48-person-relation .seg span.on{background:#fff;color:var(--t1);border:1px solid var(--grid)}
-.v48-person-relation .chart{display:flex;align-items:flex-end;gap:6px;height:120px;margin:6px 0}
-.v48-person-relation .chart i{flex:1;border-radius:6px 6px 3px 3px;display:block;cursor:default}
-.v48-person-relation .ch-x{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--t3);margin:0 0 6px}
+/* V57 — carte unique « Où on en est / Météo » (2e bloc, onglet Relation) —
+   remplace les cartes « Notre relation » + « Engagements pris » côte à côte. */
+.v48-person-relation .rel-overview{
+  display:flex;align-items:flex-start;gap:28px;padding:22px 28px;
+  border-radius:22px;background:linear-gradient(150deg,var(--night),var(--night2));
+  color:#fff;box-shadow:0 14px 32px rgba(26,16,64,.22);
+}
+.v48-person-relation .rel-overview-main{flex:3 1 0;min-width:0}
+.v48-person-relation .rel-overview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v48-person-relation .rel-overview-label{margin:0;color:#C9B8FF;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.v48-person-relation .rel-overview-date{color:rgba(201,184,255,.6);font-weight:400}
+.v48-person-relation .rel-lens{display:inline-flex;padding:3px;border-radius:999px;border:1px solid rgba(201,184,255,.35)}
+.v48-person-relation .rel-lens span{padding:5px 12px;border-radius:999px;font-family:var(--font);font-size:10.5px;font-weight:700;color:rgba(255,255,255,.6)}
+.v48-person-relation .rel-lens span.on{background:#fff;color:var(--t1)}
+.v48-person-relation .rel-lens span[aria-disabled]{cursor:not-allowed;color:rgba(255,255,255,.3)}
+.v48-person-relation .rel-overview-text{margin:12px 0 0;font-family:var(--font);font-size:15px;font-weight:500;line-height:1.6;color:rgba(255,255,255,.94)}
+.v48-person-relation .rel-overview-text em{font-style:normal;font-weight:800;color:#C9B8FF}
+.v48-person-relation .rel-overview-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.v48-person-relation .rel-overview-chip{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-family:var(--font);font-size:10.5px;font-weight:600;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.92)}
+.v48-person-relation .rel-overview-chip.critical{background:rgba(217,79,99,.14);border-color:rgba(217,79,99,.3);color:#F3B9C2}
+.v48-person-relation .rel-overview-side{flex:1 1 0;min-width:0;padding-left:24px;border-left:1px solid rgba(255,255,255,.14)}
+.v48-person-relation .rel-weather-head{display:flex;align-items:center;gap:8px}
+.v48-person-relation .rel-weather-ic{flex:0 0 auto;color:#C9B8FF}.v48-person-relation .rel-weather-ic svg{width:18px;height:18px}
+.v48-person-relation .rel-weather-score{margin:0;font-family:var(--font);font-weight:800;font-size:30px;line-height:1;letter-spacing:-.02em}
+.v48-person-relation .rel-weather-score small{font-size:12px;font-weight:600;color:rgba(255,255,255,.5);margin-left:2px}
+.v48-person-relation .rel-weather-info{margin-left:auto;flex:0 0 auto;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.24);background:none;color:rgba(255,255,255,.6);font-family:var(--font);font-weight:800;font-size:10px;cursor:pointer}
+.v48-person-relation .rel-weather-info:hover{border-color:#fff;color:#fff}
+.v48-person-relation .rel-weather-label{display:flex;align-items:center;gap:8px;margin:6px 0 0;color:rgba(255,255,255,.48);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.v48-person-relation .rel-tbc{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px dashed rgba(255,255,255,.24);font-family:var(--mono);font-size:8.5px;letter-spacing:.04em;text-transform:none;cursor:help}
+.v48-person-relation .rel-weather-delta{margin:8px 0 0;font-family:var(--mono);font-size:11px;font-weight:700}
+.v48-person-relation .rel-weather-delta span{font-weight:400;color:rgba(255,255,255,.5)}
+.v48-person-relation .rel-weather-delta.up{color:#8ED9A8}
+.v48-person-relation .rel-weather-delta.down{color:#F3B9C2}
+.v48-person-relation .rel-trend{margin-top:14px}
+.v48-person-relation .rel-trend-svg{display:block;width:100%;height:46px}
+.v48-person-relation .rel-trend-area{fill:rgba(201,184,255,.16);stroke:none}
+.v48-person-relation .rel-trend-line{fill:none;stroke:var(--violet-l);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+.v48-person-relation .rel-trend-dot{fill:#fff}
+.v48-person-relation .rel-trend-x{display:flex;justify-content:space-between;margin-top:4px;font-family:var(--mono);font-size:8.5px;color:rgba(255,255,255,.4)}
+.v48-person-relation .rel-trend-sum{margin:8px 0 0;padding-top:8px;border-top:1px solid rgba(255,255,255,.1);font-family:var(--mono);font-size:9px;letter-spacing:.02em;color:rgba(255,255,255,.42);line-height:1.5}
+@media (max-width:900px){
+  .v48-person-relation .rel-overview{flex-direction:column;gap:18px;padding:20px}
+  .v48-person-relation .rel-overview-side{flex:1 1 auto;padding-left:0;padding-top:18px;border-left:0;border-top:1px solid rgba(255,255,255,.14)}
+}
+
+/* Fiche Personne · Relation · Météo détaillée. */
+.v48-person-relation .pw-sec{background:var(--white);border:1px solid var(--border);border-radius:var(--r-xl);box-shadow:var(--sh-sm);padding:20px 22px;margin-top:16px}
+.v48-person-relation .pw-sec-h{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.v48-person-relation .pw-sec-ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--violet-s);color:var(--violet);flex:none}
+.v48-person-relation .pw-sec-ic svg{width:16px;height:16px}
+.v48-person-relation .pw-sec-t{margin:0;color:#5f5878;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase}
+.v48-person-relation .pw-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;width:100%}
+.v48-person-relation .pw-t{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;border-radius:12px;border:1px solid var(--border-m);background:#fff;cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s}
+.v48-person-relation .pw-t:hover{border-color:var(--violet)}
+.v48-person-relation .pw-t.on{border:1.5px solid var(--violet);box-shadow:0 0 0 1px rgba(110,80,200,.08)}
+.v48-person-relation .pw-t-ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--violet-s);color:var(--violet)}
+.v48-person-relation .pw-t-ic svg{width:15px;height:15px}
+.v48-person-relation .pw-t-nm{font-family:var(--font);font-size:11px;font-weight:700;color:var(--t2);white-space:nowrap}
+.v48-person-relation .pw-t-score{width:100%;display:flex;align-items:end;justify-content:space-between;gap:4px}
+.v48-person-relation .pw-t-score strong{font-family:var(--font);font-size:27px;font-weight:800;line-height:1;letter-spacing:-.035em}
+.v48-person-relation .pw-t-w{font-family:var(--mono);font-size:9px;color:var(--t3);padding-bottom:2px}
+.v48-person-relation .pw-t-g{position:relative;display:block;width:100%;height:4px;margin:3px 0;border-radius:99px;background:var(--border-m)}
+.v48-person-relation .pw-t-g i{position:absolute;inset:0 auto 0 0;border-radius:99px;display:block}
+.v48-person-relation .pw-t-g b{position:absolute;top:50%;width:8px;height:8px;border-radius:50%;background:#fff;border:2px solid;transform:translate(-50%,-50%)}
+.v48-person-relation .pw-t-g em{position:absolute;top:50%;height:10px;width:2px;background:var(--violet);transform:translate(-50%,-50%)}
+.v48-person-relation .pw-t-dl{min-height:22px;margin:0;font-family:var(--mono);font-size:9px;line-height:1.25;color:var(--t3)}
+.v48-person-relation .pw-det{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:17px;padding-top:16px;border-top:1px solid var(--border-m)}
+.v48-person-relation .pw-det>div{min-width:0}
+.v48-person-relation .pw-det-q{margin:0 0 8px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3)}
+.v48-person-relation .pw-det-r{margin:0;font-family:var(--font);font-size:15px;font-weight:600;line-height:1.42;color:var(--t1)}
+.v48-person-relation .pw-det-sep{border:0;border-top:1px solid var(--border-m);margin:14px 0 11px}
+.v48-person-relation .pw-det-h{margin:0 0 4px;font-family:var(--font);font-size:12px;font-weight:700;color:var(--t2)}
+.v48-person-relation .pw-det-x{margin:0;font-family:var(--font);font-size:11px;line-height:1.5;color:var(--t3)}
+.v48-person-relation .pw-det-x.muted{font-style:italic}
+.v48-person-relation .pw-det-proofs{display:flex;flex-direction:column}
+.v48-person-relation .pw-proof{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--border-m)}
+.v48-person-relation .pw-proof:first-child{padding-top:0}
+.v48-person-relation .pw-proof:last-child{border-bottom:0}
+.v48-person-relation .pw-proof-dot{width:6px;height:6px;border-radius:50%;flex:none;margin-top:5px}
+.v48-person-relation .pw-proof-main{min-width:0;flex:1}
+.v48-person-relation .pw-proof-meta{margin:0 0 3px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--t2)}
+.v48-person-relation .pw-proof-meta span{font-weight:500;color:var(--t3)}
+.v48-person-relation .pw-proof-text{margin:0;font-family:var(--font);font-size:11px;line-height:1.42;color:var(--t2)}
+.v48-person-relation .pw-proof-source{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--violet);flex:none}
+.v48-person-relation .pw-proof-source svg{width:15px;height:15px}
+@media (max-width:850px){.v48-person-relation .pw-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.v48-person-relation .pw-sec{padding:17px}.v48-person-relation .pw-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.v48-person-relation .pw-det{grid-template-columns:1fr;gap:18px}}
 
 /* V57 — modale méthodologie du score */
 .rel-mask{position:fixed;inset:0;background:rgba(26,16,64,.42);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
@@ -2607,8 +2690,12 @@
 .pp .v48-person-relation .eg.open .eg-s{background:#F4F1FC;color:var(--violet)}
 .pp .v48-person-relation .eg.done{border-color:#DDF0E5}
 .pp .v48-person-relation .eg.done .eg-s{background:#EEF8F2;color:#1E6B47}
+.pp .v48-person-relation .eg.caler .eg-s{background:#EDEAF6;color:#6B6483}
 .pp .v48-person-relation .eg-c{min-width:0;flex:1}
 .pp .v48-person-relation .eg-t{font-family:var(--font);font-weight:800;font-size:14px;margin:0 0 3px}
+/* Impact relationnel (§5) : jamais décoratif — seulement affiché quand un lien
+   réel existe (engagement glissé → axe Confiance, voir getActionImpact). */
+.pp .v48-person-relation .eg-impact{display:inline-block;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#A6303F;background:#FCEEF0;border-radius:999px;padding:3px 9px;margin:0 0 5px}
 .pp .v48-person-relation .eg-d{font-size:11.5px;color:var(--t2);margin:0;line-height:1.55}
 .pp .v48-person-relation .eg-due{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--violet);background:#F4F1FC;border-radius:999px;padding:3px 9px;margin:6px 0 0}
 .pp .v48-person-relation .eg-due.over{color:#A6303F;background:#FCEEF0}
@@ -2700,20 +2787,6 @@
 .pp .v48-person-relation .hm-tl{margin-bottom:6px}
 .pp .v48-person-relation .hm-note{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 
-/* ── Tooltip au survol des barres du score « Notre relation » ──────────── */
-.pp .v48-person-relation .chart{position:relative}
-.pp .v48-person-relation .chart i{cursor:pointer;transition:filter .12s}
-.pp .v48-person-relation .chart i:hover{filter:brightness(1.08)}
-.pp .ch-tip{position:absolute;bottom:calc(100% + 8px);transform:translateX(-50%);z-index:30;background:var(--t1);color:#fff;border-radius:10px;padding:8px 11px;min-width:118px;box-shadow:0 12px 32px rgba(20,15,40,.32);pointer-events:none;white-space:nowrap}
-.pp .ch-tip-m{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:3px}
-.pp .ch-tip-v{font-family:var(--font);font-weight:800;font-size:18px;display:flex;align-items:baseline;gap:7px}
-.pp .ch-tip-v small{font-size:10px;font-weight:600;color:rgba(255,255,255,.55)}
-.pp .ch-tip-v span{font-family:var(--mono);font-size:10px;font-weight:700}
-.pp .ch-tip-v span.up{color:#7BE0A8}
-.pp .ch-tip-v span.down{color:#F4A0AD}
-.pp .ch-tip-s{font-family:var(--mono);font-size:9.5px;color:rgba(255,255,255,.65);margin-top:2px}
-.pp .ch-tip-e{font-size:11px;color:rgba(255,255,255,.7)}
-.pp .ch-tip-x{font-family:var(--font);font-weight:700;font-size:10px;color:#CDBBFF;margin-top:4px;white-space:normal;max-width:190px;line-height:1.35}
 
 /* ── Affectation owner + visibilité (carte identité) ──────────────────── */
 .pp .v48-affect{position:relative;display:flex;flex-direction:column;gap:16px}

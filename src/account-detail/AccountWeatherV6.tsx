@@ -7,6 +7,7 @@
 // règle d'affichage fiabilité (displayRule).
 import { useEffect, useMemo, useState } from 'react'
 import { fetchAccountBrain, fetchAccountDyadSnapshots, rankDelta, rankSignals, type AccountBrainDTO, type AccountDyadSnapshotSummary, type FactKind, type RankedSignal } from '../services/account-brain/accountBrain'
+import { V6_PRODUCT_AUTHORITY } from '../services/scoring/productAuthority'
 import { displayRule } from '../services/scoring/snapshots'
 import { PARAMS_V6_PALIER, REGISTRY_V6 } from '../services/scoring/registry-v6'
 import type { DialContribution, DialId, DialResult } from '../services/scoring/types'
@@ -243,7 +244,7 @@ function sparkPath(scores: number[], w: number, h: number): string {
  *  2 points réels, on affiche un état vide propre, jamais une courbe fabriquée. */
 export function WeatherHero({ brain }: { brain: AccountBrainDTO | null }) {
   const w = brain?.weather
-  if (!w || w.status !== 'available') return null
+  if (!V6_PRODUCT_AUTHORITY || !w || w.status !== 'available') return null
   const tone = scoreBand(w.score ?? null)
   const real = (w.history ?? [])
     .filter((h): h is { snapshot_month: string; score: number } => h.score !== null && h.score !== undefined)
@@ -275,6 +276,9 @@ export function WeatherHero({ brain }: { brain: AccountBrainDTO | null }) {
 }
 
 export function WeatherSection({ brain }: { brain: AccountBrainDTO }) {
+  return V6_PRODUCT_AUTHORITY ? <AuthoritativeWeatherSection brain={brain} /> : null
+}
+function AuthoritativeWeatherSection({ brain }: { brain: AccountBrainDTO }) {
   const w = brain.weather
   const rule = w.status === 'available' && w.reliability != null && w.verdict_allowed != null
     ? displayRule(w.reliability, w.verdict_allowed) : null
@@ -354,7 +358,7 @@ export function useAccountBrain(organizationId: string, companyId: string, enabl
 export function useAccountDyadSnapshots(companyId: string, enabled: boolean) {
   const [snapshots, setSnapshots] = useState<AccountDyadSnapshotSummary[] | null>(null)
   useEffect(() => {
-    if (!enabled) { setSnapshots(null); return }
+    if (!enabled || !V6_PRODUCT_AUTHORITY) { setSnapshots(null); return }
     let cancelled = false
     void fetchAccountDyadSnapshots(companyId).then((rows) => { if (!cancelled) setSnapshots(rows) }).catch(() => { if (!cancelled) setSnapshots(null) })
     return () => { cancelled = true }

@@ -27,16 +27,19 @@ def run(command, **kwargs):
     return subprocess.run(command, cwd=root, text=True, capture_output=True, **kwargs)
 
 
+source_ref = run(['git', 'rev-parse', args.git_ref], check=True).stdout.strip() if args.git_ref else None
+
+
 def source_files(directory):
     if args.git_ref:
-        paths = run(['git', 'ls-tree', '-r', '--name-only', args.git_ref, directory], check=True).stdout.splitlines()
-        return [(p, run(['git', 'show', f'{args.git_ref}:{p}'], check=True).stdout)
+        paths = run(['git', 'ls-tree', '-r', '--name-only', source_ref, directory], check=True).stdout.splitlines()
+        return [(p, run(['git', 'show', f'{source_ref}:{p}'], check=True).stdout)
                 for p in sorted(paths) if p.endswith('.sql')]
     return [(str(p.relative_to(root)), p.read_text()) for p in sorted((root / directory).glob('*.sql'))]
 
 
 report = {'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-          'source': args.git_ref or 'WORKING_TREE', 'image': image,
+          'source': args.git_ref or 'WORKING_TREE', 'resolved_git_commit': source_ref, 'image': image,
           'network': 'none', 'cron_active_jobs': False, 'migrations': [], 'tests': [], 'passed': False}
 try:
     run(['docker', 'run', '-d', '--name', container, '--network', 'none', '--memory', '768m',
