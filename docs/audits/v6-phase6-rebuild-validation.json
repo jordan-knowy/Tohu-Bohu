@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-09-17T18:45:49.466566+00:00",
-  "source": "WORKING_TREE",
-  "resolved_git_commit": null,
+  "timestamp": "2026-09-17T18:46:38.338670+00:00",
+  "source": "HEAD",
+  "resolved_git_commit": "975c158067cfeef8f26e4e5a2212a18eb693a2f2",
   "image": "public.ecr.aws/supabase/postgres:17.6.1.155",
   "network": "none",
   "cron_active_jobs": false,

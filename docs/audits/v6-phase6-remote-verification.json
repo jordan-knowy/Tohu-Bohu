@@ -1,0 +1,150 @@
+{
+  "observed_at": "2026-09-17T18:51:54.976036+00:00",
+  "project_ref": "bgmtzwfafcgjklgygvtx",
+  "database": {
+    "rls": {
+      "scoring.pipeline_run": true,
+      "scoring.foundation_dyad": true,
+      "scoring.account_snapshot": true,
+      "scoring.foundation_revision": true,
+      "scoring.foundation_snapshot": true
+    },
+    "crons": [
+      {
+        "active": true,
+        "jobname": "tohu-bohu-score-v6-account",
+        "schedule": "20 */6 * * *"
+      }
+    ],
+    "counts": {
+      "contacts": 547,
+      "companies": 250,
+      "active_roles": 0,
+      "organizations": 2,
+      "pipeline_runs": 4,
+      "foundation_dyads": 83,
+      "marker_revisions": 0,
+      "account_snapshots": 47,
+      "foundation_revisions": 200,
+      "foundation_snapshots": 166
+    },
+    "routines": {
+      "person_brain": {
+        "owner": "postgres",
+        "security_definer": false
+      },
+      "account_brain": {
+        "owner": "postgres",
+        "security_definer": false
+      },
+      "v6_person_overview": {
+        "owner": "postgres",
+        "security_definer": false
+      },
+      "v6_pipeline_health": {
+        "owner": "postgres",
+        "security_definer": true
+      },
+      "v6_account_overview": {
+        "owner": "postgres",
+        "security_definer": false
+      },
+      "v6_pipeline_run_start": {
+        "owner": "postgres",
+        "security_definer": true
+      },
+      "v6_pipeline_run_finish": {
+        "owner": "postgres",
+        "security_definer": true
+      },
+      "v6_account_portfolio_history": {
+        "owner": "postgres",
+        "security_definer": false
+      }
+    },
+    "integrity": {
+      "duplicate_dyads": 0,
+      "unknown_markers": 0,
+      "duplicate_marker_revisions": 0,
+      "snapshots_without_evidence": 0,
+      "account_available_without_verdict": 0
+    },
+    "migrations": [
+      {
+        "name": "v6_pipeline_observability",
+        "version": "20260917182000"
+      },
+      {
+        "name": "retire_legacy_relational_engine",
+        "version": "20260917180531"
+      },
+      {
+        "name": "v6_canonical_relational_state",
+        "version": "20260917174134"
+      }
+    ],
+    "legacy_tables": {
+      "scoring_marker_event": null,
+      "contact_score_history": null,
+      "person_recommendations": null,
+      "relationship_snapshots": null,
+      "scoring_score_snapshot": null,
+      "account_recommendations": null,
+      "account_strategic_readings": null,
+      "person_relationship_score_snapshots": null,
+      "account_relationship_score_snapshots": null
+    },
+    "account_statuses": {
+      "insufficient_evidence": 47
+    },
+    "canonical_objects": {
+      "pipeline_run": "scoring.pipeline_run",
+      "foundation_dyad": "scoring.foundation_dyad",
+      "account_snapshot": "scoring.account_snapshot",
+      "foundation_revision": "scoring.foundation_revision",
+      "foundation_snapshot": "scoring.foundation_snapshot"
+    },
+    "pipeline_statuses": {
+      "succeeded": 4
+    },
+    "snapshot_statuses": {
+      "insufficient_evidence": 166
+    }
+  },
+  "edge_functions": {
+    "count": 38,
+    "retired_present": [],
+    "canonical": [
+      {
+        "slug": "sync-email-analysis",
+        "version": 55,
+        "status": "ACTIVE",
+        "verify_jwt": true
+      },
+      {
+        "slug": "generate-briefs",
+        "version": 10,
+        "status": "ACTIVE",
+        "verify_jwt": true
+      },
+      {
+        "slug": "send-weekly-digest",
+        "version": 13,
+        "status": "ACTIVE",
+        "verify_jwt": true
+      },
+      {
+        "slug": "ingest-transcript",
+        "version": 16,
+        "status": "ACTIVE",
+        "verify_jwt": true
+      },
+      {
+        "slug": "score-batch-account-v6",
+        "version": 7,
+        "status": "ACTIVE",
+        "verify_jwt": true
+      }
+    ]
+  }
+}

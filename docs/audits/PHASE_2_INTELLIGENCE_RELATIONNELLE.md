@@ -6,9 +6,9 @@ Verdict : **GO WITH DEFERRED HUMAN CALIBRATION**
 
 ## Résumé
 
-La Phase 1 est validée et la Phase 2 a commencé. Le registre complet a été audité concept par concept, le classificateur multi-observations et ses garde-fous ont été relus, le harness Gold a été renforcé et 23 extraits réels verbatim, datés et pseudonymisés ont été préparés dans un espace privé. Aucun résultat de pertinence n'est inventé : zéro cas possède aujourd'hui deux annotations humaines indépendantes et un arbitrage. Le gate exige précisément cette preuve ; il reste donc **NO GO**.
+La Phase 1 est validée. Le registre complet a été audité concept par concept, le classificateur multi-observations et ses garde-fous ont été relus, le harness Gold a été renforcé et 23 extraits réels verbatim, datés et pseudonymisés ont été préparés dans un espace privé. Aucun résultat de pertinence n'est inventé : zéro cas possède aujourd'hui deux annotations humaines indépendantes et un arbitrage.
 
-Ce blocage ne peut pas être corrigé par un agent logiciel sans falsifier le caractère humain et indépendant du Gold Dataset. Phase 3 n'est pas commencée.
+Le benchmark humain est explicitement reporté. Le verdict technique est **GO WITH DEFERRED HUMAN CALIBRATION** : les Phases 3 à 6 ont pu avancer avec abstention conservatrice, sans activer de décision sémantique ou de recommandation dépendant du Gold.
 
 ## Reprise — enrichissement et réduction du temps humain
 
@@ -59,7 +59,7 @@ Le fichier réel `evaluation/relational-intelligence/private/candidates.v2.json`
 
 ## Migrations
 
-Aucune migration. Aucune écriture distante. Aucun déploiement Edge, cron ou changement de configuration pendant cette étape de Phase 2.
+La préparation Phase 2 elle-même n'a modifié ni migration ni production. Les Phases ultérieures ont depuis déployé leurs contrats et leur retrait Legacy ; ces changements sont documentés séparément.
 
 ## Tests
 
