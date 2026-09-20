@@ -21,9 +21,9 @@ const WEIGHT: Record<Dimension, number | null> = {
   fiabilite: 10, influence: null,
 }
 const METHOD: Record<Dimension, string> = {
-  confiance: 'Signaux de confiance et engagements observés dans les échanges. Une absence de contenu analysé ne donne pas de note.',
-  satisfaction: 'Retours positifs et points de friction identifiés dans le contenu des échanges.',
-  dynamique: 'Rythme récent et engagement observé dans la relation, évalués par le moteur personne à partir des échanges disponibles.',
+  confiance: 'Confidences et jugements partagés par le contact dans ses messages. Sans message analysé, pas de note : la valeur reste à 50.',
+  satisfaction: 'Remerciements, éloges, frustrations ou objections exprimés par le contact dans ses messages.',
+  dynamique: 'Ce que le contact propose ou ouvre : prochaine étape, mise en relation, accès à ses collègues, document transmis.',
   reciprocite: 'Initiatives et réponses des deux côtés, avec une lecture adaptée au type de relation.',
   fiabilite: 'Continuité de la relation dans le temps (fréquence des échanges, régularité, diversité des canaux). Sans historique suffisant, ce chiffre démarre neutre à 50.',
   influence: 'Poids décisionnel du rôle déclaré pour cette personne (décideur, influenceur, utilisateur, filtre). Sans rôle renseigné, ce chiffre reste neutre à 50 — ce n’est pas un score mesuré dans les échanges.',
@@ -84,7 +84,7 @@ function Tile({ dim, active, onSelect }: { dim: WeatherDimension; active: boolea
 }
 
 function reading(dim: WeatherDimension): string {
-  if (!dim.measured) return 'Analyse pas encore effectuée pour ce contact — valeur temporairement neutre (50).'
+  if (!dim.measured) return 'Aucune preuve observée pour l’instant — valeur neutre (50), pas une mesure. Elle se met à jour dès qu’un échange la justifie.'
   const trend = dim.trend
   if (trend && trend.delta <= -5) return `${Math.abs(trend.delta)} points perdus depuis le ${formatDate(trend.at)}. ${LABEL[dim.id]} en recul dans les données observées.`
   if (trend && trend.delta >= 5) return `${trend.delta} points gagnés depuis le ${formatDate(trend.at)}. ${LABEL[dim.id]} en progression dans les données observées.`

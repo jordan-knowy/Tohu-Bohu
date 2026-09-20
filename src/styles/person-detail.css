@@ -2236,6 +2236,7 @@
 .v48-person-profile .dd-ctx{margin:0 0 14px;padding:10px 13px;background:var(--lavande);border:1px solid var(--vl);border-radius:11px}
 .v48-person-profile .dd-ctx-t{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--violet)}
 .v48-person-profile .dd-ctx-s{margin:6px 0 0;font-size:12.5px;line-height:1.5;color:var(--t1)}
+.v48-person-profile .dd-ctx-s em,.v48-person-profile .dd li em{font-style:normal;font-weight:700}
 .v48-person-profile .dd-refresh{margin-top:16px;padding:12px 14px;border:1px dashed var(--vl);border-radius:11px;background:var(--lavande);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .v48-person-profile .dd-refresh p{margin:0;font-size:11.5px;line-height:1.5;color:var(--t2)}
 .v48-person-profile .radar-src{align-self:center;display:inline-flex;gap:2px;margin:0 0 6px;padding:3px;background:var(--bg2);border:1px solid var(--grid);border-radius:999px}

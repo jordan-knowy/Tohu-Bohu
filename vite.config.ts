@@ -9,6 +9,7 @@ export default defineConfig({
         const [pathname, query = ''] = (request.url ?? '').split('?')
         const suffix = query ? `?${query}` : ''
         if (pathname === '/') request.url = `/pages/index.html${suffix}`
+        else if (/^\/(index|login|onboarding|cgu|confidentialite)\.html$/.test(pathname)) request.url = `/pages${pathname}${suffix}`
         else if (pathname === '/connexion') request.url = `/pages/login.html${suffix}`
         else if (pathname === '/bienvenue') request.url = `/pages/onboarding.html${suffix}`
         else if (pathname === '/confidentialite') request.url = `/pages/confidentialite.html${suffix}`

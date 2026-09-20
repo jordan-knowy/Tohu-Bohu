@@ -5,6 +5,7 @@ import { checked,loadLedger } from '../_shared/scoring-v6/pipeline.ts'
 import { revisionsAt } from '../_shared/scoring-v6/foundation.ts'
 import { classifyObservations } from '../_shared/scoring-v6/semanticObservations.ts'
 import { SEMANTIC_REGISTRY } from '../_shared/scoring-v6/semanticClassifier.ts'
+import { extractAuthoredText } from '../_shared/scoring-v6/emailText.ts'
 import { getConfiguredModel } from '../_shared/llm-model-config.ts'
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info,x-cron-secret'}
 const json=(b:unknown,s=200)=>new Response(JSON.stringify(b),{status:s,headers})
@@ -12,7 +13,9 @@ const json=(b:unknown,s=200)=>new Response(JSON.stringify(b),{status:s,headers})
 // contacts/accounts (is_tracked), so this budget only ever spends on entities
 // the user actually added — never on a contact merely present in the mailbox.
 const MAX_EVENTS_PER_RUN=30
-const TIME_BUDGET_MS=45000
+const TIME_BUDGET_MS=40000
+const CONCURRENCY=4
+const CALL_TIMEOUT_MS=60000 // budget + one batch stays under the 150 s platform limit
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers})
   if(req.method!=='POST')return json({error:'Method not allowed'},405)
@@ -34,53 +37,75 @@ Deno.serve(async(req)=>{
       if(principal.kind==='user' && (row.organization_id!==body.organizationId || row.contact_id!==body.contactId || row.collaborator_user_id!==principal.userId))continue
       if(principal.kind==='service' && body.organizationId && row.organization_id!==body.organizationId)continue
       const ledger=await loadLedger(db,row.id),revisionErrors:string[]=[]
-      // Raw email events never carry evidenceText (no body storage) — filtering
-      // them out here means the per-run budget is spent only on events that can
-      // ever produce something, instead of being starved by hundreds of emails
-      // known in advance to hit SOURCE_TEXT_UNAVAILABLE.
-      const events=revisionsAt<any>(ledger.events,Date.parse(at),revisionErrors).filter(e=>e.state==='observed' && Date.parse(e.eventTime)<=Date.parse(at) && e.evidenceText?.trim())
+      const observed=revisionsAt<any>(ledger.events,Date.parse(at),revisionErrors).filter(e=>e.state==='observed' && Date.parse(e.eventTime)<=Date.parse(at))
       if(revisionErrors.length)throw new Error(revisionErrors.join(','))
-      // Explicit page through source events; no silent fixed 40-extract horizon.
-      // eventOffset from checkpoint only resumes the first dyad of this page —
-      // a fresh dyad reached later in the same run always starts at 0.
-      const resumedOffset=rowIndex===0 && Number.isSafeInteger(body.eventOffset)&&body.eventOffset>=0 ? body.eventOffset : (rowIndex===0 ? (cursor.eventOffset ?? 0) : 0)
-      let offset=resumedOffset
+      // Email events never carry evidenceText in the ledger (the body is not copied
+      // into the scoring schema). The text is read from its single source of truth,
+      // communication_messages.body_text, at classification time and kept in memory
+      // only. Only INBOUND mail is classified: every registry marker describes what
+      // the contact says or does, so our own outbound wording must never be read as
+      // theirs. Quoted history is stripped for the same reason (extractAuthoredText).
+      const mailIds=observed.filter(e=>!e.evidenceText?.trim() && e.sourceType==='communication_message' && e.direction==='inbound' && typeof e.evidenceRef==='string').map(e=>e.evidenceRef.replace('communication_messages:',''))
+      const bodies=new Map<string,string>()
+      for(let i=0;i<mailIds.length;i+=100){
+        const chunk=await checked<any[]>(db.from('communication_messages').select('id,body_text').in('id',mailIds.slice(i,i+100)).not('body_text','is',null))
+        for(const m of chunk){const text=extractAuthoredText(m.body_text);if(text)bodies.set(m.id,text)}
+      }
+      // Already-classified events are skipped (a technical_error is retried), so a
+      // full cycle over the dyads never pays the LLM twice for the same text.
+      const done=new Set<string>(await checked<string[]>(db.rpc('v6_classified_event_ids',{p_dyad_id:row.id})))
+      const events=observed.map(e=>e.evidenceText?.trim()?e:{...e,evidenceText:bodies.get(String(e.evidenceRef).replace('communication_messages:',''))}).filter(e=>e.evidenceText?.trim() && !done.has(e.id))
+      // `events` already excludes what a previous run classified, so every run simply
+      // resumes at the first unclassified event: no stored offset (which would drift as
+      // the list shrinks) is needed. A technical_error stays in the list and is retried.
+      let offset=0
       while(offset<events.length){
         if(analyzed>=MAX_EVENTS_PER_RUN || Date.now()-startedAt>TIME_BUDGET_MS)break
-        const event=events[offset]
-        const result=await classifyObservations({text:event.evidenceText ?? '',sourceEventId:event.id,model,registryVersion:'reg-v6.0',at},async prompt=>{
-          const response=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({model,temperature:0,max_tokens:1500,response_format:{type:'json_object'},messages:[{role:'user',content:prompt}]})})
+        // Calls run CONCURRENCY at a time: a reasoning model answers in tens of seconds, so a
+        // sequential loop finished one or two events per invocation.
+        const batch=events.slice(offset,offset+Math.min(CONCURRENCY,MAX_EVENTS_PER_RUN-analyzed))
+        const results=await Promise.all(batch.map(event=>classifyObservations({text:event.evidenceText ?? '',sourceEventId:event.id,model,registryVersion:'reg-v6.0',at},async prompt=>{
+          // Classification picks from a closed list: no chain-of-thought needed. Every run so far
+          // ended in "Signal timed out" at the previous 20 s limit (the analysis model is a reasoning model).
+          const response=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},signal:AbortSignal.timeout(CALL_TIMEOUT_MS),body:JSON.stringify({model,temperature:0,max_tokens:2000,reasoning:{enabled:false},response_format:{type:'json_object'},messages:[{role:'user',content:prompt}]})})
           if(!response.ok)throw new Error(`HTTP_${response.status}`)
           const data=await response.json();return JSON.parse(data.choices?.[0]?.message?.content ?? '')
-        })
-        await checked(db.rpc('v6_foundation_store',{p_dyad_id:row.id,p_kind:'classifier_run',p_payload:result}))
-        // The classifier_run record above is an audit trail — nothing ever read it
-        // back into scoring (foundation_revision only feeds markers of kind='marker').
-        // Promote each closed-registry 'marker' observation into one, so Confiance/
-        // Engagement axes can finally be observed. 'evidence' is guaranteed to be a
-        // literal substring of the source text (enforced in parseObservations), so
-        // it doubles as the verbatim quote S07 requires.
-        const dyad={organizationId:row.organization_id,collaboratorUserId:row.collaborator_user_id,contactId:row.contact_id}
-        for(const obs of result.observations){
-          if(obs.type!=='marker' || !obs.marker_candidate)continue
-          const entry=SEMANTIC_REGISTRY[obs.marker_candidate]
-          if(!entry || (entry.sense!==1 && entry.sense!==-1))continue
-          const accepted=obs.confidence==null || obs.confidence>=0.6
-          await checked(db.rpc('v6_foundation_append',{p_dyad:dyad,p_kind:'marker',p_payload:{
-            id:`sem:${obs.marker_candidate}:${entry.sense}:${event.id}`,dyad,recordedAt:at,effectiveFrom:at,
-            markerId:obs.marker_candidate,sense:entry.sense,observedAt:event.eventTime,
-            sourceEventIds:[event.id],state:'active',status:accepted?'accepted':'candidate',
-            registryVersion:'reg-v6.0',detectorVersion:'semantic-observations-v2',
-            voluntariness:obs.voluntariness,intensity:'unknown',
-            ...(entry.requiresVerbatim?{criticalValidated:true,evidenceQuote:obs.evidence}:{}),
-          }}))
+        })))
+        for(const [index,result] of results.entries()){
+          const event=batch[index]
+          await checked(db.rpc('v6_foundation_store',{p_dyad_id:row.id,p_kind:'classifier_run',p_payload:result}))
+          // The classifier_run record above is an audit trail — nothing ever read it
+          // back into scoring (foundation_revision only feeds markers of kind='marker').
+          // Promote each closed-registry 'marker' observation into one, so Confiance/
+          // Engagement axes can finally be observed. 'evidence' is guaranteed to be a
+          // literal substring of the source text (enforced in parseObservations), so
+          // it doubles as the verbatim quote S07 requires.
+          const dyad={organizationId:row.organization_id,collaboratorUserId:row.collaborator_user_id,contactId:row.contact_id}
+          for(const obs of result.observations){
+            if(obs.type!=='marker' || !obs.marker_candidate)continue
+            const entry=SEMANTIC_REGISTRY[obs.marker_candidate]
+            if(!entry || (entry.sense!==1 && entry.sense!==-1))continue
+            // A critical marker (S07: Satisfaction capped at 20) is never scored on an
+            // LLM reading alone — it needs the human double validation the doctrine
+            // requires, so it is stored as a candidate with its verbatim quote.
+            const accepted=!entry.requiresVerbatim && (obs.confidence==null || obs.confidence>=0.6)
+            await checked(db.rpc('v6_foundation_append',{p_dyad:dyad,p_kind:'marker',p_payload:{
+              id:`sem:${obs.marker_candidate}:${entry.sense}:${event.id}`,dyad,recordedAt:at,effectiveFrom:at,
+              markerId:obs.marker_candidate,sense:entry.sense,observedAt:event.eventTime,
+              sourceEventIds:[event.id],state:'active',status:accepted?'accepted':'candidate',
+              registryVersion:'reg-v6.0',detectorVersion:'semantic-observations-v2',
+              voluntariness:obs.voluntariness,intensity:'unknown',
+              ...(entry.requiresVerbatim?{criticalValidated:false,evidenceQuote:obs.evidence}:{}),
+            }}))
+          }
+          analyzed++;if(result.result_status==='technical_error')errors++
         }
-        analyzed++;offset++;if(result.result_status==='technical_error')errors++
+        offset+=batch.length
       }
       if(offset<events.length || Date.now()-startedAt>TIME_BUDGET_MS || analyzed>=MAX_EVENTS_PER_RUN){
         // Interrupted mid-dyad (budget or time). Resume from the last fully
         // completed dyad so this row is re-listed first on the next call.
-        if(principal.kind==='service')await checked(db.rpc('v6_foundation_checkpoint',{p_worker:'classify',p_cursor:{after:lastCompletedDyadId ?? after,eventOffset:offset}}))
+        if(principal.kind==='service')await checked(db.rpc('v6_foundation_checkpoint',{p_worker:'classify',p_cursor:{after:lastCompletedDyadId ?? after,eventOffset:0}}))
         return json({analyzed,technical_errors:errors,next_after:lastCompletedDyadId ?? after,next_dyad_id:row.id,next_event_offset:offset})
       }
       lastCompletedDyadId=row.id

@@ -327,10 +327,10 @@ function DoDontPager({ guidance }: { guidance: PersonApproachScenario[] }) {
   if (!total) return null
   const current = guidance[Math.min(page, total - 1)]!
   return <>
-    <div className="dd-ctx"><span className="dd-ctx-t">{current.context}</span>{current.summary && <p className="dd-ctx-s">{current.summary}</p>}</div>
+    <div className="dd-ctx"><span className="dd-ctx-t">{current.context}</span>{current.summary && <p className="dd-ctx-s">{renderEmphasis(current.summary)}</p>}</div>
     <div className="dd">
-      <div><h4 className="y">✓ À faire</h4><ul>{current.do.map((text, index) => <li key={`do-${index}`}><i className="li-i ok" />{text}</li>)}</ul></div>
-      <div><h4 className="n">✕ À éviter</h4><ul>{current.dont.map((text, index) => <li key={`avoid-${index}`}><i className="li-i no" />{text}</li>)}</ul></div>
+      <div><h4 className="y">✓ À faire</h4><ul>{current.do.map((text, index) => <li key={`do-${index}`}><i className="li-i ok" />{renderEmphasis(text)}</li>)}</ul></div>
+      <div><h4 className="n">✕ À éviter</h4><ul>{current.dont.map((text, index) => <li key={`avoid-${index}`}><i className="li-i no" />{renderEmphasis(text)}</li>)}</ul></div>
     </div>
     {total > 1 && <div className="mvp">
       <button type="button" className="mvp-b" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>← Précédent</button>
@@ -381,7 +381,7 @@ function PostureCard({ data, cognitive }: { data: PersonDetailData; cognitive: P
         </div>
         : <p className="posture-synthesis empty">Le profil est encore en construction. Tohu attend davantage d’échanges observables avant de recommander une posture.</p>}
       {rules.length > 0 && <div className="posture-rules">
-        {rules.map((rule, index) => <span key={index} className={`posture-chip ${rule.tone}`}>{rule.text}</span>)}
+        {rules.map((rule, index) => <span key={index} className={`posture-chip ${rule.tone}`}>{renderEmphasis(rule.text)}</span>)}
       </div>}
     </div>
     {dominant.length > 0 && <div className="posture-side">
@@ -519,29 +519,32 @@ export function V48PersonProfileView({ data, manualSyncAction, emptyStateOverrid
 
 function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: () => void }) {
   const dims = data.relationship.dimensions
+  // Mêmes six libellés que la « Météo de la relation » (PersonWeatherDetail) : un seul
+  // vocabulaire. Les cinq premiers entrent dans le score ; Influence est un contexte.
   const rows = [
-    { label: 'Confiance', weight: '25%', value: dims.confiance, description: 'Peut-on réellement compter l’un sur l’autre ? Engagements tenus, réponses aux demandes importantes, continuité — jamais déduit du seul volume d’échanges.', measured: dims.confianceMeasured },
-    { label: 'Satisfaction', weight: '25%', value: dims.satisfaction, description: 'Les interactions se déroulent-elles positivement ? Retours positifs, remerciements, frustrations ou objections détectés dans le contenu réel des échanges.', measured: dims.satisfactionMeasured },
-    { label: 'Engagement', weight: '20%', value: dims.engagement, description: 'La relation est-elle réellement active ? Rythme récent comparé à la baseline habituelle de cette relation, pas à un seuil absolu.', measured: dims.engagementMeasured },
-    { label: 'Réciprocité', weight: '20%', value: dims.reciprocite, description: 'Les deux entretiennent-ils la relation ? Équilibre des initiatives, nuancé selon le type de relation.', measured: dims.reciprociteMeasured },
-    { label: 'Ancrage', weight: '10%', value: dims.ancrage, description: dims.ancrageCarriers !== null ? `La relation dépasse-t-elle une seule personne ? ${dims.ancrageCarriers} porteur${dims.ancrageCarriers > 1 ? 's' : ''} interne${dims.ancrageCarriers > 1 ? 's' : ''} détecté${dims.ancrageCarriers > 1 ? 's' : ''}.` : 'La relation dépasse-t-elle une seule personne ? Continuité et diversité des canaux observés avec ce contact.', measured: dims.ancrageMeasured },
+    { label: 'Confiance', weight: '25%', value: dims.confiance, description: 'Peut-on réellement compter l’un sur l’autre ? Confidences et jugements partagés par le contact dans ses messages — jamais déduit du seul volume d’échanges.', measured: dims.confianceMeasured, pending: 'Aucune confidence ou prise de position du contact n’a encore été observée dans ses messages.' },
+    { label: 'Satisfaction', weight: '25%', value: dims.satisfaction, description: 'Les interactions se déroulent-elles positivement ? Remerciements, éloges, frustrations ou objections exprimés par le contact dans le contenu réel de ses messages.', measured: dims.satisfactionMeasured, pending: 'Aucun retour, positif ou négatif, n’a encore été relevé dans les messages reçus de ce contact.' },
+    { label: 'Dynamique', weight: '20%', value: dims.engagement, description: 'La relation est-elle réellement active ? Ce que le contact propose ou ouvre : mise en relation, accès à ses collègues, prochaine étape, document transmis.', measured: dims.engagementMeasured, pending: 'Aucune initiative du contact (prochaine étape, mise en relation, document) n’a encore été relevée.' },
+    { label: 'Réciprocité', weight: '20%', value: dims.reciprocite, description: 'Les deux entretiennent-ils la relation ? Équilibre des initiatives et des délais de réponse, comparé à l’habitude de cette relation.', measured: dims.reciprociteMeasured, pending: 'Pas assez d’échanges pour établir l’habitude de cette relation et la comparer.' },
+    { label: 'Fiabilité', weight: '10%', value: dims.ancrage, description: dims.ancrageCarriers !== null ? `La relation dépasse-t-elle une seule personne ? ${dims.ancrageCarriers} porteur${dims.ancrageCarriers > 1 ? 's' : ''} interne${dims.ancrageCarriers > 1 ? 's' : ''} détecté${dims.ancrageCarriers > 1 ? 's' : ''}.` : 'La relation tient-elle dans la durée ? Continuité entre les périodes et diversité des canaux observés avec ce contact.', measured: dims.ancrageMeasured, pending: 'Pas encore assez de recul (périodes, canaux) pour juger la continuité.' },
+    { label: 'Influence', weight: 'Hors score', value: data.relationship.weatherDimensions.influence, description: 'Poids décisionnel du rôle déclaré (décideur, influenceur, utilisateur, filtre). C’est un contexte affiché à côté du score : il n’y entre pas.', measured: dims.influenceMeasured, pending: 'Aucun rôle n’est renseigné pour cette personne : renseignez-le dans « Rôle » pour l’afficher.' },
   ] as const
   const connectedSources = data.sources.filter((source) => source.status === 'connected')
   return <div className="rel-mask" onClick={onClose}>
     <div className="rel-modal" onClick={(event) => event.stopPropagation()}>
       <div className="mo-h"><p className="mo-t">Comment le score est calculé</p><button type="button" className="mo-x" onClick={onClose}>×</button></div>
       <div className="mo-b">
-        <p className="mo-i">Le score relationnel mesure la <b>solidité du lien</b>, pas la satisfaction déclarée. Il agrège 5 axes issus des échanges réels — jamais d’un questionnaire.</p>
+        <p className="mo-i">Le score relationnel mesure la <b>solidité du lien</b>, pas la satisfaction déclarée. Il agrège 5 axes issus des échanges réels — jamais d’un questionnaire. Un sixième repère, l’Influence, est affiché pour le contexte mais n’entre pas dans le calcul.</p>
         {data.relationship.axisInterpretation && <p className="mo-i" style={{ fontWeight: 500 }}>{data.relationship.axisInterpretation}</p>}
         {rows.map((row) => <div className="mo-s" key={row.label}>
           <div className="mo-hd"><p className="mo-l">{row.label} <small>· {row.weight}</small></p><p className="mo-v">{row.value ?? '—'}<small>/100</small></p></div>
           <span className="mo-g"><i style={{ width: `${Math.max(0, Math.min(100, row.value ?? 0))}%` }} /></span>
-          <p className="mo-d">{row.description}{!row.measured && ' Valeur temporairement neutre (50) : analyse IA pas encore effectuée pour ce contact.'}</p>
+          <p className="mo-d">{row.description}{!row.measured && ` Valeur neutre (50), pas une mesure : ${row.pending}`}</p>
         </div>)}
         <p className="mo-sl">Sources</p>
         {connectedSources.map((source) => <div className="mo-src" key={source.provider}><span className="src t">{source.label} · Observable</span><span>Mesuré directement depuis les échanges connectés</span></div>)}
-        <div className="mo-src"><span className="src v">Score · Inféré</span><span>Score dérivé des 5 axes ci-dessus, pas une donnée brute</span></div>
-        <p className="mo-f">Pondération 25 / 25 / 20 / 20 / 10 · moyenne pondérée · échelle 0–100</p>
+        <div className="mo-src"><span className="src v">Score · Inféré</span><span>Score dérivé des 5 axes pondérés, pas une donnée brute</span></div>
+        <p className="mo-f">Pondération 25 / 25 / 20 / 20 / 10 · moyenne pondérée · échelle 0–100 · 50 = pas encore de preuve</p>
       </div>
     </div>
   </div>
