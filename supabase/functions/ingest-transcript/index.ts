@@ -22,6 +22,7 @@ import {
   type UsageLogContext,
 } from '../_shared/behavior-analysis.ts'
 import { logAiUsage } from '../_shared/ai-usage.ts'
+import { getConfiguredModel } from '../_shared/llm-model-config.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -72,11 +73,14 @@ async function extractTranscriptContext(name: string, transcriptText: string, us
 Réponds uniquement en JSON : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0,"source_quote":null}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
 
 Transcript :\n${corpus}`
+  const model = usageLog
+    ? await getConfiguredModel(usageLog.client, 'analysis', 'OPENROUTER_ANALYSIS_MODEL', 'google/gemini-3.1-flash-lite')
+    : Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Title': 'Tohu Transcript Context Extraction' },
     body: JSON.stringify({
-      model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
+      model,
       temperature: 0,
       response_format: { type: 'json_object' },
       max_tokens: 3000,
@@ -85,7 +89,7 @@ Transcript :\n${corpus}`
   })
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
-  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'ingest-transcript:extractContext', model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite', usage: data?.usage })
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'ingest-transcript:extractContext', model, usage: data?.usage })
   const raw = asRecord(data).choices
   const content = Array.isArray(raw) ? String(asRecord(asRecord(raw[0]).message).content ?? '{}') : '{}'
   const parsed = asRecord(JSON.parse(content))

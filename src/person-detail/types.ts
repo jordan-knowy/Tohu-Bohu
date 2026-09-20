@@ -339,6 +339,10 @@ export interface PersonDetailData {
       ancrageCarriers: number | null
       confianceMeasured: boolean
       satisfactionMeasured: boolean
+      engagementMeasured: boolean
+      reciprociteMeasured: boolean
+      ancrageMeasured: boolean
+      influenceMeasured: boolean
     }
     /** Projection de la Météo du bloc Relation. Les axes sans moteur restent null. */
     weatherDimensions: { confiance: number | null; satisfaction: number | null; dynamique: number | null; reciprocite: number | null; fiabilite: number | null; influence: number | null }

@@ -9,8 +9,9 @@
 //   • meetings + meeting_participants → OK (présence), MAIS response_status = 'needsAction'
 //     uniquement → pas d'accept/decline → E05 = candidate_only
 //   • cc réel non capté (metadata: from/to seulement) → C02 blocked_by_missing_source
-//   • corps non stocké (analyzed_without_body_storage) → C03/S01 (formalité/hedging) blocked
-// Voir FINAL_ACCOUNT_ENGINE_V6_REPORT.md §6.
+//   • corps désormais stocké pour les emails (depuis 2026-09-19) ; toujours non stocké pour
+//     Slack/Google Chat (analyzed_without_body_storage) → C03/S01 (formalité/hedging) restent
+//     à implémenter, plus bloqués par l'absence de source pour les emails
 
 export const DETECTOR_VERSION = 'detectors-v1'
 
@@ -40,6 +41,14 @@ export interface MarkerEventDraft {
   detectorVersion: string
   confidence: number           // 0-1
   status: 'accepted' | 'candidate'  // candidate = ne pas scorer tant que non validé
+  // The minimal real event ids that actually ground this observation. Without
+  // this, the pipeline previously fell back to citing the ENTIRE available
+  // event pool for every non-thread-scoped marker — which made independent
+  // markers (A01/A02/R01/R02) share evidence with everything else and collapse
+  // into a single connected component, silently defeating the independent-
+  // evidence-count admissibility check (never fewer, but also never MORE
+  // independent than the truth — this is the fix, not a workaround).
+  supportEventIds: string[]
 }
 
 const DAY = 86_400_000
@@ -125,6 +134,7 @@ export function detectS04(messages: DyadMessage[]): MarkerEventDraft[] {
       evidenceText: `${outbound.length} relances sans réponse sur « ${sorted[0]!.subject ?? 'sujet inconnu'} » (${Math.round(spanDays)} j)`,
       measure: { threadId, outboundCount: outbound.length, inboundCount: 0, spanDays: Math.round(spanDays) },
       detectorVersion: DETECTOR_VERSION, confidence: 0.9, status: 'accepted',
+      supportEventIds: outbound.map((m) => m.id),
     })
   }
   return out
@@ -137,12 +147,14 @@ export function detectR01(baseline: DyadBaseline, recentMessages: DyadMessage[],
   const byThread = new Map<string, DyadMessage[]>()
   for (const m of recentMessages) if (new Date(m.sentAt).getTime() >= from) byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m])
   const recent: number[] = []
+  const recentIds: string[] = []
   let lastId = ''
   for (const arr of byThread.values()) {
     const s = arr.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
     for (let i = 1; i < s.length; i++) {
       if (s[i - 1]!.direction === 'outbound' && s[i]!.direction === 'inbound') {
         recent.push((new Date(s[i]!.sentAt).getTime() - new Date(s[i - 1]!.sentAt).getTime()) / 3_600_000)
+        recentIds.push(s[i - 1]!.id, s[i]!.id)
         lastId = s[i]!.id
       }
     }
@@ -160,6 +172,7 @@ export function detectR01(baseline: DyadBaseline, recentMessages: DyadMessage[],
     evidenceText: `Latence de réponse du contact ${sense < 0 ? 'dégradée' : 'améliorée'} (${recentMed.toFixed(0)}h vs baseline ${baseline.contactResponseMedianHours.toFixed(0)}h)`,
     measure: { baselineHours: baseline.contactResponseMedianHours, recentHours: recentMed, ratio: Number(ratio.toFixed(2)) },
     detectorVersion: DETECTOR_VERSION, confidence: 0.75, status: 'accepted',
+    supportEventIds: [...new Set(recentIds)],
   }]
 }
 
@@ -170,10 +183,11 @@ export function detectR02(messages: DyadMessage[], nowMs: number, recentDays = 9
   for (const m of messages) byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m])
   let inboundStarts = 0
   let firstInboundId = ''
+  const starterIds: string[] = []
   for (const arr of byThread.values()) {
     const s = arr.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
     const first = s[0]!
-    if (first.direction === 'inbound' && new Date(first.sentAt).getTime() >= from) { inboundStarts++; if (!firstInboundId) firstInboundId = first.id }
+    if (first.direction === 'inbound' && new Date(first.sentAt).getTime() >= from) { inboundStarts++; starterIds.push(first.id); if (!firstInboundId) firstInboundId = first.id }
   }
   if (inboundStarts === 0) return []
   return [{
@@ -182,33 +196,43 @@ export function detectR02(messages: DyadMessage[], nowMs: number, recentDays = 9
     evidenceText: `${inboundStarts} fil(s) initié(s) par le contact — substance à confirmer (contenu non stocké)`,
     measure: { inboundThreadStarts: inboundStarts },
     detectorVersion: DETECTOR_VERSION, confidence: 0.5, status: 'candidate',
+    supportEventIds: starterIds,
   }]
 }
 
 // ── A01 : diversité de canaux instrumentés actifs (déterministe, bipolaire) ──
 export function detectA01(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number, windowDays = 182): MarkerEventDraft[] {
   const from = nowMs - windowDays * DAY
-  const hasEmail = messages.some((m) => new Date(m.sentAt).getTime() >= from && new Date(m.sentAt).getTime() <= nowMs)
-  const hasMeeting = meetings.some((m) => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed') && new Date(m.startsAt).getTime() >= from && new Date(m.startsAt).getTime() <= nowMs)
-  const channels = [hasEmail && 'email', hasMeeting && 'meeting'].filter(Boolean) as string[]
+  const emailInWindow = messages.filter((m) => { const t = new Date(m.sentAt).getTime(); return t >= from && t <= nowMs })
+  const meetingInWindow = meetings.filter((m) => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed') && new Date(m.startsAt).getTime() >= from && new Date(m.startsAt).getTime() <= nowMs)
+  const channels = [emailInWindow.length && 'email', meetingInWindow.length && 'meeting'].filter(Boolean) as string[]
   if (channels.length === 0) return []
   const sense: -1 | 1 = channels.length >= 2 ? 1 : -1
+  // One representative event per active channel (nearest to now) — not the
+  // entire window, so this structural marker doesn't swallow every other
+  // marker's evidence into one connected component (see MarkerEventDraft doc).
+  const latest = <T extends { }>(arr: T[], at: (x: T) => number) => arr.reduce((best, x) => (best == null || at(x) > at(best) ? x : best), null as T | null)
+  const repEmail = latest(emailInWindow, (m) => new Date(m.sentAt).getTime())
+  const repMeeting = latest(meetingInWindow, (m) => new Date(m.startsAt).getTime())
   return [{
     markerId: 'A01', scope: 'person', sense, observedAt: new Date(nowMs).toISOString(),
-    evidenceRef: 'channels',
+    evidenceRef: repEmail?.id ?? repMeeting?.id ?? 'channels',
     evidenceText: `${channels.length} canal/canaux actif(s) : ${channels.join(', ')}`,
     measure: { channelCount: channels.length, channels },
     detectorVersion: DETECTOR_VERSION, confidence: 0.8, status: 'accepted',
+    supportEventIds: [repEmail?.id, repMeeting?.id].filter((id): id is string => !!id),
   }]
 }
 
 // ── A02 : continuité entre périodes (trimestres actifs, déterministe, bipolaire) ──
 export function detectA02(messages: DyadMessage[], meetings: DyadMeeting[], nowMs: number): MarkerEventDraft[] {
-  const times = [...messages.map((m) => new Date(m.sentAt).getTime()), ...meetings.filter(m => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed')).map((m) => new Date(m.startsAt).getTime())]
+  const events = [...messages.map((m) => ({ id: m.id, t: new Date(m.sentAt).getTime() })), ...meetings.filter(m => m.occurred && m.contactParticipated && (!m.state || m.state === 'observed')).map((m) => ({ id: m.id, t: new Date(m.startsAt).getTime() }))]
   const activeQuarters = new Set<number>()
+  const repByQuarter: string[] = []
   for (let q = 0; q < 4; q++) {
     const start = nowMs - (q + 1) * 90 * DAY, end = nowMs - q * 90 * DAY
-    if (times.some((t) => t > start && t <= end)) activeQuarters.add(q)
+    const inQuarter = events.filter((e) => e.t > start && e.t <= end)
+    if (inQuarter.length) { activeQuarters.add(q); repByQuarter.push(inQuarter[0]!.id) }
   }
   const n = activeQuarters.size
   if (n === 0) return []
@@ -218,10 +242,11 @@ export function detectA02(messages: DyadMessage[], meetings: DyadMeeting[], nowM
   if (sense === 0) return []
   return [{
     markerId: 'A02', scope: 'person', sense, observedAt: new Date(nowMs).toISOString(),
-    evidenceRef: 'continuity',
+    evidenceRef: repByQuarter[0] ?? 'continuity',
     evidenceText: `${n}/4 trimestres actifs sur 12 mois`,
     measure: { activeQuarters: n },
     detectorVersion: DETECTOR_VERSION, confidence: 0.75, status: 'accepted',
+    supportEventIds: [...new Set(repByQuarter)],
   }]
 }
 
@@ -236,6 +261,7 @@ export function detectE05Candidate(meetings: DyadMeeting[]): MarkerEventDraft[] 
     evidenceText: `${held.length} réunion(s) tenue(s) avec le contact — acceptation présumée (statut accept/decline non capté)`,
     measure: { heldMeetings: held.length },
     detectorVersion: DETECTOR_VERSION, confidence: 0.5, status: 'candidate',
+    supportEventIds: [last.id],
   }]
 }
 

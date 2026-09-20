@@ -8,10 +8,11 @@ export default defineConfig({
       server.middlewares.use((request, _response, next) => {
         const [pathname, query = ''] = (request.url ?? '').split('?')
         const suffix = query ? `?${query}` : ''
-        if (pathname === '/connexion') request.url = `/login.html${suffix}`
-        else if (pathname === '/bienvenue') request.url = `/onboarding.html${suffix}`
-        else if (pathname === '/confidentialite') request.url = `/confidentialite.html${suffix}`
-        else if (pathname === '/cgu') request.url = `/cgu.html${suffix}`
+        if (pathname === '/') request.url = `/pages/index.html${suffix}`
+        else if (pathname === '/connexion') request.url = `/pages/login.html${suffix}`
+        else if (pathname === '/bienvenue') request.url = `/pages/onboarding.html${suffix}`
+        else if (pathname === '/confidentialite') request.url = `/pages/confidentialite.html${suffix}`
+        else if (pathname === '/cgu') request.url = `/pages/cgu.html${suffix}`
         else if (pathname === '/app' || pathname.startsWith('/app/') || pathname === '/super-admin' || pathname.startsWith('/super-admin/') || pathname === '/preferences') request.url = `/app.html${suffix}`
         next()
       })
@@ -20,11 +21,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        landing: resolve(__dirname, 'index.html'),
-        login: resolve(__dirname, 'login.html'),
-        onboarding: resolve(__dirname, 'onboarding.html'),
-        confidentialite: resolve(__dirname, 'confidentialite.html'),
-        cgu: resolve(__dirname, 'cgu.html'),
+        landing: resolve(__dirname, 'pages/index.html'),
+        login: resolve(__dirname, 'pages/login.html'),
+        onboarding: resolve(__dirname, 'pages/onboarding.html'),
+        confidentialite: resolve(__dirname, 'pages/confidentialite.html'),
+        cgu: resolve(__dirname, 'pages/cgu.html'),
         app: resolve(__dirname, 'tohu-app.html'),
         reactApp: resolve(__dirname, 'app.html'),
       },

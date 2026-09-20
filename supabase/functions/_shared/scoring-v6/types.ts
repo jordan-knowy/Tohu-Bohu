@@ -1,7 +1,5 @@
 // Canonical V6 module: shared by browser and edge.
 // Scoring V6 — types du NOYAU mathématique (shadow, aucune DB, aucun LLM).
-// Voir SCORING_V6_S0_DESIGN.md et SCORING_DOCTRINE.md.
-//
 // Séparation stricte des responsabilités (décision produit) :
 //   • calculateDyadScoreCore()   = ce fichier : C/S/E/R/A à partir de marker_events
 //                                  DÉJÀ admissibles. Ne connaît ni fenêtre, ni P4/P5/P7,
@@ -193,15 +191,15 @@ export interface MarkerContribution {
 
 export interface AxisResult {
   axis: AxisId
-  base: number                  // toujours 50 quand l'axe est observé
-  value: number                 // clamp(round(50 + Σ contributions), 0, 100), plafond S07 appliqué
+  base: number | null           // 50 si observé ; null si aucun marqueur sur cet axe (jamais un 50 fabriqué)
+  value: number | null          // clamp(round(50 + Σ contributions), 0, 100) si observé, sinon null
   weight: number
   cappedByS07: boolean
   contributions: MarkerContribution[]
 }
 
 export interface DyadScoreCoreResult {
-  score: number                 // Σ axis.value × axis.weight, arrondi
+  score: number                 // moyenne pondérée des SEULS axes observés (poids renormalisés), arrondi
   axes: Record<AxisId, AxisResult>
   role: DyadRole
   paramsVersion: string

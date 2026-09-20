@@ -35,7 +35,7 @@ export interface BrainEngagement {
 export interface AccountBrainDTO {
   generated_at: string
   account: { id: string; name: string; relation_type: string | null }
-  weather: { status: Availability; score?: number; reliability?: number; delta_30d?: number; weakest_dial?: string; verdict_allowed?: boolean; dials?: unknown; reason?: string; history?: Array<{ snapshot_month: string; score: number | null }> }
+  weather: { status: Availability; score?: number; reliability?: number; delta_30d?: number; weakest_dial?: string; verdict_allowed?: boolean; dials?: unknown; reason?: string; history?: Array<{ observedAt: string; score: number | null }> }
   dimensions: { status: Availability; reason?: string; items?: unknown }
   situation: { status: Availability; kind?: 'synthesis'; statement?: string; confidence?: number; generated_at?: string; reason?: string }
   delta_since_last: { status: Availability; t0?: string; personal?: boolean; team_last?: string; message?: string; facts?: BrainFact[] }

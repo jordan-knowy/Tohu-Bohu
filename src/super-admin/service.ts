@@ -208,6 +208,52 @@ export async function setEmailDispatchRule(scope: EmailDispatchScope, scopeRef: 
   if (error) throw error
 }
 
+export type LlmPurposeConfig = {
+  purpose: string
+  label: string
+  description: string
+  current_model: string
+  env_fallback: string | null
+  updated_at: string
+}
+
+export type OpenRouterModel = {
+  id: string
+  name: string
+  context_length: number | null
+  prompt_price_per_m: number
+  completion_price_per_m: number
+  is_free: boolean
+  supports_reasoning: boolean
+  supports_tools: boolean
+  supports_web_search: boolean
+  modality: string | null
+  synced_at: string
+}
+
+export async function getLlmModelConfig(): Promise<LlmPurposeConfig[]> {
+  const { data, error } = await getSupabase().rpc('admin_get_llm_model_config')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function setLlmModelConfig(purpose: string, model: string): Promise<void> {
+  const { error } = await getSupabase().rpc('admin_set_llm_model_config', { p_purpose: purpose, p_model: model })
+  if (error) throw error
+}
+
+export async function getOpenRouterCatalog(): Promise<OpenRouterModel[]> {
+  const { data, error } = await getSupabase().rpc('admin_get_openrouter_catalog')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function syncOpenRouterCatalog(): Promise<{ synced: number; synced_at: string }> {
+  const { data, error } = await getSupabase().functions.invoke('sync-openrouter-catalog')
+  if (error) throw error
+  return data
+}
+
 export async function updateAccountDeletionRequest(
   requestId: string,
   status: AccountDeletionRequestAdmin['status'],

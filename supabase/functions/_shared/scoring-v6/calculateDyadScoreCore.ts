@@ -2,7 +2,6 @@
 // Scoring V6 — NOYAU personne. Fonction PURE : mêmes entrées → mêmes sorties.
 // Aucune DB, aucun LLM, aucune fenêtre temporelle, aucune fiabilité, aucun P4/P5/P7.
 // Ces règles obligatoires vivent dans buildDyadScoreSnapshot() (couche ultérieure).
-// Voir SCORING_V6_S0_DESIGN.md §F et SCORING_DOCTRINE.md.
 
 import type {
   AxisId, DyadRole, DyadScoreCoreResult, MarkerContribution, MarkerEvent,
@@ -64,8 +63,12 @@ export function calculateDyadScoreCore(
     })
 
     if (axisEvents.length === 0) {
-      // Axe observé sans marqueur → base 50 (le null « hors fenêtre » est décidé
-      // par la couche snapshot, jamais ici).
+      // Baseline neutre explicite : une relation sans preuve sur cet axe
+      // démarre à 50 (« on ne sait rien, ni bon ni mauvais »), jamais un
+      // signal positif ou négatif inventé. Ce n'est pas une preuve fabriquée
+      // — la fiabilité (calculée séparément, cf. foundation.ts) reste basse
+      // tant qu'aucun marqueur n'a été observé, et c'est ELLE qui porte
+      // l'information « on ne sait pas encore », pas un score caché.
       axes[axis] = { axis, base: 50, value: 50, weight: params.axisWeights[axis], cappedByS07: false, contributions: [] }
       continue
     }
@@ -120,8 +123,12 @@ export function calculateDyadScoreCore(
     axes[axis] = { axis, base: 50, value, weight: params.axisWeights[axis], cappedByS07, contributions }
   }
 
-  // Score final = Σ (valeur d'axe ARRONDIE × poids), puis arrondi (reproduit l'exemple V6).
-  const score = Math.round(AXES.reduce((sum, axis) => sum + axes[axis].value * axes[axis].weight, 0))
+  // Score final = moyenne pondérée des 5 axes. Chaque axe a toujours une
+  // valeur désormais (50 par défaut si aucun marqueur), donc plus besoin de
+  // renormaliser sur un sous-ensemble observé : les poids nominaux somment
+  // déjà à 1 (voir PARAMS_V6_PALIER.axisWeights).
+  const wsum = AXES.reduce((sum, axis) => sum + axes[axis].weight, 0)
+  const score = Math.round(AXES.reduce((sum, axis) => sum + (axes[axis].value as number) * axes[axis].weight, 0) / wsum)
 
   return {
     score,

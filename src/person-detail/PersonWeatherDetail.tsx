@@ -5,7 +5,7 @@ import { V48Icon, formatDate } from './ui'
 
 type Dimension = 'confiance' | 'satisfaction' | 'dynamique' | 'reciprocite' | 'fiabilite' | 'influence'
 type Band = 'good' | 'mid' | 'low' | 'na'
-type WeatherDimension = { id: Dimension; value: number | null; weight: number | null; comparison: number | null; trend: { delta: number; from: number; at: string } | null }
+type WeatherDimension = { id: Dimension; value: number | null; weight: number | null; comparison: number | null; trend: { delta: number; from: number; at: string } | null; measured: boolean }
 type Proof = { type: string; period: string; text: string; source: string; band: Band }
 
 const ORDER: Dimension[] = ['confiance', 'satisfaction', 'dynamique', 'reciprocite', 'fiabilite', 'influence']
@@ -15,15 +15,18 @@ const LABEL: Record<Dimension, string> = {
 }
 const WEIGHT: Record<Dimension, number | null> = {
   confiance: 25, satisfaction: 25, dynamique: 20, reciprocite: 20,
-  fiabilite: null, influence: null,
+  // Fiabilité réemploie l'axe Ancrage (même poids, 10%, dans le score personne).
+  // Influence n'entre pas dans le score : c'est l'autorité du rôle déclaré,
+  // affichée à titre indicatif — pas de poids à afficher.
+  fiabilite: 10, influence: null,
 }
 const METHOD: Record<Dimension, string> = {
   confiance: 'Signaux de confiance et engagements observés dans les échanges. Une absence de contenu analysé ne donne pas de note.',
   satisfaction: 'Retours positifs et points de friction identifiés dans le contenu des échanges.',
   dynamique: 'Rythme récent et engagement observé dans la relation, évalués par le moteur personne à partir des échanges disponibles.',
   reciprocite: 'Initiatives et réponses des deux côtés, avec une lecture adaptée au type de relation.',
-  fiabilite: 'Le moteur personne ne produit pas encore de score distinct de fiabilité de la relation.',
-  influence: 'Le moteur personne ne produit pas encore de score d’influence relationnelle.',
+  fiabilite: 'Continuité de la relation dans le temps (fréquence des échanges, régularité, diversité des canaux). Sans historique suffisant, ce chiffre démarre neutre à 50.',
+  influence: 'Poids décisionnel du rôle déclaré pour cette personne (décideur, influenceur, utilisateur, filtre). Sans rôle renseigné, ce chiffre reste neutre à 50 — ce n’est pas un score mesuré dans les échanges.',
 }
 const ICON: Record<Dimension, ReactNode> = {
   confiance: <><path d="M12 3.5 4.5 7v5c0 4.6 3.2 8.1 7.5 9 4.3-.9 7.5-4.4 7.5-9V7z" /><path d="m9 12 2 2 4-4" /></>,
@@ -34,11 +37,13 @@ const ICON: Record<Dimension, ReactNode> = {
   influence: <><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r="8.5" /><path d="M12 1v3M12 20v3M1 12h3M20 12h3" /></>,
 }
 const COLOR: Record<Band, string> = { good: 'var(--sage)', mid: 'var(--amber)', low: 'var(--coral)', na: 'var(--t3)' }
-const bandOf = (value: number | null): Band => value === null ? 'na' : value >= 70 ? 'good' : value >= 50 ? 'mid' : 'low'
+// Une valeur non mesurée (baseline neutre 50) s'affiche en gris neutre, pas
+// en couleur — sinon un 50 par défaut se lirait comme un vrai signal "mid".
+const bandOf = (value: number | null, measured = true): Band => value === null || !measured ? 'na' : value >= 70 ? 'good' : value >= 50 ? 'mid' : 'low'
 const signed = (value: number) => value > 0 ? `+${value}` : String(value)
 
-function trendFor(data: PersonDetailData, id: Dimension, value: number | null): WeatherDimension['trend'] {
-  if (value === null || id === 'fiabilite' || id === 'influence') return null
+function trendFor(data: PersonDetailData, id: Dimension, value: number | null, measured: boolean): WeatherDimension['trend'] {
+  if (value === null || !measured || id === 'fiabilite' || id === 'influence') return null
   const history = data.relationship.dimensionHistory
   const latest = history.at(-1)
   if (!latest) return null
@@ -52,28 +57,34 @@ function trendFor(data: PersonDetailData, id: Dimension, value: number | null): 
   return previous && typeof from === 'number' ? { delta: value - from, from, at: previous.at } : null
 }
 
+const MEASURED_FLAG: Record<Dimension, keyof PersonDetailData['relationship']['dimensions']> = {
+  confiance: 'confianceMeasured', satisfaction: 'satisfactionMeasured', dynamique: 'engagementMeasured',
+  reciprocite: 'reciprociteMeasured', fiabilite: 'ancrageMeasured', influence: 'influenceMeasured',
+}
+
 function buildDimensions(data: PersonDetailData): Record<Dimension, WeatherDimension> {
   const values = data.relationship.weatherDimensions
-  return Object.fromEntries(ORDER.map((id) => [id, {
-    id, value: values[id], weight: WEIGHT[id], comparison: null,
-    trend: trendFor(data, id, values[id]),
-  }])) as Record<Dimension, WeatherDimension>
+  const dims = data.relationship.dimensions
+  return Object.fromEntries(ORDER.map((id) => {
+    const measured = Boolean(dims[MEASURED_FLAG[id]])
+    return [id, { id, value: values[id], weight: WEIGHT[id], comparison: null, measured, trend: trendFor(data, id, values[id], measured) }]
+  })) as Record<Dimension, WeatherDimension>
 }
 
 function Tile({ dim, active, onSelect }: { dim: WeatherDimension; active: boolean; onSelect: () => void }) {
-  const band = bandOf(dim.value)
+  const band = bandOf(dim.value, dim.measured)
   const trend = dim.trend
-  return <button type="button" className={`pw-t ${active ? 'on' : ''} ${dim.value === null ? 'na' : ''}`} aria-pressed={active} onClick={onSelect}>
+  return <button type="button" className={`pw-t ${active ? 'on' : ''} ${!dim.measured ? 'na' : ''}`} aria-pressed={active} onClick={onSelect}>
     <span className="pw-t-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON[dim.id]}</svg></span>
     <span className="pw-t-nm">{LABEL[dim.id]}</span>
     <span className="pw-t-score"><strong style={{ color: COLOR[band] }}>{dim.value ?? '—'}</strong><span className="pw-t-w" title="Poids dans le score personne actuel">{dim.weight === null ? '—' : `${dim.weight}%`}</span></span>
     <span className="pw-t-g"><i style={{ width: `${dim.value ?? 0}%`, background: COLOR[band] }} />{dim.value !== null && <b style={{ left: `${dim.value}%`, borderColor: COLOR[band] }} />}{dim.comparison !== null && <em style={{ left: `${dim.comparison}%` }} />}</span>
-    <span className="pw-t-dl">{dim.value === null ? 'Données insuffisantes' : trend ? trend.delta === 0 ? 'stable' : `${signed(trend.delta)} sur 30 j` : 'Évolution indisponible'}{dim.comparison !== null ? ` · vous ${dim.comparison}` : ''}</span>
+    <span className="pw-t-dl">{!dim.measured ? 'Pas encore mesuré · neutre' : trend ? trend.delta === 0 ? 'stable' : `${signed(trend.delta)} sur 30 j` : 'Évolution indisponible'}{dim.comparison !== null ? ` · vous ${dim.comparison}` : ''}</span>
   </button>
 }
 
 function reading(dim: WeatherDimension): string {
-  if (dim.value === null) return 'Données insuffisantes.'
+  if (!dim.measured) return 'Analyse pas encore effectuée pour ce contact — valeur temporairement neutre (50).'
   const trend = dim.trend
   if (trend && trend.delta <= -5) return `${Math.abs(trend.delta)} points perdus depuis le ${formatDate(trend.at)}. ${LABEL[dim.id]} en recul dans les données observées.`
   if (trend && trend.delta >= 5) return `${trend.delta} points gagnés depuis le ${formatDate(trend.at)}. ${LABEL[dim.id]} en progression dans les données observées.`
@@ -83,7 +94,8 @@ function reading(dim: WeatherDimension): string {
     satisfaction: { good: 'Les échanges analysés montrent une satisfaction favorable.', mid: 'La satisfaction observée est contrastée.', low: 'Des points de friction pèsent sur la satisfaction observée.' },
     dynamique: { good: 'Le rythme de la relation est soutenu par rapport à son historique.', mid: 'La relation conserve un rythme intermédiaire.', low: 'Le rythme de la relation est en retrait par rapport à son historique.' },
     reciprocite: { good: 'Les deux parties entretiennent la relation.', mid: 'L’équilibre des initiatives reste partiel.', low: 'Les initiatives sont déséquilibrées dans les échanges observés.' },
-    fiabilite: { good: '', mid: '', low: '' }, influence: { good: '', mid: '', low: '' },
+    fiabilite: { good: 'Les échanges sont réguliers et diversifiés dans le temps.', mid: 'La continuité de la relation reste à confirmer dans la durée.', low: 'Les échanges sont peu réguliers ou se sont interrompus.' },
+    influence: { good: 'Cette personne occupe un rôle à forte autorité décisionnelle.', mid: 'Le poids décisionnel de cette personne est intermédiaire ou non confirmé.', low: 'Cette personne n’a pas, à ce stade, un rôle décisionnel identifié.' },
   }
   const body = phrases[dim.id][band === 'na' ? 'mid' : band]
   return trend && trend.delta === 0 ? `${body} Score stable sur 30 jours.` : body

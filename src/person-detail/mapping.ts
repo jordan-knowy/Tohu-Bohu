@@ -656,12 +656,16 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
   const memoryEntries = buildMemoryEntries(raw.memoryEntries, raw.profileNames)
   const careerEntries = buildCareerEntries(raw.careerEntries.length ? raw.careerEntries : importedCareerRows(raw.importedCareer))
 
-  // Canonical V6 state is the sole authority. Missing evidence remains null.
+  // Canonical V6 state is the sole authority. Une dyade démarre toujours à
+  // 50 (neutre) et n'est jamais cachée faute de contexte — seule sa
+  // fiabilité (dyad.reliability) reflète le manque de preuves. `dyadUsable`
+  // ne vérifie donc plus que la présence d'un score calculé (toujours vrai
+  // dès qu'un snapshot existe), plus le statut/verdict de fiabilité.
   const dyad = raw.dyadWeatherSnapshot
   const scoreHistory = buildScoreHistory(rows(dyad.history))
   const dyadAxes = object(dyad.axes)
   const admissibility = object(dyad.admissibility)
-  const dyadUsable = V6_PRODUCT_AUTHORITY && text(dyad.status) !== null && text(dyad.status) !== 'cold_start' && bool(admissibility.verdict) && num(dyad.score) !== null
+  const dyadUsable = V6_PRODUCT_AUTHORITY && num(dyad.score) !== null
 
   const axisValue = (axis: string): number | null => {
     const direct = num(dyadAxes[axis])
@@ -707,8 +711,19 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
     reciprocite: dyadUsable ? axisValue('reciprocite') : null,
     ancrage: dyadUsable ? axisValue('ancrage') : null,
   }
+  // Un axe est "measured" seulement s'il existe au moins un marqueur réel
+  // sur cet axe précis — sinon sa valeur est la baseline neutre à 50 (cf.
+  // calculateDyadScoreCore) et doit être présentée comme telle, jamais comme
+  // une mesure. Même logique pour les 5 axes, pas seulement confiance/satisfaction.
   const confianceMeasured = dyadUsable && raw.markerEvents.some((row) => text(row.markerId)?.startsWith('C') || text(row.axis) === 'confiance')
   const satisfactionMeasured = dyadUsable && raw.markerEvents.some((row) => text(row.markerId)?.startsWith('S') || text(row.axis) === 'satisfaction')
+  const engagementMeasured = dyadUsable && raw.markerEvents.some((row) => text(row.markerId)?.startsWith('E') || text(row.axis) === 'engagement')
+  const reciprociteMeasured = dyadUsable && raw.markerEvents.some((row) => text(row.markerId)?.startsWith('R') || text(row.axis) === 'reciprocite')
+  const ancrageMeasured = dyadUsable && raw.markerEvents.some((row) => text(row.markerId)?.startsWith('A') || text(row.axis) === 'ancrage')
+  // Influence n'est pas un axe mesuré dans les échanges : c'est l'autorité du
+  // rôle déclaré. "measured" ici veut dire "un rôle a été déclaré", pas "un
+  // marqueur a été détecté".
+  const influenceMeasured = dyadUsable && num(dyad.authority) !== null
 
   return {
     generatedAt: new Date().toISOString(),
@@ -764,17 +779,28 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
         ancrageCarriers: null,
         confianceMeasured,
         satisfactionMeasured,
+        engagementMeasured,
+        reciprociteMeasured,
+        ancrageMeasured,
+        influenceMeasured,
       },
       weatherDimensions: {
-        confiance: confianceMeasured ? dimensionValues.confiance : null,
-        satisfaction: satisfactionMeasured ? dimensionValues.satisfaction : null,
+        // Chaque axe démarre à 50 (baseline neutre du core) et n'est plus
+        // masqué faute de marqueur observé — confianceMeasured/satisfactionMeasured
+        // restent disponibles ailleurs pour signaler « pas encore de preuve »
+        // sans effacer le chiffre.
+        confiance: dimensionValues.confiance,
+        satisfaction: dimensionValues.satisfaction,
         // Dynamique réemploie l'axe Engagement existant, sans nouveau calcul.
         dynamique: dimensionValues.engagement,
         reciprocite: dimensionValues.reciprocite,
-        // Fiabilité du snapshot mesure la qualité des données, pas la relation.
-        // influence_level est une catégorie déclarative, pas un score 0–100.
-        fiabilite: null,
-        influence: null,
+        // Fiabilité réemploie l'axe Ancrage (continuité/permanence de la
+        // relation — le signal le plus proche de « on peut compter dessus »
+        // déjà calculé). Influence réemploie l'autorité du rôle déclaré
+        // (0 à 100), avec 50 en baseline neutre quand le rôle n'est pas
+        // renseigné — jamais une catégorie fabriquée.
+        fiabilite: dyadUsable ? axisValue('ancrage') : null,
+        influence: dyadUsable ? (num(dyad.authority) !== null ? Math.round(num(dyad.authority)! * 100) : 50) : null,
       },
       dimensionHistory: [],
       dimensionEvidence: {

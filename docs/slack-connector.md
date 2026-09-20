@@ -6,7 +6,7 @@ Deux tables techniques, accessibles uniquement au serveur, conservent les états
 
 ## Configuration et déploiement
 
-1. Créer une application Slack avec `supabase/slack-app-manifest.json`.
+1. Créer une application Slack avec `supabase/functions/connect-slack/slack-app-manifest.json`.
 2. Dans **OAuth & Permissions**, vérifier l'URL HTTPS exacte : `https://bgmtzwfafcgjklgygvtx.supabase.co/functions/v1/connect-slack`.
 3. Dans **Supabase Dashboard → Edge Functions → Secrets**, enregistrer `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` et `APP_URL`. L'analyse utilise les secrets existants `OPENROUTER_API_KEY` et éventuellement `OPENROUTER_ANALYSIS_MODEL`.
 4. Appliquer les migrations du projet, dont `20260908160000_slack_sync.sql`. Les migrations Vault existantes et leur clé de chiffrement sont requises.

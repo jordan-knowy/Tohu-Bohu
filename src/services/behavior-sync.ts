@@ -12,11 +12,37 @@ export async function triggerBehaviorSyncs(organizationId: string): Promise<void
     .eq('status', 'connected')
   if (error) throw error
 
-  const results = await Promise.allSettled((data ?? []).map(({ provider }) =>
-    client.functions.invoke('sync-email-analysis', { body: { organizationId, provider } }),
+  const { data: contacts, error: contactsError } = await client.from('contacts')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('is_tracked', true)
+    .is('merged_into_contact_id', null)
+    .limit(30)
+  if (contactsError) throw contactsError
+  const results = await Promise.allSettled((data ?? []).flatMap(({ provider }) =>
+    (contacts ?? []).map(({ id }) => client.functions.invoke('sync-email-analysis', {
+      body: { organizationId, provider, contactId: id },
+    })),
   ))
   const failed = results.find((result) => result.status === 'rejected')
   if (failed?.status === 'rejected') throw failed.reason
+}
+
+/** Analyse une seule personne explicitement ajoutée par l'utilisateur. */
+export async function triggerContactBehaviorSync(organizationId: string, contactId: string): Promise<void> {
+  const client = getSupabase()
+  const { data: { user } } = await client.auth.getUser()
+  if (!user) throw new Error('Session invalide')
+  const { data: contact, error: contactError } = await client.from('contacts').select('id,is_tracked')
+    .eq('organization_id', organizationId).eq('id', contactId).is('merged_into_contact_id', null).maybeSingle()
+  if (contactError) throw contactError
+  if (!contact?.is_tracked) throw new Error('Cette personne n’est pas suivie.')
+  const { data: connectors, error } = await client.from('connectors').select('provider')
+    .eq('organization_id', organizationId).eq('user_id', user.id).eq('status', 'connected').in('provider', ['google', 'microsoft'])
+  if (error) throw error
+  await Promise.allSettled((connectors ?? []).map(({ provider }) =>
+    client.functions.invoke('sync-email-analysis', { body: { organizationId, provider, contactId } }),
+  ))
 }
 
 const MANUAL_ANALYSIS_MAX_CONTACTS = 30

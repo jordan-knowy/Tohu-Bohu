@@ -1,7 +1,7 @@
 // Canonical V6 module: shared by browser and edge.
 // Fixtures V6 — registre des marqueurs (22 personne + K01–K09 + X01–X03) et
 // paramètres. Statique, versionné, IMMUABLE : un changement = nouvelle version.
-// Valeurs issues de SCORING_V6_S0_DESIGN.md §B/§C/§D et du prompt de mission §10/§22/§26.
+// Valeurs issues du prompt de mission §10/§22/§26.
 
 import type { DialId, MarkerRegistry, MarkerRegistryEntry, ScoringParams } from './types.ts'
 

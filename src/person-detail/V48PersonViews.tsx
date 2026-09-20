@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { scoreWindow, sourceTypeLabel } from './mapping'
-import type { PersonApproachScenario, PersonCognitiveProfile, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId, RelationshipPhase } from './types'
+import type { PersonApproachScenario, PersonCognitiveProfile, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import type { CareerHook } from './sections2'
 import { dismissPersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
@@ -522,9 +522,9 @@ function MethodologyModal({ data, onClose }: { data: PersonDetailData; onClose: 
   const rows = [
     { label: 'Confiance', weight: '25%', value: dims.confiance, description: 'Peut-on réellement compter l’un sur l’autre ? Engagements tenus, réponses aux demandes importantes, continuité — jamais déduit du seul volume d’échanges.', measured: dims.confianceMeasured },
     { label: 'Satisfaction', weight: '25%', value: dims.satisfaction, description: 'Les interactions se déroulent-elles positivement ? Retours positifs, remerciements, frustrations ou objections détectés dans le contenu réel des échanges.', measured: dims.satisfactionMeasured },
-    { label: 'Engagement', weight: '20%', value: dims.engagement, description: 'La relation est-elle réellement active ? Rythme récent comparé à la baseline habituelle de cette relation, pas à un seuil absolu.', measured: true },
-    { label: 'Réciprocité', weight: '20%', value: dims.reciprocite, description: 'Les deux entretiennent-ils la relation ? Équilibre des initiatives, nuancé selon le type de relation.', measured: true },
-    { label: 'Ancrage', weight: '10%', value: dims.ancrage, description: dims.ancrageCarriers !== null ? `La relation dépasse-t-elle une seule personne ? ${dims.ancrageCarriers} porteur${dims.ancrageCarriers > 1 ? 's' : ''} interne${dims.ancrageCarriers > 1 ? 's' : ''} détecté${dims.ancrageCarriers > 1 ? 's' : ''}.` : 'La relation dépasse-t-elle une seule personne ? Nombre de membres de l’équipe ayant une relation réelle avec ce contact.', measured: true },
+    { label: 'Engagement', weight: '20%', value: dims.engagement, description: 'La relation est-elle réellement active ? Rythme récent comparé à la baseline habituelle de cette relation, pas à un seuil absolu.', measured: dims.engagementMeasured },
+    { label: 'Réciprocité', weight: '20%', value: dims.reciprocite, description: 'Les deux entretiennent-ils la relation ? Équilibre des initiatives, nuancé selon le type de relation.', measured: dims.reciprociteMeasured },
+    { label: 'Ancrage', weight: '10%', value: dims.ancrage, description: dims.ancrageCarriers !== null ? `La relation dépasse-t-elle une seule personne ? ${dims.ancrageCarriers} porteur${dims.ancrageCarriers > 1 ? 's' : ''} interne${dims.ancrageCarriers > 1 ? 's' : ''} détecté${dims.ancrageCarriers > 1 ? 's' : ''}.` : 'La relation dépasse-t-elle une seule personne ? Continuité et diversité des canaux observés avec ce contact.', measured: dims.ancrageMeasured },
   ] as const
   const connectedSources = data.sources.filter((source) => source.status === 'connected')
   return <div className="rel-mask" onClick={onClose}>
@@ -838,11 +838,18 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   </div>
 }
 
-const WEATHER_ICON: Record<RelationshipPhase, ReactNode> = {
-  growing: <><circle cx="12" cy="12" r="4.6" /><path d="M12 3.4v2.4M12 18.2v2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3.4 12h2.4M18.2 12h2.4M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7" /></>,
-  stable: <path d="M6.8 16.8h10.4a3.4 3.4 0 0 0 0-6.8 4.9 4.9 0 0 0-9.4-1.5A3.9 3.9 0 0 0 6.8 16.8Z" />,
-  declining: <><path d="M6.8 13.6h9.6a3.1 3.1 0 0 0 0-6.2 4.5 4.5 0 0 0-8.6-1.4A3.5 3.5 0 0 0 6.8 13.6Z" /><path d="M9 17l-1 2.6M13 17l-1 2.6M17 17l-1 2.6" /></>,
-  unknown: <><circle cx="12" cy="12" r="8.2" /><path d="M9.6 9.4a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1.1.9-1.1 1.7M12 16.2v.1" /></>,
+// Pictogramme soleil/nuage/pluie dérivé du SCORE (même seuils que scoreTone
+// et que la Météo compte, AccountWeatherV6.tsx) — jamais de la `phase`
+// growing/stable/declining, qui exigerait un historique fiable non disponible
+// aujourd'hui (dimensionHistory reste vide tant que ce n'est pas persisté).
+const WEATHER_ICON: Record<'good' | 'mid' | 'low' | 'na', ReactNode> = {
+  good: <><circle cx="12" cy="12" r="4.6" /><path d="M12 3.4v2.4M12 18.2v2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3.4 12h2.4M18.2 12h2.4M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7" /></>,
+  mid: <path d="M6.8 16.8h10.4a3.4 3.4 0 0 0 0-6.8 4.9 4.9 0 0 0-9.4-1.5A3.9 3.9 0 0 0 6.8 16.8Z" />,
+  low: <><path d="M6.8 13.6h9.6a3.1 3.1 0 0 0 0-6.2 4.5 4.5 0 0 0-8.6-1.4A3.5 3.5 0 0 0 6.8 13.6Z" /><path d="M9 17l-1 2.6M13 17l-1 2.6M17 17l-1 2.6" /></>,
+  na: <><circle cx="12" cy="12" r="8.2" /><path d="M9.6 9.4a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1.1.9-1.1 1.7M12 16.2v.1" /></>,
+}
+function weatherBand(score: number | null): 'good' | 'mid' | 'low' | 'na' {
+  return score === null ? 'na' : score >= 70 ? 'good' : score >= 50 ? 'mid' : 'low'
 }
 
 /** Carte « Où on en est / Météo de la relation » (2e bloc de l'onglet Relation) :
@@ -883,7 +890,7 @@ function RelationOverviewCard({ data, relation, delta, narrative, narrativeState
     </div>
     <div className="rel-overview-side">
       <div className="rel-weather-head">
-        <span className="rel-weather-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{WEATHER_ICON[relation.phase]}</svg></span>
+        <span className="rel-weather-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{WEATHER_ICON[weatherBand(relation.score)]}</svg></span>
         <p className="rel-weather-score" style={{ color: scoreTone(relation.score) }}>{relation.score ?? '—'}<small>/100</small></p>
         <button type="button" className="rel-weather-info" aria-label="Détail du calcul du score" onClick={onOpenMethodology}>i</button>
       </div>

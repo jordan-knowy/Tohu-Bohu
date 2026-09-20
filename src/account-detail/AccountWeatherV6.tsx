@@ -130,11 +130,10 @@ function anchoringCarriers(base: number | null): string | null {
 /** Lecture métier du cadran sélectionné — jamais un texte fixe : construite à
  *  partir du score, de sa bande, de son plafond éventuel et des marqueurs
  *  réellement appliqués (jamais une donnée non persistée). */
-function buildLecture(dial: DialId, result: DialResult, isWeakest: boolean): string {
-  const { value, base, weight, effectiveWeight, cappedBy, modifiers } = result
+function buildLecture(dial: DialId, result: DialResult): string {
+  const { value, base, cappedBy, modifiers } = result
   if (value === null) return 'Cadran non calculable — donnée insuffisante pour ce cadran précisément.'
   const tone = scoreBand(value)
-  const pct = Math.round((effectiveWeight || weight) * 100)
   const topMarker = [...modifiers].sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))[0]
 
   const bandPhrase: Record<DialId, Record<'good' | 'mid' | 'low', string>> = {
@@ -176,14 +175,13 @@ function buildLecture(dial: DialId, result: DialResult, isWeakest: boolean): str
   }
   if (cappedBy) parts.push(`Plafonné par ${cappedBy} (${markerLabel(cappedBy) || cappedBy}).`)
   if (topMarker) parts.push(`Signal identifié : ${markerLabel(topMarker.markerId)}${topMarker.occurrences > 1 ? ` (${topMarker.occurrences} occurrences)` : ''}.`)
-  parts.push(`Pèse ${pct}% de la Météo du compte${isWeakest ? ' — c’est le cadran le plus faible actuellement' : ''}.`)
   return parts.join(' ')
 }
 
 /** Panneau « lecture + comment on le calcule » (gauche) / « preuves » (droite)
  *  du cadran sélectionné — factuel, jamais un texte générique quand une valeur
  *  existe, jamais une preuve inventée quand aucune n'est disponible. */
-function WeatherDetail({ dial, result, isWeakest }: { dial: DialId; result: DialResult | undefined; isWeakest: boolean }) {
+function WeatherDetail({ dial, result }: { dial: DialId; result: DialResult | undefined }) {
   const value = result?.value ?? null
   const proofs: DialContribution[] = useMemo(
     () => [...(result?.modifiers ?? [])].sort((a, b) => (b.observedAt ?? '').localeCompare(a.observedAt ?? '')),
@@ -192,7 +190,7 @@ function WeatherDetail({ dial, result, isWeakest }: { dial: DialId; result: Dial
   return <div className="r2-det">
     <div>
       <p className="r2-det-q">{DIAL_LABEL[dial]} · lecture</p>
-      <p className="r2-det-r">{result ? buildLecture(dial, result, isWeakest) : 'Cadran non calculable — donnée insuffisante pour ce cadran précisément.'}</p>
+      <p className="r2-det-r">{result ? buildLecture(dial, result) : 'Cadran non calculable — donnée insuffisante pour ce cadran précisément.'}</p>
       <hr className="r2-det-sep" />
       <p className="r2-det-h">Comment on le calcule.</p>
       <p className="r2-det-x">{DIAL_HOW[dial]}</p>
@@ -247,8 +245,8 @@ export function WeatherHero({ brain }: { brain: AccountBrainDTO | null }) {
   if (!V6_PRODUCT_AUTHORITY || !w || w.status !== 'available') return null
   const tone = scoreBand(w.score ?? null)
   const real = (w.history ?? [])
-    .filter((h): h is { snapshot_month: string; score: number } => h.score !== null && h.score !== undefined)
-    .sort((a, b) => a.snapshot_month.localeCompare(b.snapshot_month))
+    .filter((h): h is { observedAt: string; score: number } => h.score !== null && h.score !== undefined && typeof h.observedAt === 'string')
+    .sort((a, b) => a.observedAt.localeCompare(b.observedAt))
   const hasSpark = real.length >= 2
   const first = real[0]
   const last = real[real.length - 1]
@@ -266,9 +264,9 @@ export function WeatherHero({ brain }: { brain: AccountBrainDTO | null }) {
         <path d={sparkPath(real.map((r) => r.score), 100, 30)} />
       </svg>
       <div className="r2-big-marks">
-        <span>{monthShortLabel(first!.snapshot_month)}</span>
-        {showMid && <span>{monthShortLabel(real[midIdx!]!.snapshot_month)}</span>}
-        <span>{monthShortLabel(last!.snapshot_month)}</span>
+        <span>{monthShortLabel(first!.observedAt)}</span>
+        {showMid && <span>{monthShortLabel(real[midIdx!]!.observedAt)}</span>}
+        <span>{monthShortLabel(last!.observedAt)}</span>
       </div>
       <p className="r2-big-sum">{real.length} mois · {netDelta! >= 0 ? `+${netDelta}` : netDelta} · {first!.score} → {last!.score}</p>
     </> : <p className="r2-big-empty">Historique pas encore disponible.</p>}
@@ -306,7 +304,7 @@ function AuthoritativeWeatherSection({ brain }: { brain: AccountBrainDTO }) {
           <div className="r2-tiles">
             {DIAL_ORDER.map((d) => <WeatherTile key={d} dial={d} result={dials?.[d]} active={selected === d} onSelect={() => setSelected(d)} />)}
           </div>
-          <WeatherDetail dial={selected} result={dials?.[selected]} isWeakest={w.weakest_dial === selected} />
+          <WeatherDetail dial={selected} result={dials?.[selected]} />
         </>}
     </div>
   </section>

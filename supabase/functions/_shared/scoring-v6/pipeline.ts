@@ -1,17 +1,21 @@
 import { buildRelationalState, dyadKey, revisionsAt, type FoundationInput, type RelationalEvent, type MarkerRevision } from './foundation.ts'
-import { runDeterministicDetectors } from './detectors.ts'
-export function detectNormalizedEvents(events: RelationalEvent[], dyad: FoundationInput['dyad'], at: string): {markers:MarkerRevision[];errors:string[]} {
+import { runDeterministicDetectors, type DyadBaseline } from './detectors.ts'
+export function detectNormalizedEvents(events: RelationalEvent[], dyad: FoundationInput['dyad'], at: string): {markers:MarkerRevision[];errors:string[];baseline:DyadBaseline;available:RelationalEvent[]} {
   const errors:string[]=[], now=Date.parse(at), key=dyadKey(dyad)
   const available=revisionsAt(events.filter(e=>dyadKey(e.dyad)===key),now,errors).filter(e=>
     e.state==='observed' && e.identityQuality==='verified' && e.completeness==='complete' && e.participationObserved &&
     Date.parse(e.eventTime)<=now && Date.parse(e.ingestedAt)<=now && Date.parse(e.effectiveFrom)<=now && (!e.effectiveUntil || Date.parse(e.effectiveUntil)>now))
   const messages=available.filter(e=>e.direction && e.threadId).map(e=>({id:e.id,threadId:e.threadId!,sentAt:e.eventTime,direction:e.direction!}))
   const meetings=available.filter(e=>e.channel==='meeting').map(e=>({id:e.id,startsAt:e.eventTime,occurred:true,contactParticipated:true,state:'observed' as const}))
-  const {drafts}=runDeterministicDetectors(messages,meetings,now)
-  return {errors,markers:drafts.map(d=>{
-    // A statistical observation references every event in its measurement input.
-    // Never use 'channels' or 'continuity' as an evidence identity.
-    const supports=(d.markerId==='S04' ? available.filter(e=>e.threadId===d.measure.threadId) : available).filter(e=>Date.parse(e.eventTime)<=Date.parse(d.observedAt)).map(e=>e.id).sort()
+  const {baseline,drafts}=runDeterministicDetectors(messages,meetings,now)
+  return {errors,baseline,available,markers:drafts.map(d=>{
+    // Each detector reports the minimal real events that actually ground its
+    // observation (d.supportEventIds) — never the entire available pool, which
+    // would make every non-thread-scoped marker share evidence with everything
+    // else and collapse into one connected component (defeating the
+    // independent-evidence-count admissibility check).
+    const ids=new Set(d.supportEventIds)
+    const supports=available.filter(e=>ids.has(e.id) && Date.parse(e.eventTime)<=Date.parse(d.observedAt)).map(e=>e.id).sort()
     return {id:`det:${d.markerId}:${d.sense}:${d.evidenceRef}`,dyad,recordedAt:at,effectiveFrom:at,markerId:d.markerId,sense:d.sense,observedAt:d.observedAt,
       sourceEventIds:supports,state:'active',status:d.status==='accepted'?'accepted':'candidate',registryVersion:'reg-v6.0',detectorVersion:'normalized-detectors-v2',voluntariness:'unknown',intensity:'unknown'}
   })}

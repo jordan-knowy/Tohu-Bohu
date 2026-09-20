@@ -4,7 +4,7 @@ vi.mock('https://esm.sh/@supabase/supabase-js@2',()=>({createClient:(_url:string
 function query(data:unknown){const q:any={select:()=>q,eq:()=>q,maybeSingle:async()=>({data,error:null})};return q}
 beforeEach(async()=>{
   vi.resetModules();h.member=true;h.visible=true;h.verified=true;h.rpcs=[]
-  h.admin={from:vi.fn((table:string)=>{if(table!=='app_secrets')throw new Error('UNEXPECTED_ADMIN_READ');return query({value:'cron-secret'})}),rpc:vi.fn(async(name:string,args:any)=>{
+  h.admin={from:vi.fn((table:string)=>{if(table==='llm_model_config')return query(null);if(table!=='app_secrets')throw new Error('UNEXPECTED_ADMIN_READ');return query({value:'cron-secret'})}),rpc:vi.fn(async(name:string,args:any)=>{
     h.rpcs.push({name,args})
     if(name==='v6_foundation_checkpoint')return {data:{},error:null}
     if(name==='v6_foundation_find')return {data:[{id:'dyad',organization_id:'org',contact_id:'contact',collaborator_user_id:'user'}],error:null}

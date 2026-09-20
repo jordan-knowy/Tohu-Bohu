@@ -152,6 +152,23 @@ body.super-admin-page{margin:0;background:#0d0919;color:#fff;overflow-x:hidden}
 .sa-ai-note code{font-family:'JetBrains Mono',monospace;font-size:10px;color:#b9abed}
 @media(max-width:900px){.sa-ai-cards{grid-template-columns:repeat(2,1fr)}.sa-ai-cols{grid-template-columns:1fr}}
 
+/* ── Modèles IA (sélecteur OpenRouter) ───────────────────────────────────── */
+.sa-models-purposes{display:grid;gap:10px}
+.sa-models-purpose{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:14px;align-items:center;padding:12px 14px;border:1px solid var(--sa-line);border-radius:12px;background:rgba(255,255,255,.02)}
+.sa-models-purpose strong{display:block;font-size:12px;color:#fff}
+.sa-models-purpose p{margin:4px 0 0;font-size:10.5px;line-height:1.5;color:#9b93a8}
+.sa-models-purpose select{padding:9px 10px;border:1px solid var(--sa-line);border-radius:9px;background:#171128;color:#fff;font-size:11px}
+.sa-models-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.sa-models-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sa-models-toolbar-actions input[type="search"]{padding:8px 11px;border:1px solid var(--sa-line);border-radius:9px;background:rgba(255,255,255,.03);color:#fff;font-size:11px;min-width:180px}
+.sa-models-toggle{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#cfc6d6;cursor:pointer}
+.sa-models-toolbar-actions>button{padding:8px 14px;border:1px solid rgba(155,124,244,.3);border-radius:9px;background:rgba(155,124,244,.1);color:#d8cdf8;font:700 10px var(--mono);cursor:pointer;white-space:nowrap}
+.sa-models-toolbar-actions>button:disabled{opacity:.5;cursor:wait}
+.sa-models-table-wrap{overflow:auto}
+.sa-models-table td small{color:#81798d;font-family:'JetBrains Mono',monospace;font-size:9.5px}
+.sa-model-badge{display:inline-block;padding:3px 9px;border-radius:999px;font:700 9px var(--mono);background:rgba(255,255,255,.06);color:#81798d}
+.sa-model-badge.on{background:rgba(88,214,165,.14);color:#58d6a5}
+
 /* ── Zone dangereuse : suppression d'un utilisateur ──────────────────────── */
 .sa-danger-block{margin-top:18px;padding:16px 18px;border:1px solid rgba(242,120,145,.35);border-radius:14px;background:rgba(242,120,145,.06)}
 .sa-danger-block h3{margin:0 0 5px;font-family:'Epilogue',sans-serif;font-size:14px;color:#f7c0cb}

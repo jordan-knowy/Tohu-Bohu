@@ -1,6 +1,6 @@
 // Canonical V6 module: shared by browser and edge.
 // Scoring V6 — NOYAU Météo compte (6 cadrans). Fonction PURE : aucune DB, aucun
-// LLM, aucune fiabilité (couche buildAccountWeatherSnapshot). Voir SCORING_V6_S0_DESIGN.md §F.
+// LLM, aucune fiabilité (couche buildAccountWeatherSnapshot).
 // Reproduit exactement reference_account_v6 (Météo 33). §14–24 du prompt de mission.
 
 import type {

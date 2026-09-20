@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logAiUsage } from '../_shared/ai-usage.ts'
+import { getConfiguredModel } from '../_shared/llm-model-config.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +39,9 @@ Deno.serve(async (request) => {
     const openRouterKey = Deno.env.get('OPENROUTER_API_KEY')
     if (!openRouterKey) return json({ error: 'OPENROUTER_API_KEY n’est pas configurée côté serveur.' }, 503)
 
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const admin = serviceKey ? createClient(Deno.env.get('SUPABASE_URL') ?? '', serviceKey) : null
+
     const context = JSON.stringify({
       companies: companies.data,
       contacts: contacts.data,
@@ -45,7 +49,9 @@ Deno.serve(async (request) => {
       behavioral_signals: behavioralSignals.data,
     })
     const safeHistory = history.slice(-8).filter((item) => ['user', 'assistant'].includes(item.role) && typeof item.content === 'string').map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }))
-    const model = Deno.env.get('OPENROUTER_MODEL') ?? 'openai/gpt-4.1-mini'
+    const model = admin
+      ? await getConfiguredModel(admin, 'ask_bohu_chat', 'OPENROUTER_MODEL', 'openai/gpt-4.1-mini')
+      : Deno.env.get('OPENROUTER_MODEL') ?? 'openai/gpt-4.1-mini'
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${openRouterKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu' },
@@ -76,9 +82,7 @@ Contexte accessible à cet utilisateur : ${context}` },
     if (!response.ok) throw new Error(`OpenRouter a répondu ${response.status}`)
     const payload = await response.json()
     // Journalisation de l'usage (client service-role : l'utilisateur n'a pas le droit d'écrire).
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (serviceKey) {
-      const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', serviceKey)
+    if (admin) {
       const { data: membership } = await supabase.from('memberships').select('organization_id').eq('user_id', user.id).limit(1).maybeSingle()
       await logAiUsage(admin, { organizationId: membership?.organization_id ?? null, userId: user.id, fn: 'ask-tohu-proxy', model, usage: payload?.usage })
     }

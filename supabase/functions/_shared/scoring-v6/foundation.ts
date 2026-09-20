@@ -63,22 +63,41 @@ function stable(v: unknown): string {
   if (v && typeof v === 'object') return '{' + Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>JSON.stringify(k)+':'+stable(x)).join(',') + '}'
   return JSON.stringify(v) ?? 'null'
 }
+// Le score et les 6 indicateurs sont TOUJOURS calculés et affichés, dès
+// qu'une dyade existe — une nouvelle relation démarre neutre (50) et évolue
+// avec les preuves. Le manque de données ne cache plus jamais le score :
+// il se traduit uniquement par une `reliability` basse (fiabilité), portée
+// séparément. `reasons` reste informatif (explique POURQUOI la fiabilité est
+// ce qu'elle est) mais ne bloque plus `display`. Seule une vraie anomalie
+// d'intégrité (`errors` — revisions conflictuelles, contexte temporel
+// ambigu, etc., détectées ailleurs dans buildRelationalState) est un cas où
+// un calcul serait techniquement invalide — celui-là seul empêche `display`.
 export function evaluateDyadAdmissibility(i: {
   coldStart: boolean; evidenceCount: number; reliability: number | null; coverage: number | null
-  identity: IdentityQuality; completeness: Completeness; status: string; roleKnown: boolean; allAxesObserved?: boolean; errors: string[]
+  identity: IdentityQuality; completeness: Completeness; status: string; errors: string[]
 }) {
-  const reasons = [...i.errors]
+  const reasons: string[] = [...i.errors]
   if (i.coldStart) reasons.push('COLD_START')
   if (i.evidenceCount < RELIABILITY_PARAMS_V1.p7MarkersMin) reasons.push('INSUFFICIENT_INDEPENDENT_EVIDENCE')
   if (i.identity !== 'verified') reasons.push('IDENTITY_NOT_VERIFIED')
   if (i.completeness !== 'complete') reasons.push('INCOMPLETE_DATA')
-  if (!i.roleKnown) reasons.push('UNKNOWN_ROLE')
   if (ratio(i.coverage) == null || i.coverage === 0) reasons.push('UNKNOWN_OR_ZERO_COVERAGE')
   if (ratio(i.reliability) == null || i.reliability! < RELIABILITY_PARAMS_V1.thresholds.amber) reasons.push('INSUFFICIENT_RELIABILITY')
-  if (i.allAxesObserved === false) reasons.push('UNOBSERVED_AXES')
-  const display = reasons.length === 0
-  const verdict = display && i.reliability! >= RELIABILITY_PARAMS_V1.thresholds.verdict
-  return { display, verdict, account: verdict && ['actif','ralenti'].includes(i.status), recommendation: verdict,
+  // display: TOUJOURS vrai. Un marqueur individuel invalide (i.errors) est
+  // déjà exclu du calcul en amont (buildRelationalState ne l'admet jamais) —
+  // ça n'invalide pas le reste de la dyade. Une dyade elle-même invalide
+  // (temps de rejeu incohérent, identifiants malformés) lève déjà une
+  // exception AVANT d'atteindre cette fonction — ça n'a donc jamais besoin
+  // d'être représenté ici par un score caché.
+  const display = true
+  const verdict = (i.reliability ?? 0) >= RELIABILITY_PARAMS_V1.thresholds.verdict
+  // Le rollup compte n'a plus besoin du verdict de fiabilité (seuil 0.60) —
+  // sinon, comme quasiment aucune dyade n'atteint ce seuil au démarrage,
+  // AUCUN compte n'aurait jamais de météo. La fiabilité du compte se déduit
+  // déjà, séparément, du minimum des fiabilités de ses dyades (account-state.ts) —
+  // c'est elle qui porte l'incertitude, pas un blocage total du score.
+  const account = i.status !== 'insufficient_evidence'
+  return { display, verdict, account, recommendation: verdict,
     trend: verdict, reasons: [...new Set(reasons)].sort() }
 }
 export interface RelationalState {
@@ -150,6 +169,11 @@ export function buildRelationalState(input: FoundationInput): RelationalState {
   const declared = choose(input.roles.filter(r=>r.origin==='declared'))
   const inferred = choose(input.roles.filter(r=>r.origin==='inferred'))
   const role = declared?.role ?? null // inference is kept, not silently promoted
+  // Volontarité renormalization needs *a* profile to run the arithmetic, but a
+  // missing declared role must never fabricate who someone is. 'standard' is
+  // the common-case table (the doctrine's only named exception is 'execution'
+  // roles) — it is a computation default, not a claim about this person.
+  const DEFAULT_ROLE: DyadRole = { label: 'Rôle non renseigné', volontariteProfile: 'standard' }
   const datesByUnit = new Map<string,number>()
   for (const e of events) {
     if (datesByUnit.has(e.evidenceUnitId) && datesByUnit.get(e.evidenceUnitId)!==time(e.eventTime)) errors.push(`CONFLICTING_EVENT_TIME:${e.evidenceUnitId}`)
@@ -164,20 +188,31 @@ export function buildRelationalState(input: FoundationInput): RelationalState {
   const observed = [...new Set(events.filter(e=>quality?.periodStart && quality.periodEnd && time(e.eventTime)>=time(quality.periodStart) && time(e.eventTime)<=time(quality.periodEnd)).map(e=>e.channel))].sort()
   const coverage = expected?.length && quality?.periodStart && quality.periodEnd && time(quality.periodStart) <= time(quality.periodEnd) && time(quality.periodEnd) <= t
     ? expected.filter(c=>observed.includes(c)).length/expected.length : null
-  const reliability = quality?.reliabilityEvidence.length && quality.identity === 'verified' && quality.diarization === 'verified' ? ratio(quality.reliability) : null
-  const core = admitted.length && role && !coldStart ? calculateDyadScoreCore(admitted,role,input.params,input.registry) : null
-  const allAxesObserved = !!core && Object.values(core.axes).every(a=>a.contributions.length > 0)
-  const admissibility = evaluateDyadAdmissibility({coldStart,allAxesObserved,evidenceCount:components.length,reliability,coverage,identity:quality?.identity ?? 'unknown',completeness:quality?.completeness ?? 'unknown',status,roleKnown:!!role,errors})
-  const axes = core ? Object.fromEntries(Object.values(core.axes).map(a=>[a.axis,a.contributions.length ? a.value : null])) : {}
-  return {entity:input.dyad,scope:'individual_dyad',status,score:admissibility.display ? core!.score : null,exploratoryScore:core?.score ?? null,axes,
+  // Fiabilité toujours calculable (jamais null) : un volume nul de preuves
+  // donne 0 (fiabilité très faible), pas l'absence d'indicateur. C'est CE
+  // chiffre qui porte « on ne sait pas encore », jamais le score lui-même.
+  const volumeFactor = Math.min(components.length / RELIABILITY_PARAMS_V1.p7MarkersMin, 1)
+  const identityFactor = quality?.identity === 'verified' ? 1 : quality ? 0.6 : 1
+  const completenessFactor = quality?.completeness === 'complete' ? 1 : quality ? 0.6 : 1
+  const reliability = Math.max(0, Math.min(1, volumeFactor * identityFactor * completenessFactor))
+  // Le core est TOUJOURS calculé, même sans aucun marqueur admis : une dyade
+  // sans preuve démarre à 50 sur chaque axe (cf. calculateDyadScoreCore) —
+  // jamais de score caché faute de contexte.
+  const core = calculateDyadScoreCore(admitted,role ?? DEFAULT_ROLE,input.params,input.registry)
+  const admissibility = evaluateDyadAdmissibility({coldStart,evidenceCount:components.length,reliability,coverage,identity:quality?.identity ?? 'unknown',completeness:quality?.completeness ?? 'unknown',status,errors})
+  const axes = Object.fromEntries(Object.values(core.axes).map(a=>[a.axis,a.value]))
+  return {entity:input.dyad,scope:'individual_dyad',status,score:admissibility.display ? core.score : null,exploratoryScore:core.score,axes,
     reliability,coverage:{value:coverage,completeness:quality?.completeness ?? 'unknown',expectedChannels:expected,observedChannels:observed},
     authority:declared?.authority != null && declared.authority > 0 ? declared.authority : null,declaredRole:role,inferredRole:inferred?.role ?? null,
-    admissibility,evidence:[...usedEvents.values()].sort((a,b)=>a.id.localeCompare(b.id)),contributions:core ? Object.values(core.axes).flatMap(a=>a.contributions.map(c=>({...c,axis:a.axis}))) : [],
+    admissibility,evidence:[...usedEvents.values()].sort((a,b)=>a.id.localeCompare(b.id)),contributions:Object.values(core.axes).flatMap(a=>a.contributions.map(c=>({...c,axis:a.axis}))),
     observedAt:input.at,computedAt:input.computedAt,knowledgeAt,replayMode:mode,history:[],delta:null,causes:[],scoringVersion:SCORING_VERSION,paramsVersion:input.params.version,registryVersion:input.registry.version,errors:[...new Set(errors)].sort()}
 }
 /** Prepared account boundary: no guessed team-person aggregation or authority. */
+// L'autorité manquante (rôle non déclaré) ne doit plus exclure une dyade du
+// rollup compte, même principe que pour le score personne : account-state.ts
+// applique un poids neutre par défaut, jamais une exclusion silencieuse.
 export function eligibleAccountDyads(states: RelationalState[]) {
-  return states.filter(s=>s.admissibility.account && s.authority !== null && s.score !== null)
+  return states.filter(s=>s.admissibility.account && s.score !== null)
 }
 export type CommitmentOutcome = 'open'|'held_on_time'|'held_late'|'cancelled'|'waived'|'broken'|'unknown'
 export function commitmentOutcome(c: {dueAt?:string|null;completedAt?:string|null;resolvedAt?:string|null;disposition?:'cancelled'|'waived'|'broken'|null},at:string): CommitmentOutcome {

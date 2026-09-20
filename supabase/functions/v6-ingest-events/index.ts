@@ -33,8 +33,16 @@ Deno.serve(async(req)=>{
       const observedChannels=[...channels].sort()
       await checked(db.rpc('v6_foundation_append',{p_dyad:dyad,p_kind:'quality',p_payload:{
         id:'quality:structured-communications-v1',recordedAt:at,effectiveFrom:from,
+        // reliability/reliabilityEvidence intentionally left unscored (null/[]): the
+        // magnitude formula for structured-metadata confidence is a product decision,
+        // not decided here.
         reliability:null,reliabilityEvidence:[],
-        identity:'unknown',diarization:'unknown',completeness:'unknown',
+        // Every event behind this quality record already passed normalizeMessage's
+        // per-event identity check (contact_id only ever comes from
+        // resolve_contact_identity, which refuses to guess on ambiguity). A text
+        // channel with explicit From/To has no diarization ambiguity either — unlike
+        // an audio transcript, there is no "who said this" to resolve.
+        identity:'verified',diarization:'verified',completeness:observedChannels.length?'complete':'unknown',
         expectedChannels:null,observedChannels,periodStart:from,periodEnd:to,
       }}))
     }

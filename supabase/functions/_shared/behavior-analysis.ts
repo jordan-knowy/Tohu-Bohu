@@ -11,6 +11,7 @@
 // chemins (email + transcript) simultanément.
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logAiUsage } from './ai-usage.ts'
+import { getConfiguredModel } from './llm-model-config.ts'
 
 export type Analysis = {
   executive_summary?: string
@@ -248,7 +249,9 @@ export async function analyze(
 ): Promise<Analysis> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY')
   if (!apiKey) throw new Error('OPENROUTER_API_KEY non configurée')
-  const model = Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
+  const model = usageLog
+    ? await getConfiguredModel(usageLog.client, 'analysis', 'OPENROUTER_ANALYSIS_MODEL', 'google/gemini-3.1-flash-lite')
+    : Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
   const corpus = excerpts.slice(-30).join('\n---\n').slice(0, 16000)
   // Une fiche V1/V2 ne doit servir ni de contrat de sortie ni d'exemple au
   // modèle : il avait tendance à en recopier la structure. Elle sera

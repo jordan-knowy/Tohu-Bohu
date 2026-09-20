@@ -6,23 +6,56 @@
   publish = "dist"
 
 [[redirects]]
+  from = "/"
+  to = "/pages/index.html"
+  status = 200
+
+# Compat anciennes URLs littérales (bookmarks, liens externes, indexation
+# antérieure aux slugs propres ci-dessous) — les fichiers ont été déplacés
+# dans pages/, ces chemins ne sont plus servis tels quels par défaut.
+[[redirects]]
+  from = "/index.html"
+  to = "/pages/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/login.html"
+  to = "/pages/login.html"
+  status = 200
+
+[[redirects]]
+  from = "/onboarding.html"
+  to = "/pages/onboarding.html"
+  status = 200
+
+[[redirects]]
+  from = "/confidentialite.html"
+  to = "/pages/confidentialite.html"
+  status = 200
+
+[[redirects]]
+  from = "/cgu.html"
+  to = "/pages/cgu.html"
+  status = 200
+
+[[redirects]]
   from = "/connexion"
-  to = "/login.html"
+  to = "/pages/login.html"
   status = 200
 
 [[redirects]]
   from = "/bienvenue"
-  to = "/onboarding.html"
+  to = "/pages/onboarding.html"
   status = 200
 
 [[redirects]]
   from = "/confidentialite"
-  to = "/confidentialite.html"
+  to = "/pages/confidentialite.html"
   status = 200
 
 [[redirects]]
   from = "/cgu"
-  to = "/cgu.html"
+  to = "/pages/cgu.html"
   status = 200
 
 [[redirects]]

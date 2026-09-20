@@ -13,11 +13,11 @@ export const SEMANTIC_REGISTRY: Record<string, { axis: string; sense: -1 | 0 | 1
   S03: { axis: 'satisfaction', sense: -1, requiresVerbatim: false, definition: 'appréciation négative explicite' },
   S06: { axis: 'satisfaction', sense: -1, requiresVerbatim: false, definition: 'désintermédiation / contournement direct' },
   S07: { axis: 'satisfaction', sense: -1, requiresVerbatim: true, definition: 'dénonciation auprès d’un tiers (CRITIQUE : verbatim obligatoire)' },
-  S08: { axis: 'satisfaction', sense: 1, requiresVerbatim: false, definition: 'éloge spontané, non sollicité, hors politesse' },
+  S08: { axis: 'satisfaction', sense: 1, requiresVerbatim: false, definition: 'retour positif exprimé par le contact — remerciement, satisfaction, appréciation, même simple ou de politesse habituelle' },
   E01: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'mise en relation avec un tiers de son réseau' },
   E02: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'ouverture d’organigramme / accès à collègues ou hiérarchie' },
-  E03: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'projection au-delà de l’engagement courant' },
-  E04: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'artefact / livrable non demandé' },
+  E03: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'projection au-delà de l’engagement courant (planifie la suite, propose un prochain échange, anticipe une prochaine étape)' },
+  E04: { axis: 'engagement', sense: 1, requiresVerbatim: false, definition: 'artefact / livrable transmis (document, information, ressource), même partiellement en réponse à une demande' },
 }
 export const SEMANTIC_MARKER_IDS = Object.keys(SEMANTIC_REGISTRY)
 

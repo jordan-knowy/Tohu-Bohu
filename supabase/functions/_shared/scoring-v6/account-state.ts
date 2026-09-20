@@ -122,9 +122,11 @@ export function buildCanonicalAccountState(input: CanonicalAccountInput): Canoni
     const axes = state.axes
     return finite(axes.satisfaction) && finite(axes.confiance) && finite(axes.reciprocite)
   })
+  // Rôle non déclaré → poids neutre (0.3, le palier le plus bas du barème),
+  // jamais une exclusion silencieuse du rollup compte : cf. eligibleAccountDyads.
   const activeDyads = eligible.map((state) => ({
     contactId: state.entity.contactId,
-    authority: state.authority!,
+    authority: state.authority ?? 0.3,
     satisfaction: state.axes.satisfaction!,
     confiance: state.axes.confiance!,
     reciprocite: state.axes.reciprocite!,
@@ -154,10 +156,11 @@ export function buildCanonicalAccountState(input: CanonicalAccountInput): Canoni
   }
   const snapshot = buildAccountWeatherSnapshot({ weather, at: input.at, dialReliabilities, activeDyadCount: eligible.length })
   const presentation = displayRule(snapshot.reliability, snapshot.verdictAllowed)
-  // During deferred human calibration, only the strongest existing rule may
-  // expose an authoritative score. The raw deterministic result remains
-  // available as exploratoryScore for audit and later calibration.
-  const score = presentation === 'score_and_verdict' ? snapshot.score : null
+  // Le score compte est toujours affiché (même principe qu'au niveau personne :
+  // une météo démarre neutre et s'affine avec les preuves, jamais cachée faute
+  // de contexte). `presentation` reste calculé pour étiqueter la fiabilité
+  // (amber/greyed/verdict) dans l'UI, mais ne masque plus le chiffre lui-même.
+  const score = snapshot.score
   const history = compatibleHistory(input)
   const previous = history.at(-1)
   const delta = previous?.score != null && score != null ? score - previous.score : null

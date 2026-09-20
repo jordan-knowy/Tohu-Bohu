@@ -1,4 +1,4 @@
-// Moteur de PERTINENCE — distinct du scoring relationnel (SCORING_DOCTRINE.md §12).
+// Moteur de PERTINENCE — distinct du scoring relationnel.
 // Pure, déterministe. « Est-ce que cela mérite mon attention maintenant ? »
 // N'est JAMAIS une Météo, ne mesure JAMAIS la santé relationnelle.
 // §31–38 du prompt de mission. relevance_params-v1 = provisional.

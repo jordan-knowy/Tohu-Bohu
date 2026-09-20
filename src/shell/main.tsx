@@ -43,7 +43,7 @@ import BohuBar from './BohuBar'
 import HomePage from './pages/HomePage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import ProfilePage from './pages/ProfilePage'
-import AccountSettingsPage from './pages/AccountSettingsPage'
+import AccountSettingsPage from '../account-center/AccountSettingsPage'
 import SuperAdminPage from '../super-admin/SuperAdminPage'
 import PreferencesPage from '../preferences/PreferencesPage'
 

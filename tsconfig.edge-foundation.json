@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {"types": [], "noEmit": true},
   "include": [
-    "scripts/edge-runtime.d.ts",
+    "supabase/functions/edge-runtime.d.ts",
     "supabase/functions/_shared/scoring-v6/*.ts",
     "supabase/functions/classify-markers/index.ts",
     "supabase/functions/detect-dyad-markers/index.ts",

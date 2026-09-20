@@ -1,6 +1,5 @@
 import { formatPersonName } from '../lib/names'
 import { getSupabase } from '../lib/supabase'
-import { triggerBehaviorSyncs } from '../services/behavior-sync'
 import {
   buildPersonListRows, buildPersonTickerItems,
   type PersonListRow, type Row, type TeamMember, type TickerItem,
@@ -148,12 +147,12 @@ export async function trackPersonCandidate(workspaceId: string, contactId: strin
     // La veille (monitor-contacts, appel IA) n'est plus déclenchée par l'ajout
     // d'une personne — elle reste une action explicite (bouton « Veille » des
     // listes Comptes/Personnes), jamais un effet de bord automatique.
-    triggerBehaviorSyncs(workspaceId),
     // Relecture ciblée sans limite de temps (au-delà des 2 ans de la découverte
     // générale) : va chercher tous les échanges réels avec ce contact dans la
     // boîte mail connectée, puis relance l'analyse IA du profil dessus. Le
-    // corps des emails n'est jamais stocké (analyzed_without_body_storage) —
-    // comportement inchangé, seul le déclenchement devient automatique.
+    // Le corps des emails est désormais stocké en clair (depuis 2026-09-19) —
+    // seul le déclenchement devient automatique ici, le stockage est géré par
+    // sync-email-analysis lui-même.
     ...(connectors ?? []).map((row) =>
       client.functions.invoke('sync-email-analysis', { body: { organizationId: workspaceId, provider: row.provider, contactId } }),
     ),

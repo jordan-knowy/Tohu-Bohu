@@ -15,9 +15,10 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logAiUsage } from './ai-usage.ts';
+import { getConfiguredModel } from './llm-model-config.ts';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'anthropic/claude-haiku-4.5';
+const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-haiku-4.5';
 const PERPLEXITY_API = 'https://api.perplexity.ai/chat/completions';
 const PERPLEXITY_MODEL = 'sonar';
 const MAX_ITERATIONS = 6;
@@ -240,12 +241,12 @@ const TOOLS = [
 
 type ChatMessage = Record<string, unknown>;
 
-async function callOpenRouter(apiKey: string, messages: ChatMessage[], forceEmit: boolean, usageLog?: AgentUsageLog) {
+async function callOpenRouter(apiKey: string, model: string, messages: ChatMessage[], forceEmit: boolean, usageLog?: AgentUsageLog) {
   const res = await fetch(OPENROUTER_API, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL,
+      model,
       temperature: 0.2,
       messages,
       tools: TOOLS,
@@ -255,7 +256,7 @@ async function callOpenRouter(apiKey: string, messages: ChatMessage[], forceEmit
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status} : ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: usageLog.fn, model: OPENROUTER_MODEL, usage: data?.usage });
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: usageLog.fn, model, usage: data?.usage });
   return data;
 }
 
@@ -319,6 +320,9 @@ export async function runEnrichmentAgent(input: EnrichmentInput): Promise<Enrich
   const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
   const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
   if (!openrouterKey || !perplexityKey) throw new Error('OPENROUTER_API_KEY ou PERPLEXITY_API_KEY manquant côté serveur.');
+  const model = input.usageLog
+    ? await getConfiguredModel(input.usageLog.client, 'enrichment_agent', null, DEFAULT_OPENROUTER_MODEL)
+    : DEFAULT_OPENROUTER_MODEL;
 
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
@@ -327,7 +331,7 @@ export async function runEnrichmentAgent(input: EnrichmentInput): Promise<Enrich
 
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     const forceEmit = iteration === MAX_ITERATIONS;
-    const data = await callOpenRouter(openrouterKey, messages, forceEmit, input.usageLog);
+    const data = await callOpenRouter(openrouterKey, model, messages, forceEmit, input.usageLog);
     const msg = data.choices?.[0]?.message;
     if (!msg) throw new Error('Réponse OpenRouter vide.');
     messages.push(msg);

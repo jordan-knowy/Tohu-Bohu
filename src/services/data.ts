@@ -1,5 +1,5 @@
 import { getSupabase } from '../lib/supabase'
-import { triggerBehaviorSyncs } from './behavior-sync'
+import { triggerContactBehaviorSync } from './behavior-sync'
 
 export type EntityStatus = 'active' | 'watch' | 'inactive'
 
@@ -429,7 +429,7 @@ export async function createPerson(values: Partial<Person>): Promise<Person> {
     })
     if (visionError) throw visionError
   }
-  void triggerBehaviorSyncs(organizationId).catch(() => undefined)
+  void triggerContactBehaviorSync(organizationId, String(resolvedContact.contact_id)).catch(() => undefined)
   return mapPerson(data as DbRow)
 }
 

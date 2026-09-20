@@ -99,6 +99,12 @@ verify_jwt = true
 [functions.v6-ingest-events]
 verify_jwt = true
 
+[functions.v6-ingest-text-events]
+verify_jwt = true
+
+[functions.sync-openrouter-catalog]
+verify_jwt = true
+
 [functions.generate-briefs]
 verify_jwt = true
 

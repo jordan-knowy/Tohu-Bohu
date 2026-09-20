@@ -4,11 +4,11 @@ import { tohuLogo } from '../components/logo'
 import { TohuSpinner } from '../components/TohuSpinner'
 import { initials } from '../lib/auth'
 import {
-  addUserToOrganization, deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getOrganizationsList, getSuperAdminData, getUserMemberships, removeUserFromOrganization, setEmailDispatchRule, setMembershipRole, setSuperAdminRole, setUserAccess, setUserSeats, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
-  type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminMembership, type SuperAdminOrganization, type SuperAdminTimeseriesPoint, type SuperAdminUser,
+  addUserToOrganization, deleteSuperAdminUser, getAiUsage, getEmailDispatchRules, getLlmModelConfig, getOpenRouterCatalog, getOrganizationsList, getSuperAdminData, getUserMemberships, removeUserFromOrganization, setEmailDispatchRule, setLlmModelConfig, setMembershipRole, setSuperAdminRole, setUserAccess, setUserSeats, syncOpenRouterCatalog, triggerManualEnrichment, updateAccountDeletionRequest, verifySuperAdmin,
+  type AccountDeletionRequestAdmin, type AiUsageStats, type EmailDispatchRule, type EmailDispatchScope, type EmailDispatchType, type LlmPurposeConfig, type OpenRouterModel, type SuperAdminConsole, type SuperAdminKpis, type SuperAdminMembership, type SuperAdminOrganization, type SuperAdminTimeseriesPoint, type SuperAdminUser,
 } from './service'
 
-type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails' | 'ai'
+type Tab = 'overview' | 'users' | 'subscriptions' | 'product' | 'operations' | 'deletions' | 'emails' | 'ai' | 'ai-models'
 
 const EMAIL_TYPES: Array<{ id: EmailDispatchType; label: string; desc: string }> = [
   { id: 'digest', label: 'Digest hebdo', desc: 'Lundi 8 h' },
@@ -165,6 +165,7 @@ const NAVIGATION: Array<{ id: Tab; label: string; copy: string; icon: string }> 
   { id: 'product', label: 'Usage produit', copy: 'Adoption & valeur', icon: '↗' },
   { id: 'operations', label: 'Opérations', copy: 'Sync & fiabilité', icon: '⎔' },
   { id: 'ai', label: 'Suivi IA & coûts', copy: 'Usage OpenRouter & dépenses', icon: '🧠' },
+  { id: 'ai-models', label: 'Modèles IA', copy: 'OpenRouter — catalogue & tarifs', icon: '🤖' },
   { id: 'emails', label: 'E-mails', copy: 'Digests, alertes & diffusion', icon: '✉' },
   { id: 'deletions', label: 'Suppressions', copy: 'Demandes utilisateurs', icon: '⌫' },
 ]
@@ -745,6 +746,98 @@ function AiUsageView() {
   </section>
 }
 
+const priceFormatter = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
+
+function ModelBadge({ on, label }: { on: boolean; label: string }) {
+  return <span className={`sa-model-badge${on ? ' on' : ''}`}>{label}</span>
+}
+
+function AiModelsView() {
+  const [config, setConfig] = useState<LlmPurposeConfig[]>([])
+  const [catalog, setCatalog] = useState<OpenRouterModel[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [query, setQuery] = useState('')
+  const [freeOnly, setFreeOnly] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const [nextConfig, nextCatalog] = await Promise.all([getLlmModelConfig(), getOpenRouterCatalog()])
+      setConfig(nextConfig)
+      setCatalog(nextCatalog)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Chargement impossible') }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const changeModel = async (purpose: string, model: string) => {
+    setSaving(purpose)
+    try { await setLlmModelConfig(purpose, model); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : 'Échec de la mise à jour') }
+    finally { setSaving(null) }
+  }
+
+  const sync = async () => {
+    setSyncing(true); setError(null)
+    try { await syncOpenRouterCatalog(); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : 'Synchronisation impossible') }
+    finally { setSyncing(false) }
+  }
+
+  const filtered = useMemo(() => catalog
+    .filter((model) => !freeOnly || model.is_free)
+    .filter((model) => !query.trim() || model.id.toLowerCase().includes(query.trim().toLowerCase()) || model.name.toLowerCase().includes(query.trim().toLowerCase())),
+    [catalog, freeOnly, query])
+
+  return <section className="sa-ai">
+    <div className="sa-view-heading"><div><p>OpenRouter · sélection des modèles</p><h1>Modèles IA</h1><span>{catalog[0] ? `Catalogue synchronisé ${dateTimeFormatter.format(new Date(catalog[0].synced_at))}` : 'Catalogue non synchronisé'}</span></div></div>
+    {error && <p className="inline-error">{error}</p>}
+
+    <div className="sa-ai-block">
+      <h2>Modèles utilisés actuellement</h2>
+      <div className="sa-models-purposes">
+        {config.map((purpose) => <div key={purpose.purpose} className="sa-models-purpose">
+          <div><strong>{purpose.label}</strong><p>{purpose.description}</p></div>
+          <select value={purpose.current_model} disabled={saving === purpose.purpose} onChange={(event) => void changeModel(purpose.purpose, event.target.value)}>
+            <option value={purpose.current_model}>{purpose.current_model}</option>
+            {catalog.filter((model) => model.id !== purpose.current_model).map((model) => <option key={model.id} value={model.id}>{model.is_free ? '🆓 ' : ''}{model.name} ({model.id})</option>)}
+          </select>
+        </div>)}
+        {!config.length && <p className="sa-ai-none">—</p>}
+      </div>
+    </div>
+
+    <div className="sa-ai-block">
+      <div className="sa-models-toolbar">
+        <h2>Catalogue OpenRouter <small>· {filtered.length} modèle{filtered.length > 1 ? 's' : ''}</small></h2>
+        <div className="sa-models-toolbar-actions">
+          <input type="search" placeholder="Rechercher un modèle…" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <label className="sa-models-toggle"><input type="checkbox" checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} /> Gratuits uniquement</label>
+          <button type="button" disabled={syncing} onClick={() => void sync()}>{syncing ? 'Synchronisation…' : 'Synchroniser le catalogue'}</button>
+        </div>
+      </div>
+      <div className="sa-models-table-wrap">
+        <table className="sa-ai-table sa-models-table">
+          <thead><tr><th>Modèle</th><th>Prix prompt ($/M tok)</th><th>Prix completion ($/M tok)</th><th>Contexte</th><th>Raisonnement</th><th>Recherche web</th><th>Function calling</th></tr></thead>
+          <tbody>
+            {filtered.map((model) => <tr key={model.id}>
+              <td><strong>{model.name}</strong><br /><small>{model.id}</small></td>
+              <td>{model.is_free ? 'Gratuit' : `$${priceFormatter.format(model.prompt_price_per_m)}`}</td>
+              <td>{model.is_free ? 'Gratuit' : `$${priceFormatter.format(model.completion_price_per_m)}`}</td>
+              <td>{model.context_length ? compactFormatter.format(model.context_length) : '—'}</td>
+              <td><ModelBadge on={model.supports_reasoning} label={model.supports_reasoning ? 'Oui' : 'Non'} /></td>
+              <td><ModelBadge on={model.supports_web_search} label={model.supports_web_search ? 'Native' : 'Non'} /></td>
+              <td><ModelBadge on={model.supports_tools} label={model.supports_tools ? 'Oui' : 'Non'} /></td>
+            </tr>)}
+            {!filtered.length && <tr><td colSpan={7} className="sa-ai-none">Aucun modèle — synchronise le catalogue.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="sa-ai-note">« Recherche web native » signale les modèles qui intègrent nativement une recherche internet (Perplexity Sonar, GPT avec recherche, Gemini avec grounding…). Pour n'importe quel autre modèle, OpenRouter propose le plugin de recherche web via le suffixe <code>:online</code> ajouté à l'id du modèle (coût additionnel). « Raisonnement » indique un mode de raisonnement natif exposé par l'API (paramètre <code>reasoning</code>). Ni vitesse ni qualité ne sont mesurées par l'API OpenRouter — utilise le prix et le contexte comme indices, et teste avant de généraliser un changement.</p>
+    </div>
+  </section>
+}
+
 export default function SuperAdminPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [kpis, setKpis] = useState<SuperAdminKpis | null>(null)
@@ -799,6 +892,7 @@ export default function SuperAdminPage() {
         {activeTab === 'product' && <ProductView kpis={kpis} timeseries={consoleData.timeseries} />}
         {activeTab === 'operations' && <OperationsView kpis={kpis} timeseries={consoleData.timeseries} />}
         {activeTab === 'ai' && <AiUsageView />}
+        {activeTab === 'ai-models' && <AiModelsView />}
         {activeTab === 'emails' && <NotificationsView />}
         {activeTab === 'deletions' && <DeletionRequestsView requests={deletionRequests} refresh={load} />}
       </main>

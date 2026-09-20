@@ -1,6 +1,6 @@
 -- Moteur mémoire du compte — M1 : SCHÉMA SEUL (additif, réversible).
 -- Aucune lecture UI branchée, aucun producteur, aucune donnée écrite ici, rien
--- de supprimé. Voir DESIGN_MOTEUR_COMPTE.md (arbitrages tranchés 2026-09-14).
+-- de supprimé. Arbitrages tranchés le 2026-09-14.
 -- RLS strictement alignée sur le modèle compte existant (private.can_view_company).
 
 -- ── 1. account_facts : mémoire métier du compte ─────────────────────────────

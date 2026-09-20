@@ -2,7 +2,7 @@
 // Scoring V6 — S6 : couche SNAPSHOT (applique ce que le noyau mathématique ignore).
 // Fenêtre d'extraction, P5 (cold start), P7 (verdict), fiabilité, statut cadence.
 // Pur (aucune DB/LLM). Les coefficients de fiabilité sont PROVISIONAL et versionnés
-// (jamais inventés silencieusement — §28). Voir SCORING_DOCTRINE.md / SCORING_V6_S0_DESIGN.md.
+// (jamais inventés silencieusement — §28).
 
 import { calculateDyadScoreCore } from './calculateDyadScoreCore.ts'
 import type {
@@ -18,7 +18,7 @@ export const RELIABILITY_PARAMS_V1 = {
   significantDialWeight: 0.15,  // cadran « significatif » pour le min compte
   thresholds: { verdict: 0.60, amber: 0.50 },
   // P5 / P7
-  p5AgeMinDays: 30, p5EpisodesMin: 5, p7MarkersMin: 5,
+  p5AgeMinDays: 30, p5EpisodesMin: 5, p7MarkersMin: 4,
   // Statut cadence
   cadence: { actif: 1.5, ralenti: 3, rompu: 6 },
 }

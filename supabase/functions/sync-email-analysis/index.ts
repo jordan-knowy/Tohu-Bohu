@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classifyEmailAutomation } from './email-classification.ts'
+import { gmailBeforeCursor, microsoftBackfillState } from './backfill-cursors.ts'
 import { reciprocalExternalEmails, relationshipEvidenceByEmail } from './relationship-eligibility.ts'
 import {
   type Analysis,
@@ -23,6 +24,7 @@ import {
   type UsageLogContext,
 } from '../_shared/behavior-analysis.ts'
 import { logAiUsage } from '../_shared/ai-usage.ts'
+import { getConfiguredModel } from '../_shared/llm-model-config.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,7 +48,7 @@ type Mail = {
    * les traitements lourds de stockage et d'analyse comportementale. */
   discoveryOnly?: boolean
 }
-type MailScan = { messages: Mail[]; truncated: boolean; oldestSentAt: string | null }
+type MailScan = { messages: Mail[]; truncated: boolean; oldestSentAt: string | null; cursorPatch?: Record<string, unknown> }
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
@@ -231,7 +233,8 @@ const SYNC_DEADLINE_MS = positiveIntegerEnv('EMAIL_SYNC_DEADLINE_MS', 55000)
 /** Profils analysés en parallèle (I/O LLM) : ~3× plus de profils par passage à
  *  qualité identique (mêmes prompts/modèle). Modéré pour éviter les 429 OpenRouter. */
 const ANALYSIS_CONCURRENCY = positiveIntegerEnv('EMAIL_ANALYSIS_CONCURRENCY', 3)
-const DISCOVERY_LOOKBACK_DAYS = positiveIntegerEnv('EMAIL_DISCOVERY_LOOKBACK_DAYS', 730)
+// Zero scans the whole provider mailbox; a finite window is an explicit override.
+const DISCOVERY_LOOKBACK_DAYS = Number(Deno.env.get('EMAIL_DISCOVERY_LOOKBACK_DAYS') ?? 0)
 /** Nombre de connecteurs traités par tick du cron de reprise du backfill —
  *  reste faible pour que le temps d'exécution total du tick reste borné,
  *  quitte à répartir sur plusieurs ticks (toutes les 6h) pour couvrir tout le monde. */
@@ -272,14 +275,6 @@ async function refreshAccessToken(provider: string, refreshToken: string): Promi
   return { accessToken: data.access_token, refreshToken: data.refresh_token ?? refreshToken, expiresIn: Number(data.expires_in ?? 3600) }
 }
 
-/** Convertit un ISO8601 en date Gmail `before:` (YYYY/MM/DD, granularité jour) —
- *  utilisé pour reprendre la découverte plus loin dans le passé lors du tick
- *  de reprise du backfill, sans avoir à rejouer tout le scan depuis le début. */
-function toGmailDateOnly(iso: string): string {
-  const date = new Date(iso)
-  return `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${String(date.getUTCDate()).padStart(2, '0')}`
-}
-
 /** Découverte Gmail — toujours en mode léger (métadonnées seulement, jamais le
  *  corps) sur toute la fenêtre de découverte : qui a droit au traitement complet
  *  (corps + stockage) se décide ensuite par pertinence, pas par position dans
@@ -297,7 +292,7 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
     // Une recherche ciblée relit tout l'historique que Gmail peut retourner
     // pour ces identités ; la fenêtre glissante ne concerne que les backfills
     // globaux, où elle est reprise progressivement par curseur.
-    const lookbackQuery = targetEmails.length ? '' : `newer_than:${DISCOVERY_LOOKBACK_DAYS}d `
+    const lookbackQuery = targetEmails.length || DISCOVERY_LOOKBACK_DAYS <= 0 ? '' : `newer_than:${DISCOVERY_LOOKBACK_DAYS}d `
     const query = `${lookbackQuery}-category:promotions${beforeDate ? ` before:${beforeDate}` : ''}${targetQuery}`
     const params = new URLSearchParams({
       q: query,
@@ -385,18 +380,29 @@ async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmai
       direction: folder === 'SentItems' || from.email === ownEmail ? 'outbound' as const : 'inbound' as const,
     }
   })
-  const oldestSentAt = messages.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
-  return { messages, truncated: Boolean(nextUrl), oldestSentAt }
+  // The Graph filter is on receivedDateTime. Resuming from sentDateTime can
+  // skip an interval of the other folder when these timestamps differ.
+  const oldestSentAt = raw.slice(0, maximum).reduce((oldest: string | null, item: any) => {
+    const received = item.receivedDateTime as string | null
+    return received && (!oldest || received < oldest) ? received : oldest
+  }, null)
+  return { messages, truncated: Boolean(nextUrl) || raw.length > maximum, oldestSentAt }
 }
 
-async function microsoftMessages(token: string, ownEmail: string, beforeIso?: string | null): Promise<MailScan> {
+async function microsoftMessages(token: string, ownEmail: string, metadata: Record<string, unknown>): Promise<MailScan> {
   const perFolder = Math.ceil(DISCOVERY_MAX_MESSAGES / 2)
+  // The former shared cursor advanced both folders to the oldest date of
+  // either one, skipping unscanned messages in the other. New connectors and
+  // legacy connectors without these keys start at the newest item per folder.
+  const inboxDone = metadata.ms_backfill_inbox_done === true
+  const sentDone = metadata.ms_backfill_sent_done === true
   const [inbox, sent] = await Promise.all([
-    graphFolder(token, 'Inbox', ownEmail, perFolder, beforeIso),
-    graphFolder(token, 'SentItems', ownEmail, perFolder, beforeIso),
+    inboxDone ? Promise.resolve({ messages: [], truncated: false, oldestSentAt: null }) : graphFolder(token, 'Inbox', ownEmail, perFolder, metadata.ms_backfill_inbox_before as string | null),
+    sentDone ? Promise.resolve({ messages: [], truncated: false, oldestSentAt: null }) : graphFolder(token, 'SentItems', ownEmail, perFolder, metadata.ms_backfill_sent_before as string | null),
   ])
   const oldestSentAt = [inbox.oldestSentAt, sent.oldestSentAt].filter((value): value is string => value !== null).sort()[0] ?? null
-  return { messages: [...inbox.messages, ...sent.messages], truncated: inbox.truncated || sent.truncated, oldestSentAt }
+  const state = microsoftBackfillState(inbox, sent, inboxDone, sentDone)
+  return { messages: [...inbox.messages, ...sent.messages], oldestSentAt, ...state }
 }
 
 /** Recherche Microsoft ciblée sur un correspondant. Le mode manuel ne doit
@@ -766,11 +772,14 @@ S'il n'y a rien de clair pour une catégorie, renvoie une liste vide pour celle-
 Réponds uniquement avec ce JSON strict : {"engagements":[{"text":"...","owner":"contact","due_date":null,"confidence":0,"source_quote":null,"source_date":null,"source_direction":null}],"moments":[{"title":"...","summary":null,"occurred_date":null,"impact":"milestone","confidence":0}]}
 
 Extraits :\n${corpus}`
+  const model = usageLog
+    ? await getConfiguredModel(usageLog.client, 'analysis', 'OPENROUTER_ANALYSIS_MODEL', 'google/gemini-3.1-flash-lite')
+    : Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite'
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('SITE_URL') ?? 'https://tohu.app', 'X-Title': 'Tohu Relationship Context Extraction' },
     body: JSON.stringify({
-      model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite',
+      model,
       temperature: 0,
       response_format: CONTEXT_RESPONSE_FORMAT,
       provider: { require_parameters: true },
@@ -780,7 +789,7 @@ Extraits :\n${corpus}`
   })
   if (!response.ok) throw new Error(`OpenRouter ${response.status}`)
   const data = await response.json()
-  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'sync-email-analysis:extractContext', model: Deno.env.get('OPENROUTER_ANALYSIS_MODEL') ?? 'google/gemini-3.1-flash-lite', usage: data?.usage })
+  if (usageLog) await logAiUsage(usageLog.client, { organizationId: usageLog.organizationId, userId: usageLog.userId, fn: 'sync-email-analysis:extractContext', model, usage: data?.usage })
   const parsed = JSON.parse(openRouterContent(data)) as { engagements?: unknown; moments?: unknown }
   // Anti-hallucination : on ne conserve « source_quote » que si la phrase apparaît
   // réellement dans le corpus analysé (comparaison insensible à la casse et aux
@@ -1039,12 +1048,16 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     // Reprise de backfill : si une passe précédente s'est arrêtée avant la fin
     // de la fenêtre de 2 ans (discovery_truncated), on continue plus loin dans
     // le passé plutôt que de tout rescanner depuis le début.
-    const backfillBefore: string | null = manualContactId ? null : (connector.metadata as any)?.backfill_before ?? null
+    // Legacy Gmail used a date-only cursor and could skip messages from the
+    // capped day. Restart once with a second-precision cursor; upserts preserve
+    // existing source rows. The provider scan remains resumable thereafter.
+    const backfillBefore: string | null = manualContactId || (provider === 'google' && (connector.metadata as any)?.gmail_backfill_cursor_version !== 2)
+      ? null : (connector.metadata as any)?.backfill_before ?? null
     const rawScan = provider === 'google'
       ? await gmailMessages(accessToken, ownEmail, backfillBefore, targetEmails)
       : manualContactId
         ? await microsoftTargetMessages(accessToken, ownEmail, targetEmails)
-        : await microsoftMessages(accessToken, ownEmail, backfillBefore)
+        : await microsoftMessages(accessToken, ownEmail, (connector.metadata ?? {}) as Record<string, unknown>)
     const scan = manualContactId
       ? {
           ...rawScan,
@@ -1219,7 +1232,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       if (!primaryContact || message.discoveryOnly) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id, analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: message.body || null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       // « Ce que le contact a écrit » — l'auto-profil (ci-dessus) couvre déjà
       // nos propres messages indépendamment de primaryContact/eligibleEmails.
@@ -1480,8 +1493,8 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
     const nextBackfillBefore = backfillComplete
       ? null
       : provider === 'google'
-        ? (scan.oldestSentAt ? toGmailDateOnly(scan.oldestSentAt) : backfillBefore)
-        : (scan.oldestSentAt ?? backfillBefore)
+        ? (scan.oldestSentAt ? gmailBeforeCursor(scan.oldestSentAt) : backfillBefore)
+        : null
 
     // Le backfill vient de se terminer : on capture le curseur incrémental
     // (Partie C) juste après cette passe, pour qu'il n'y ait aucun trou entre
@@ -1531,7 +1544,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       // Une passe complète vient de réexaminer tout ce qui était en attente
       // (y compris pour « Mon profil ») : le compteur d'accumulation entre deux
       // passes complètes (voir runIncrementalSync) repart à zéro.
-      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, responsible_pending_messages: 0, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...incrementalCursorPatch }
+      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, responsible_pending_messages: 0, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...(provider === 'google' ? { gmail_backfill_cursor_version: 2 } : {}), ...scan.cursorPatch, ...incrementalCursorPatch }
     await supabase.from('connectors').update({
       status: 'connected',
       last_synced_at: new Date().toISOString(),
@@ -1643,7 +1656,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       // backfill plutôt que de laisser l'ingestion continue en échec silencieux —
       // un futur tick de backfill regénérera un curseur frais une fois complet.
       await supabase.from('connectors').update({
-        metadata: { ...(connector.metadata ?? {}), backfill_complete: false, backfill_before: null, gmail_history_id: null, ms_delta_link_inbox: null, ms_delta_link_sent: null, last_incremental_error: null },
+        metadata: { ...(connector.metadata ?? {}), backfill_complete: false, backfill_before: null, ms_backfill_inbox_before: null, ms_backfill_inbox_done: false, ms_backfill_sent_before: null, ms_backfill_sent_done: false, gmail_history_id: null, ms_delta_link_inbox: null, ms_delta_link_sent: null, last_incremental_error: null },
         updated_at: new Date().toISOString(),
       }).eq('id', connector.id)
       return { success: true, expired: true, messages: 0 }
@@ -1737,7 +1750,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (!primaryContact) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id, analyzed_without_body_storage: true } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: message.body || null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
     })
 
@@ -1793,9 +1806,14 @@ Deno.serve(async (request) => {
       .eq('status', 'connected')
       .order('last_synced_at', { ascending: true, nullsFirst: true })
     let pool = incremental
-      ? (candidates ?? []).filter((row: any) => (row.metadata as any)?.backfill_complete === true)
+      ? (candidates ?? []).filter((row: any) =>
+          (row.metadata as any)?.backfill_complete === true
+          && (row.provider !== 'google' || (row.metadata as any)?.gmail_backfill_cursor_version === 2)
+          && (row.provider !== 'microsoft' || ((row.metadata as any)?.ms_backfill_inbox_done === true && (row.metadata as any)?.ms_backfill_sent_done === true)))
       : (candidates ?? []).filter((row: any) =>
           (row.metadata as any)?.backfill_complete !== true
+          || (row.provider === 'google' && (row.metadata as any)?.gmail_backfill_cursor_version !== 2)
+          || (row.provider === 'microsoft' && ((row.metadata as any)?.ms_backfill_inbox_done !== true || (row.metadata as any)?.ms_backfill_sent_done !== true))
           || Number((row.metadata as any)?.profile_backfill_pending ?? 0) > 0
           // Sans ceci, « Mon profil » ne se rafraîchit plus jamais après le
           // premier backfill : les ticks incrémentaux n'analysent jamais (coût
