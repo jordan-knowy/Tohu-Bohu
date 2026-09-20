@@ -178,7 +178,8 @@ async function fetchWithRetry(url: string, init: RequestInit, attempts = 4): Pro
     const retryAfter = Number(response.headers.get('Retry-After'))
     // Backoff plus large sur un quota/minute : un délai trop court retomberait
     // dans la même fenêtre encore saturée. Base 800 ms, doublée à chaque essai.
-    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 800 * 2 ** (attempt - 1)
+    const quotaWindow = response.status === 403 || response.status === 429
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 20) * 1000 : (quotaWindow ? 2000 : 800) * 2 ** (attempt - 1)
     await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
   return response!
@@ -214,7 +215,22 @@ async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T
 
 const MESSAGE_PROCESSING_CONCURRENCY = positiveIntegerEnv('EMAIL_MESSAGE_CONCURRENCY', 8)
 
-const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 5000)
+// La découverte n'est pas bornée par SYNC_DEADLINE_MS : au-delà de ~1000 messages par passe, une boîte
+// jamais synchronisée dépasse la limite mur de la plateforme (546) avant que le curseur de reprise
+// ne soit enregistré, et chaque appel repart du même point. Le backfill continue sur les passes suivantes.
+const DISCOVERY_MAX_MESSAGES = positiveIntegerEnv('EMAIL_DISCOVERY_MAX_MESSAGES', 500)
+/** Gmail plafonne chaque utilisateur à ~250 unités/s (messages.get = 5 unités, soit ~50 lectures/s) et à un
+ *  quota par minute. 20 lectures en parallèle le dépassaient : Gmail répondait 403/429, chaque lecture
+ *  attendait puis réessayait, et la passe finissait en timeout plateforme. */
+const GMAIL_CONCURRENCY = positiveIntegerEnv('EMAIL_GMAIL_CONCURRENCY', 6)
+/** Attente maximale d'une passe derrière une autre sur la même boîte. Reste courte : attente + passe doivent
+ *  tenir sous la limite plateforme de 150 s. */
+const BUSY_WAIT_MS = positiveIntegerEnv('EMAIL_BUSY_WAIT_MS', 30000)
+/** Reprise rapide du backfill (cron toutes les quelques minutes) : une seule boîte par tick pour que la passe
+ *  (jusqu'à ~90 s) tienne sous la limite plateforme de 150 s ; l'ordre `last_synced_at` répartit les ticks
+ *  entre les boîtes. Après un échec, la boîte est laissée tranquille ce laps de temps (jeton révoqué, quota…). */
+const BACKFILL_CONTINUE_MAX_CONNECTORS_PER_RUN = 1
+const BACKFILL_CONTINUE_RETRY_AFTER_FAILURE_MS = 30 * 60_000
 const ANALYSIS_MAX_MESSAGES = positiveIntegerEnv('EMAIL_ANALYSIS_MAX_MESSAGES', 600)
 /** Plafond de messages « traitement complet » par relation, pour que le budget
  *  global se répartisse sur plusieurs relations prioritaires plutôt que d'être
@@ -230,6 +246,14 @@ const MEETING_CORPUS_MAX_CONTACTS = positiveIntegerEnv('EMAIL_MEETING_CORPUS_MAX
  *  faits et on laisse le reste en `profiles_pending` (repris à la passe suivante /
  *  au cron). Évite le timeout plateforme qui faisait échouer le 1er essai. */
 const SYNC_DEADLINE_MS = positiveIntegerEnv('EMAIL_SYNC_DEADLINE_MS', 55000)
+/** Au-delà, on cesse d'hydrater les corps Gmail : mieux vaut une passe avec quelques corps en moins
+ *  qu'un job figé jusqu'au timeout plateforme (546) qui n'enregistre jamais son curseur de reprise. */
+const HYDRATE_BUDGET_MS = positiveIntegerEnv('EMAIL_HYDRATE_BUDGET_MS', 45000)
+
+/** Durée cumulée par étape, pour localiser un blocage dans les logs de la fonction. */
+function stageLog(startedAtMs: number, stage: string, extra: Record<string, unknown> = {}): void {
+  console.log(JSON.stringify({ fn: 'sync-email-analysis', event: 'stage', stage, elapsed_ms: Date.now() - startedAtMs, ...extra }))
+}
 /** Profils analysés en parallèle (I/O LLM) : ~3× plus de profils par passage à
  *  qualité identique (mêmes prompts/modèle). Modéré pour éviter les 429 OpenRouter. */
 const ANALYSIS_CONCURRENCY = positiveIntegerEnv('EMAIL_ANALYSIS_CONCURRENCY', 3)
@@ -300,7 +324,13 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
     })
     if (pageToken) params.set('pageToken', pageToken)
     const listResponse = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, { headers: { Authorization: `Bearer ${token}` } })
-    if (!listResponse.ok) throw new Error(`Gmail ${listResponse.status}`)
+    if (!listResponse.ok) {
+      // « Gmail 403 » seul ne distingue pas API désactivée, permission non accordée ou blocage admin :
+      // on remonte la raison renvoyée par Google.
+      const detail = await listResponse.json().catch(() => null)
+      const reason = detail?.error?.message ?? detail?.error?.errors?.[0]?.reason ?? ''
+      throw new Error(`Gmail ${listResponse.status}${reason ? ` — ${String(reason).slice(0, 300)}` : ''}`)
+    }
     const page = await listResponse.json()
     ids.push(...((page.messages ?? []) as Array<{ id: string; threadId: string }>))
     pageToken = page.nextPageToken ?? null
@@ -309,10 +339,14 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
 
   const detailParams = 'format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc&metadataHeaders=Subject&metadataHeaders=Auto-Submitted&metadataHeaders=Precedence&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=X-Auto-Response-Suppress'
   const output: Mail[] = []
-  for (let index = 0; index < ids.length; index += 20) {
-    const batch = await Promise.all(ids.slice(index, index + 20).map(async ({ id, threadId }) => {
+  const failedStatuses: Record<string, number> = {}
+  for (let index = 0; index < ids.length; index += GMAIL_CONCURRENCY) {
+    const batch = await Promise.all(ids.slice(index, index + GMAIL_CONCURRENCY).map(async ({ id, threadId }) => {
       const response = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${detailParams}`, { headers: { Authorization: `Bearer ${token}` } })
-      if (!response.ok) return null
+      if (!response.ok) {
+        failedStatuses[response.status] = (failedStatuses[response.status] ?? 0) + 1
+        return null
+      }
       const message = await response.json()
       const headers = message.payload?.headers ?? []
       const from = parseAddress(header(headers, 'From'))
@@ -332,22 +366,29 @@ async function gmailMessages(token: string, ownEmail: string, beforeDate?: strin
     }))
     output.push(...batch.filter((item): item is Mail => Boolean(item)))
   }
+  if (Object.keys(failedStatuses).length) {
+    console.warn(JSON.stringify({ fn: 'sync-email-analysis', event: 'gmail_metadata_dropped', requested: ids.length, kept: output.length, failedStatuses }))
+  }
   const oldestSentAt = output.reduce((oldest: string | null, mail) => (!oldest || mail.sentAt < oldest ? mail.sentAt : oldest), null)
   return { messages: output, truncated: hasMore, oldestSentAt }
 }
 
 /** Seconde passe Gmail, ciblée : récupère le corps complet uniquement pour les
  *  messages retenus par le calcul de pertinence (voir `selectMessagesByRelevance`). */
-async function hydrateGmailBodies(token: string, mails: Mail[], selected: Set<string>): Promise<void> {
+async function hydrateGmailBodies(token: string, mails: Mail[], selected: Set<string>, stopAt = Infinity): Promise<number> {
   const targets = mails.filter((mail) => selected.has(mail.id))
-  for (let index = 0; index < targets.length; index += 20) {
-    await Promise.all(targets.slice(index, index + 20).map(async (mail) => {
+  let hydrated = 0
+  for (let index = 0; index < targets.length; index += GMAIL_CONCURRENCY) {
+    if (Date.now() > stopAt) return hydrated
+    await Promise.all(targets.slice(index, index + GMAIL_CONCURRENCY).map(async (mail) => {
       const response = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.id}?format=full`, { headers: { Authorization: `Bearer ${token}` } })
       if (!response.ok) return
       const message = await response.json()
       mail.body = sanitizeBody(gmailBody(message.payload))
+      hydrated++
     }))
   }
+  return hydrated
 }
 
 async function graphFolder(token: string, folder: 'Inbox' | 'SentItems', ownEmail: string, maximum: number, beforeIso?: string | null): Promise<MailScan> {
@@ -978,7 +1019,8 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
   const manualContactId = params.manualContactId ?? null
   let syncJobId: string | null = params.jobId
   const startedAt = new Date().toISOString()
-  const deadlineAt = Date.now() + SYNC_DEADLINE_MS
+  let t0 = Date.now()
+  let deadlineAt = t0 + SYNC_DEADLINE_MS
   try {
     const { data: tokenRows, error: tokenError } = await supabase.rpc('get_oauth_tokens_server', { p_connector_id: connector.id })
     const oauth = tokenRows?.[0]
@@ -1000,6 +1042,38 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         payload: { provider, contact_id: manualContactId },
       }).select('id').single()
       syncJobId = job?.id ?? null
+    }
+
+    // Une seule passe à la fois par boîte : deux passes simultanées se volent le quota Gmail/Graph par
+    // utilisateur (403 « Units per minute per user ») et échouent toutes les deux. Chaque passe s'inscrit
+    // d'abord (son job est déjà `running`), puis attend que toute passe inscrite AVANT elle soit terminée —
+    // l'ordre d'arrivée évite les courses. Une passe restée `running` au-delà de la limite plateforme
+    // (150 s) est considérée morte.
+    if (syncJobId) {
+      const waitUntil = Date.now() + BUSY_WAIT_MS
+      let announced = false
+      for (;;) {
+        const { data: ahead } = await supabase.from('sync_jobs').select('id')
+          .eq('connector_id', connector.id).eq('job_type', 'email_behavior_analysis').eq('status', 'running')
+          .gt('started_at', new Date(Date.now() - 160_000).toISOString())
+          .lt('started_at', startedAt).neq('id', syncJobId).limit(1)
+        if (!ahead?.length) break
+        if (Date.now() > waitUntil) {
+          await supabase.from('sync_jobs').update({ status: 'failed', current_step: 'Synchronisation déjà en cours', error_code: 'EMAIL_SYNC_BUSY', error_message: 'Une autre synchronisation de cette boîte est en cours. Réessaie dans une minute.', completed_at: new Date().toISOString() }).eq('id', syncJobId)
+          return { success: false, busy: true, error: 'Une autre synchronisation de cette boîte est en cours. Réessaie dans une minute.' }
+        }
+        if (!announced) {
+          announced = true
+          await supabase.from('sync_jobs').update({ current_step: 'En attente d’une autre synchronisation' }).eq('id', syncJobId)
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+      }
+      if (announced) {
+        await supabase.from('sync_jobs').update({ current_step: 'Connexion au fournisseur' }).eq('id', syncJobId)
+        // Les budgets de temps (hydratation, analyse) se comptent depuis le vrai départ de la passe.
+        t0 = Date.now()
+        deadlineAt = t0 + SYNC_DEADLINE_MS
+      }
     }
 
     let accessToken = oauth.access_token as string | null
@@ -1067,6 +1141,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
         }
       : rawScan
     const messages = scan.messages
+    stageLog(t0, 'scan_done', { provider, messages: messages.length, truncated: scan.truncated })
     // Ne fait jamais régresser un « sortant » déjà détecté (ex. dossier
     // SentItems côté Microsoft) : élargit seulement la reconnaissance de nos
     // propres messages aux alias déclarés, sans jamais retirer une direction
@@ -1090,6 +1165,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       supabase.from('cognitive_profiles').select('contact_id,cognitive_profile_data').eq('organization_id', organizationId).eq('profile_version', 1),
       supabase.from('user_behavioral_profiles').select('cognitive_profile_data,source_interaction_count,updated_from').eq('organization_id', organizationId).eq('user_id', actingUserId).maybeSingle(),
     ])
+    stageLog(t0, 'tables_read', { contacts: existingContacts?.length ?? 0 })
     if (identityAliasError) throw identityAliasError
     if (trackedCompaniesError) throw trackedCompaniesError
     if (existingProfilesError) throw existingProfilesError
@@ -1149,7 +1225,11 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       }
     }
     for (const message of messages) message.discoveryOnly = !relevance.selectedIds.has(message.id)
-    if (provider === 'google') await hydrateGmailBodies(accessToken, messages, relevance.selectedIds)
+    stageLog(t0, 'relevance_done', { selected: relevance.selectedIds.size })
+    if (provider === 'google') {
+      const hydrated = await hydrateGmailBodies(accessToken, messages, relevance.selectedIds, t0 + HYDRATE_BUDGET_MS)
+      stageLog(t0, 'hydrate_done', { hydrated, selected: relevance.selectedIds.size })
+    }
 
     const contactCorpus = new Map<string, string[]>()
     const responsibleCorpus: string[] = []
@@ -1246,6 +1326,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       }
     })
 
+    stageLog(t0, 'messages_done', { stored: storedMessages, skippedAutomated })
     if (syncJobId) await supabase.from('sync_jobs').update({ current_step: 'Détection des personnes et organisations', progress: 60 }).eq('id', syncJobId)
 
     const analysisErrors: string[] = []
@@ -1544,7 +1625,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       // Une passe complète vient de réexaminer tout ce qui était en attente
       // (y compris pour « Mon profil ») : le compteur d'accumulation entre deux
       // passes complètes (voir runIncrementalSync) repart à zéro.
-      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, responsible_pending_messages: 0, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, ...(provider === 'google' ? { gmail_backfill_cursor_version: 2 } : {}), ...scan.cursorPatch, ...incrementalCursorPatch }
+      : { ...(connector.metadata ?? {}), last_sync: syncSummary, profile_backfill_pending: profilesPending, responsible_pending_messages: 0, backfill_complete: backfillComplete, backfill_before: nextBackfillBefore, last_cron_backfill_error: null, ...(provider === 'google' ? { gmail_backfill_cursor_version: 2 } : {}), ...scan.cursorPatch, ...incrementalCursorPatch }
     await supabase.from('connectors').update({
       status: 'connected',
       last_synced_at: new Date().toISOString(),
@@ -1800,12 +1881,24 @@ Deno.serve(async (request) => {
     // incrémentale (fréquent, body `{"mode":"incremental"}`) — voir les crons
     // tohu-bohu-email-backfill / tohu-bohu-email-incremental.
     const incremental = body.mode === 'incremental'
+    const continueBackfill = body.mode === 'backfill_continue'
     const { data: candidates } = await supabase.from('connectors')
       .select('id, organization_id, user_id, provider, metadata, last_synced_at')
       .in('provider', ['google', 'microsoft'])
       .eq('status', 'connected')
       .order('last_synced_at', { ascending: true, nullsFirst: true })
-    let pool = incremental
+    let pool = continueBackfill
+      // Reprise rapide : uniquement les boîtes dont le backfill n'est pas terminé. Dès qu'il l'est, la boîte
+      // sort d'elle-même de ce mode (le relais est pris par l'ingestion incrémentale).
+      ? (candidates ?? []).filter((row: any) => {
+          const metadata = row.metadata as any
+          const failedAt = Date.parse(String(metadata?.last_cron_backfill_error?.at ?? ''))
+          if (Number.isFinite(failedAt) && Date.now() - failedAt < BACKFILL_CONTINUE_RETRY_AFTER_FAILURE_MS) return false
+          return metadata?.backfill_complete !== true
+            || (row.provider === 'google' && metadata?.gmail_backfill_cursor_version !== 2)
+            || (row.provider === 'microsoft' && (metadata?.ms_backfill_inbox_done !== true || metadata?.ms_backfill_sent_done !== true))
+        })
+      : incremental
       ? (candidates ?? []).filter((row: any) =>
           (row.metadata as any)?.backfill_complete === true
           && (row.provider !== 'google' || (row.metadata as any)?.gmail_backfill_cursor_version === 2)
@@ -1820,7 +1913,7 @@ Deno.serve(async (request) => {
           // LLM), donc c'est ce seuil qui relance périodiquement une vraie passe.
           || Number((row.metadata as any)?.responsible_pending_messages ?? 0) >= RESPONSIBLE_REFRESH_PENDING_THRESHOLD)
     if (body.organizationId) pool = pool.filter((row: any) => row.organization_id === body.organizationId)
-    const selected = pool.slice(0, incremental ? INCREMENTAL_MAX_CONNECTORS_PER_RUN : BACKFILL_MAX_CONNECTORS_PER_RUN)
+    const selected = pool.slice(0, continueBackfill ? BACKFILL_CONTINUE_MAX_CONNECTORS_PER_RUN : incremental ? INCREMENTAL_MAX_CONNECTORS_PER_RUN : BACKFILL_MAX_CONNECTORS_PER_RUN)
 
     const results: Record<string, unknown>[] = []
     for (const row of selected) {
@@ -1843,12 +1936,18 @@ Deno.serve(async (request) => {
             connector: { id: row.id, metadata: row.metadata },
             jobId: null,
           })
+      if (result?.success === false && continueBackfill && result.busy !== true) {
+        await supabase.from('connectors').update({
+          metadata: { ...(row.metadata ?? {}), last_cron_backfill_error: { at: new Date().toISOString(), message: String(result.error ?? '').slice(0, 300) } },
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id)
+      }
       if (result?.success === false) {
-        console.error(JSON.stringify({ fn: 'sync-email-analysis', mode: incremental ? 'cron_incremental' : 'cron_backfill', event: 'connector_sync_failed', connector_id: row.id, organization_id: row.organization_id, provider: row.provider, error: result.error }))
+        console.error(JSON.stringify({ fn: 'sync-email-analysis', mode: continueBackfill ? 'cron_backfill_continue' : incremental ? 'cron_incremental' : 'cron_backfill', event: 'connector_sync_failed', connector_id: row.id, organization_id: row.organization_id, provider: row.provider, error: result.error }))
       }
       results.push({ connectorId: row.id, organizationId: row.organization_id, ...result })
     }
-    return json({ mode: incremental ? 'cron_incremental' : 'cron_backfill', candidates: pool.length, processed: results.length, results })
+    return json({ mode: continueBackfill ? 'cron_backfill_continue' : incremental ? 'cron_incremental' : 'cron_backfill', candidates: pool.length, processed: results.length, results })
   }
 
   const authorization = request.headers.get('Authorization')
