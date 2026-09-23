@@ -670,6 +670,22 @@ function signalAction(signal: PersonSignal): { label: string; url: string } | nu
 
 const SIGNAL_TAGS: SignalTag[] = ['Externe', 'Vigilance', 'Actif', 'Contexte']
 
+// Icône = le SENS de la source réelle du signal, jamais un pictogramme générique
+// répété. Le canal (provenance.sourceLabel) prime — c'est la donnée la plus fiable
+// pour savoir "par où" le signal est arrivé ; le type ne sert qu'en repli.
+function signalIcon(signal: PersonSignal): Parameters<typeof V48Icon>[0]['name'] {
+  const channel = (signal.provenance.sourceLabel ?? '').toLowerCase()
+  if (/gmail|outlook|mail|email/.test(channel)) return 'mail'
+  if (/pappers|rcs|bodacc|registre|siren|siret/.test(channel)) return 'briefcase'
+  if (/linkedin|profil|réseau/.test(channel)) return 'profile'
+  if (/site|web|domaine|dns/.test(channel)) return 'globe'
+  const type = signal.type.toLowerCase()
+  if (type === 'job_change' || type === 'mobility') return 'briefcase'
+  if (type === 'recent_activity') return 'document'
+  if (type === 'deadline' || type === 'silence') return 'mail'
+  return 'link'
+}
+
 export function SignalsCard({ data, userId, refresh }: SectionProps) {
   const [busy, run] = useBusy()
   const toast = useToast()
@@ -685,55 +701,87 @@ export function SignalsCard({ data, userId, refresh }: SectionProps) {
     await refresh()
   })
   const lastSync = data.sources.map((source) => source.lastSyncedAt).filter((value): value is string => value !== null).sort().pop() ?? null
-  const sourcesLabel = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
+  const connectedSources = data.sources.filter((source) => source.status === 'connected').map((source) => source.label)
   // Les signaux comportementaux (rythme, registre, tonalité…) sont des traits de
   // communication, pas des évènements datés — ils vivent dans l'onglet Profil,
   // pas dans ce flux Externe/Vigilance/Actif/Contexte.
   const categorized = data.signals.filter((signal) => !isBehavioralSignal(signal.type)).map((signal) => ({ signal, cat: signalCategory(signal) }))
   const filtered = tagFilter === 'all' ? categorized : categorized.filter(({ cat }) => cat.tag === tagFilter)
-  const shown = expanded ? filtered : filtered.slice(0, 4)
-  const rest = filtered.length - shown.length
-  return <section className="v48-section v48-signals">
-    <SectionTitle icon="signal" title="Signaux récents" subtitle={`${data.person.fullName.split(' ')[0]} · individu · ${sourcesLabel}`} meta={<>
-      <span className="v48-section-count"><b>{filtered.length}</b></span>
-      <button type="button" className={`ktog ${data.person.watchEnabled ? 'on' : ''}`} disabled={busy !== null} aria-pressed={data.person.watchEnabled} onClick={toggleWatch}>
-        <span className="ktog-lbl">Veille</span>
-        <span className="ktog-sw" aria-hidden="true" />
-      </button>
-    </>} />
-    <div className="v48-sig-filters" role="tablist" aria-label="Filtrer les signaux par catégorie">
-      <button type="button" role="tab" aria-selected={tagFilter === 'all'} className={tagFilter === 'all' ? 'on' : ''} onClick={() => setTagFilter('all')}>Tous</button>
-      {SIGNAL_TAGS.map((tag) => <button key={tag} type="button" role="tab" aria-selected={tagFilter === tag} className={tagFilter === tag ? 'on' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}
-    </div>
-    {data.person.watchEnabled
-      ? <div className="v48-signals-sync"><i />Dernière synchronisation : <b>{lastSync ? relativeDate(lastSync).toLowerCase() : 'à confirmer'}</b></div>
-      : <div className="v48-signals-sync off"><i />Veille coupée — aucun nouveau signal ne sera collecté.</div>}
-    <div className="v48-sig-list">
-      {shown.map(({ signal, cat }) => {
-        const action = signalAction(signal)
-        return <article className={`v48-sig tone-${cat.tone}`} key={signal.id}>
-          <span className="v48-sig-icon"><V48Icon name="signal" /></span>
-          <div className="v48-sig-body">
-            <div className="v48-sig-head">
-              <span className="v48-sig-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span>
-              <span className="v48-sig-cat">{cat.tag}</span>
-            </div>
-            <h3>{signal.title}</h3>
-            <p>{signal.summary || 'Détail en cours de consolidation.'}</p>
-            <div className="v48-sig-foot">
-              {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
-              {action && <a className="v48-sig-open" href={action.url} target="_blank" rel="noreferrer">{action.label}</a>}
-              <span className="v48-sig-acts">
-                <button className={signal.validationStatus === 'confirmed' ? 'on' : ''} disabled={busy !== null} onClick={() => void validate(signal.id, 'confirmed')} title="Confirmer">✓</button>
-                <button className={signal.validationStatus === 'dismissed' ? 'on no' : 'no'} disabled={busy !== null} onClick={() => void validate(signal.id, 'dismissed')} title="Infirmer">×</button>
-              </span>
+  // Le signal qui compte : le plus récent de la liste déjà triée par le back —
+  // jamais un signal inventé ou déplacé depuis une autre personne.
+  const [primary, ...others] = filtered
+  const shown = expanded ? others : others.slice(0, 4)
+  const rest = others.length - shown.length
+
+  const row = ({ signal, cat }: { signal: PersonSignal; cat: { tag: SignalTag; tone: SignalTone } }) => {
+    const action = signalAction(signal)
+    return <article className={`v48-agent-row tone-${cat.tone}`} key={signal.id}>
+      <span className="v48-agent-row-ic"><V48Icon name={signalIcon(signal)} /></span>
+      <div className="v48-agent-row-body">
+        <h3>{signal.title}</h3>
+        <p>{signal.summary || 'Détail en cours de consolidation.'}</p>
+        <div className="v48-agent-row-meta">
+          {signal.provenance.sourceLabel && <span className="v48-agent-tag">{signal.provenance.sourceLabel}</span>}
+          <span className="v48-agent-tag cat">{cat.tag}</span>
+          <span className="v48-agent-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span>
+          {action && <a className="v48-agent-row-open" href={action.url} target="_blank" rel="noreferrer">{action.label} →</a>}
+          <span className="v48-agent-row-acts">
+            <button className={signal.validationStatus === 'confirmed' ? 'on' : ''} disabled={busy !== null} onClick={() => void validate(signal.id, 'confirmed')} title="Confirmer">✓</button>
+            <button className={signal.validationStatus === 'dismissed' ? 'on no' : 'no'} disabled={busy !== null} onClick={() => void validate(signal.id, 'dismissed')} title="Infirmer">×</button>
+          </span>
+        </div>
+      </div>
+    </article>
+  }
+
+  return <section className="v48-signal-agent">
+    <header className="v48-agent-head">
+      <span className="v48-agent-ic"><V48Icon name="radar" /></span>
+      <div className="v48-agent-head-text">
+        <p className="v48-agent-title">Agent de signal externe</p>
+        <p className="v48-agent-sub">{data.person.fullName.split(' ')[0]} · personne · {connectedSources.length ? connectedSources.join(', ') : 'sources à confirmer'}</p>
+      </div>
+      <div className="v48-agent-head-right">
+        <span className="v48-agent-count"><b>{filtered.length}</b> capté{filtered.length > 1 ? 's' : ''}</span>
+        <button type="button" className={`v48-agent-watch ${data.person.watchEnabled ? 'on' : ''}`} disabled={busy !== null} aria-pressed={data.person.watchEnabled} onClick={toggleWatch}>
+          <i />{data.person.watchEnabled ? 'En veille' : 'Veille coupée'}
+        </button>
+      </div>
+    </header>
+    <div className="v48-agent-screen">
+      <div className="v48-agent-sync">
+        <span className={`v48-agent-sync-dot ${data.person.watchEnabled ? '' : 'off'}`} />
+        {data.person.watchEnabled
+          ? <>Dernier balayage {lastSync ? relativeDate(lastSync).toLowerCase() : 'à confirmer'}</>
+          : 'Veille coupée — aucun nouveau signal ne sera collecté'}
+        {connectedSources.length > 0 && <span className="v48-agent-sync-src">{connectedSources.join(' · ')}</span>}
+      </div>
+      <div className="v48-sig-filters" role="tablist" aria-label="Filtrer les signaux par catégorie">
+        <button type="button" role="tab" aria-selected={tagFilter === 'all'} className={tagFilter === 'all' ? 'on' : ''} onClick={() => setTagFilter('all')}>Tous</button>
+        {SIGNAL_TAGS.map((tag) => <button key={tag} type="button" role="tab" aria-selected={tagFilter === tag} className={tagFilter === tag ? 'on' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}
+      </div>
+      {primary ? <article className={`v48-agent-primary tone-${primary.cat.tone}`}>
+        <p className="v48-agent-primary-label"><i />Le signal qui compte</p>
+        <div className="v48-agent-primary-body">
+          <span className="v48-agent-primary-ic"><V48Icon name={signalIcon(primary.signal)} /></span>
+          <div className="v48-agent-primary-text">
+            <strong>{primary.signal.title}</strong>
+            <p>{primary.signal.summary || 'Détail en cours de consolidation.'}</p>
+            <div className="v48-agent-row-meta">
+              {primary.signal.provenance.sourceLabel && <span className="v48-agent-tag">{primary.signal.provenance.sourceLabel}</span>}
+              <span className="v48-agent-tag cat">{primary.cat.tag}</span>
+              <span className="v48-agent-when">{relativeDate(primary.signal.provenance.observedAt).toLowerCase()}</span>
             </div>
           </div>
-        </article>
-      })}
-      {!filtered.length && <Empty title="Aucun signal détecté">{categorized.length ? 'Aucun signal pour cette catégorie.' : 'Les signaux apparaîtront après les prochaines synchronisations.'}</Empty>}
+          {(() => {
+            const action = signalAction(primary.signal)
+            return action ? <a className="v48-agent-primary-cta" href={action.url} target="_blank" rel="noreferrer">{action.label} →</a> : null
+          })()}
+        </div>
+      </article> : <Empty title="Aucun signal détecté">{categorized.length ? 'Aucun signal pour cette catégorie.' : 'Les signaux apparaîtront après les prochaines synchronisations.'}</Empty>}
+      {others.length > 0 && <div className="v48-agent-rows">{shown.map(row)}</div>}
+      {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
+      {expanded && others.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
     </div>
-    {rest > 0 && <button type="button" className="v48-more" onClick={() => setExpanded(true)}>Voir {rest} signal{rest > 1 ? 'aux' : ''} de plus ▾</button>}
-    {expanded && filtered.length > 4 && <button type="button" className="v48-more" onClick={() => setExpanded(false)}>Réduire ▴</button>}
   </section>
 }

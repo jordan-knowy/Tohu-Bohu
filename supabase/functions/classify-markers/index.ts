@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeWithClients } from '../_shared/scoring-v6/authorization.ts'
 import { checked,loadLedger } from '../_shared/scoring-v6/pipeline.ts'
 import { revisionsAt } from '../_shared/scoring-v6/foundation.ts'
-import { classifyObservations } from '../_shared/scoring-v6/semanticObservations.ts'
+import { classifyObservations,PROMPT_VERSION } from '../_shared/scoring-v6/semanticObservations.ts'
 import { SEMANTIC_REGISTRY } from '../_shared/scoring-v6/semanticClassifier.ts'
 import { extractAuthoredText } from '../_shared/scoring-v6/emailText.ts'
 import { getConfiguredModel } from '../_shared/llm-model-config.ts'
@@ -15,6 +15,10 @@ const json=(b:unknown,s=200)=>new Response(JSON.stringify(b),{status:s,headers})
 const MAX_EVENTS_PER_RUN=30
 const TIME_BUDGET_MS=40000
 const CONCURRENCY=4
+// A thread the contact opened counts as a substantial initiation (R02) only if its authored text
+// is more than a one-liner: the marker is « initiation substantielle vs relance », which needs the body.
+const SUBSTANTIAL_INITIATION_CHARS=150
+const INITIATION_WINDOW_MS=182*86_400_000
 const CALL_TIMEOUT_MS=60000 // budget + one batch stays under the 150 s platform limit
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers})
@@ -53,8 +57,25 @@ Deno.serve(async(req)=>{
       }
       // Already-classified events are skipped (a technical_error is retried), so a
       // full cycle over the dyads never pays the LLM twice for the same text.
-      const done=new Set<string>(await checked<string[]>(db.rpc('v6_classified_event_ids',{p_dyad_id:row.id})))
+      const done=new Set<string>(await checked<string[]>(db.rpc('v6_classified_event_ids',{p_dyad_id:row.id,p_prompt_version:PROMPT_VERSION})))
       const events=observed.map(e=>e.evidenceText?.trim()?e:{...e,evidenceText:bodies.get(String(e.evidenceRef).replace('communication_messages:',''))}).filter(e=>e.evidenceText?.trim() && !done.has(e.id))
+      // R02 (initiation substantielle) from real content: the first message of a thread, sent by the
+      // contact, with a substantial authored body. Deterministic, one marker per thread, idempotent
+      // through the marker id. Until now R02 stayed a candidate because "substantial" needs the body.
+      const known=new Set<string>((ledger.markers as any[]).map(m=>m.id)),dyadForR02={organizationId:row.organization_id,collaboratorUserId:row.collaborator_user_id,contactId:row.contact_id}
+      const firstByThread=new Map<string,any>()
+      for(const e of observed){if(!e.threadId||!e.direction)continue;const cur=firstByThread.get(e.threadId);if(!cur||Date.parse(e.eventTime)<Date.parse(cur.eventTime))firstByThread.set(e.threadId,e)}
+      for(const e of firstByThread.values()){
+        if(e.direction!=='inbound' || Date.parse(at)-Date.parse(e.eventTime)>INITIATION_WINDOW_MS)continue
+        const text=bodies.get(String(e.evidenceRef).replace('communication_messages:',''))
+        const id=`body:R02:1:${e.id}`
+        if(!text || text.length<SUBSTANTIAL_INITIATION_CHARS || known.has(id))continue
+        await checked(db.rpc('v6_foundation_append',{p_dyad:dyadForR02,p_kind:'marker',p_payload:{
+          id,dyad:dyadForR02,recordedAt:at,effectiveFrom:at,markerId:'R02',sense:1,observedAt:e.eventTime,
+          sourceEventIds:[e.id],state:'active',status:'accepted',registryVersion:'reg-v6.0',detectorVersion:'body-initiation-v1',
+          voluntariness:'unknown',intensity:'unknown',
+        }}))
+      }
       // `events` already excludes what a previous run classified, so every run simply
       // resumes at the first unclassified event: no stored offset (which would drift as
       // the list shrinks) is needed. A technical_error stays in the list and is retried.

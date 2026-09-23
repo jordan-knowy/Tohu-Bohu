@@ -10,6 +10,10 @@
 export const SEMANTIC_REGISTRY: Record<string, { axis: string; sense: -1 | 0 | 1; requiresVerbatim: boolean; definition: string }> = {
   C01: { axis: 'confiance', sense: 1, requiresVerbatim: false, definition: 'divulgation interne/personnelle non nécessaire à la tâche' },
   C05: { axis: 'confiance', sense: 1, requiresVerbatim: false, definition: 'jugement personnel partagé sur un tiers absent' },
+  C06: { axis: 'confiance', sense: 1, requiresVerbatim: false, definition: 'nous confie une tâche, une décision ou une responsabilité (délègue, donne son accord pour procéder, « je vous laisse faire »)' },
+  C07: { axis: 'confiance', sense: 1, requiresVerbatim: false, definition: 'sollicite notre avis, notre expertise ou notre conseil' },
+  C08: { axis: 'confiance', sense: 1, requiresVerbatim: false, definition: 'prend un engagement ferme envers nous (action précise avec échéance ou confirmation nette)' },
+  C09: { axis: 'confiance', sense: -1, requiresVerbatim: false, definition: 'remet en cause notre fiabilité ou notre parole, ou exige des garanties (doute explicite)' },
   S03: { axis: 'satisfaction', sense: -1, requiresVerbatim: false, definition: 'appréciation négative explicite' },
   S06: { axis: 'satisfaction', sense: -1, requiresVerbatim: false, definition: 'désintermédiation / contournement direct' },
   S07: { axis: 'satisfaction', sense: -1, requiresVerbatim: true, definition: 'dénonciation auprès d’un tiers (CRITIQUE : verbatim obligatoire)' },

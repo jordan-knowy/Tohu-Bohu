@@ -404,20 +404,6 @@ export async function fetchWorkspaceMembers(workspaceId: string): Promise<Worksp
     .sort((a: WorkspaceMember, b: WorkspaceMember) => a.fullName.localeCompare(b.fullName))
 }
 
-export type RelationshipNarrative = { narrative: string; generatedAt: string | null; cached: boolean }
-
-/** Phrase de justification mensuelle du score — générée à la demande (à l'ouverture
- *  de l'onglet Relation), mise en cache côté serveur par mois : un seul appel IA
- *  par mois et par fiche réellement consultée, jamais dans la boucle cron. */
-export async function fetchRelationshipNarrative(workspaceId: string, personId: string): Promise<RelationshipNarrative> {
-  const { data, error } = await getSupabase().functions.invoke('generate-relationship-narrative', {
-    body: { organizationId: workspaceId, subjectType: 'person', subjectId: personId },
-  })
-  if (error) throw await invokeError(error, 'Génération de la synthèse impossible.')
-  if (data?.error) throw new Error(String(data.error))
-  return { narrative: String(data.narrative ?? ''), generatedAt: data.generatedAt ?? null, cached: Boolean(data.cached) }
-}
-
 export type PersonEnrichmentResult = { scanned: number; enriched: number; failed: number }
 export type PersonCognitiveSyncResult = {
   providers: string[]

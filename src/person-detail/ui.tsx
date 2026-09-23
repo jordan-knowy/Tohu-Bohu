@@ -4,7 +4,7 @@ import type { DataSourceReference } from './types'
 
 /** Icônes V48 partagées entre les vues Profil/Relation/Live (person) — un seul jeu
  *  de traits pour toute la fiche personne, évite la divergence visuelle entre fichiers. */
-export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' | 'briefcase' | 'globe' | 'video' | 'external-link' }) {
+export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'commitment' | 'career' | 'signal' | 'sparkle' | 'share' | 'sliders' | 'briefcase' | 'globe' | 'video' | 'external-link' | 'mail' | 'link' | 'document' | 'radar' }) {
   const paths: Record<typeof name, ReactNode> = {
     calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M4 10h16M8 3.5v4M16 3.5v4" /></>,
     video: <><rect x="3" y="6.5" width="13" height="11" rx="2" /><path d="m16 10.5 5-3v9l-5-3Z" /></>,
@@ -19,6 +19,10 @@ export function V48Icon({ name }: { name: 'calendar' | 'profile' | 'pulse' | 'co
     sliders: <><path d="M4.4 7.4h15.2M4.4 12h15.2M4.4 16.6h15.2" /><circle cx="9" cy="7.4" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7.4" cy="16.6" r="2" /></>,
     briefcase: <><rect x="3.4" y="7.4" width="17.2" height="12.2" rx="2" /><path d="M8.6 7.4V5.8a2 2 0 0 1 2-2h2.8a2 2 0 0 1 2 2v1.6" /><path d="M3.4 12.6h17.2" /></>,
     globe: <><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8" /><path d="M12 3.6a13 13 0 0 1 0 16.8a13 13 0 0 1 0-16.8" /></>,
+    mail: <><rect x="3.2" y="5.5" width="17.6" height="13" rx="2" /><path d="m4 7 8 6.4L20 7" /></>,
+    link: <><path d="M9.5 14.5 14.5 9.5" /><path d="M11 6.5 13 4.5a4 4 0 0 1 5.6 5.6l-2 2" /><path d="M13 17.5 11 19.5a4 4 0 0 1-5.6-5.6l2-2" /></>,
+    document: <><path d="M6.5 3.5h8l4 4v13a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1Z" /><path d="M14 3.5v4.2h4" /><path d="M8.5 13h7M8.5 16.4h7" /></>,
+    radar: <><circle cx="12" cy="12" r="8.5" /><path d="M12 12 17 8" /><circle cx="12" cy="12" r="1.6" /></>,
   }
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }

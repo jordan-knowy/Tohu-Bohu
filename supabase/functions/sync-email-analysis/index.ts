@@ -1312,7 +1312,7 @@ async function runEmailSync(params: SyncParams): Promise<Record<string, unknown>
       if (!primaryContact || message.discoveryOnly) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: message.body || null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, ...(message.body ? { body_text: message.body } : {}), metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
       // « Ce que le contact a écrit » — l'auto-profil (ci-dessus) couvre déjà
       // nos propres messages indépendamment de primaryContact/eligibleEmails.
@@ -1831,7 +1831,7 @@ async function runIncrementalSync(params: SyncParams): Promise<Record<string, un
       if (!primaryContact) return
       const { data: thread } = await supabase.from('communication_threads').upsert({ organization_id: organizationId, provider, external_thread_id: message.threadId, subject: message.subject, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,provider,external_thread_id' }).select('id').single()
       if (!thread) return
-      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, body_text: message.body || null, metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
+      const { error: messageError } = await supabase.from('communication_messages').upsert({ organization_id: organizationId, thread_id: thread.id, contact_id: primaryContact.id, provider, external_message_id: message.id, direction: message.direction, sent_at: message.sentAt, subject: message.subject, ...(message.body ? { body_text: message.body } : {}), metadata: { from: message.from.email, to: message.to.map((item) => item.email), user_id: actingUserId, connector_id: connector.id } }, { onConflict: 'organization_id,provider,external_message_id' })
       if (!messageError) storedMessages++
     })
 

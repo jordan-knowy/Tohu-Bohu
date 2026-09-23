@@ -2567,6 +2567,77 @@
 .v48-sig-acts button.on{border-color:#c7e7d5;background:#eef8f2;color:#1e6b47}.v48-sig-acts button.no.on{border-color:#f2cdd3;background:#fdf1f3;color:#a6303f}
 .v48-sig-acts button:disabled{opacity:.5;cursor:default;transform:none}
 
+/* Agent de signal externe — module sombre "moniteur" + écran interne blanc.
+   Design fixe (maquette) ; les couleurs par tonalité viennent de SIGNAL_TONE_COLOR. */
+.v48-signal-agent{background:var(--night);border-radius:var(--r-xl);box-shadow:var(--sh-lg);padding:18px}
+.v48-agent-head{display:flex;align-items:center;gap:12px;padding:2px 6px 16px}
+.v48-agent-ic{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:var(--r-md);background:var(--violet);color:#fff;box-shadow:0 0 0 5px rgba(110,80,200,.22)}
+.v48-agent-ic svg{width:17px;height:17px}
+.v48-agent-head-text{min-width:0}
+.v48-agent-title{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#fff}
+.v48-agent-sub{margin:4px 0 0;font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;color:rgba(212,197,245,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v48-agent-head-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none}
+.v48-agent-count{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:rgba(212,197,245,.62)}
+.v48-agent-count b{color:#fff;font-size:11px}
+.v48-agent-watch{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;border:1px solid rgba(212,197,245,.22);background:rgba(255,255,255,.04);color:rgba(212,197,245,.7);font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+.v48-agent-watch i{width:6px;height:6px;border-radius:50%;background:rgba(212,197,245,.4)}
+.v48-agent-watch.on{border-color:rgba(46,168,106,.35);background:rgba(46,168,106,.12);color:#96ddb8}
+.v48-agent-watch.on i{background:#2ea86a;box-shadow:0 0 0 0 rgba(46,168,106,.5);animation:v48-sync-pulse 2s infinite}
+.v48-agent-watch:disabled{opacity:.6;cursor:default}
+.v48-agent-screen{background:#fff;border-radius:var(--r-lg);padding:16px;box-shadow:inset 0 0 0 1px var(--line)}
+.v48-agent-sync{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 4px 14px;font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;color:var(--t2)}
+.v48-agent-sync-dot{width:6px;height:6px;border-radius:50%;background:#2ea86a;box-shadow:0 0 0 0 rgba(46,168,106,.5);animation:v48-sync-pulse 2s infinite}
+.v48-agent-sync-dot.off{background:#c4bcda;animation:none}
+.v48-agent-sync-src{margin-left:auto;color:var(--t3)}
+.v48-agent-primary{border:1.5px solid var(--night);border-radius:var(--r-lg);background:#fff;padding:16px;margin:0 0 12px}
+.v48-agent-primary-label{display:flex;align-items:center;gap:7px;margin:0 0 12px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.v48-agent-primary-label i{width:6px;height:6px;border-radius:50%;background:var(--night)}
+.v48-agent-primary-body{display:flex;align-items:flex-start;gap:14px}
+.v48-agent-primary-ic{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:var(--r-md);background:var(--night);color:#fff}
+.v48-agent-primary-ic svg{width:18px;height:18px}
+.v48-agent-primary-text{flex:1;min-width:0}
+.v48-agent-primary-text strong{display:block;font-family:var(--font);font-weight:800;font-size:15px;color:var(--t1);line-height:1.3}
+.v48-agent-primary-text p{margin:6px 0 0;color:var(--t2);font-size:12px;line-height:1.55}
+.v48-agent-primary-cta{align-self:center;flex:none;padding:9px 16px;border-radius:999px;background:var(--night);color:#fff;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.03em;text-decoration:none;white-space:nowrap}
+.v48-agent-primary-cta:hover{background:var(--night2)}
+.v48-agent-tag{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--sig-tone,var(--t3));background:color-mix(in srgb,var(--sig-tone,#8b84a3) 12%,#fff);border-radius:5px;padding:3px 7px}
+.v48-agent-tag.cat{color:var(--t2);background:var(--lav)}
+.v48-agent-when{font-family:var(--mono);font-size:9px;color:var(--t3)}
+.v48-agent-rows{display:flex;flex-direction:column}
+.v48-agent-row{display:flex;gap:12px;padding:13px 4px;border-top:1px solid var(--line);transition:transform .12s var(--ease),background .12s var(--ease)}
+.v48-agent-row:hover{transform:translateX(3px);background:var(--lav)}
+.v48-agent-row.tone-external{--sig-tone:#6e50c8}
+.v48-agent-row.tone-vigilance{--sig-tone:#c97a20}
+.v48-agent-row.tone-active{--sig-tone:#2ea86a}
+.v48-agent-row.tone-context{--sig-tone:#2896a8}
+.v48-agent-primary.tone-external{--sig-tone:#6e50c8}
+.v48-agent-primary.tone-vigilance{--sig-tone:#c97a20}
+.v48-agent-primary.tone-active{--sig-tone:#2ea86a}
+.v48-agent-primary.tone-context{--sig-tone:#2896a8}
+.v48-agent-row-ic{width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:9px;background:color-mix(in srgb,var(--sig-tone,#8b84a3) 14%,#fff);color:var(--sig-tone,#8b84a3)}
+.v48-agent-row-ic svg{width:16px;height:16px}
+.v48-agent-row-body{flex:1;min-width:0}
+.v48-agent-row-body h3{margin:0;font-family:var(--font);font-weight:800;font-size:12.5px;color:var(--t1);line-height:1.35}
+.v48-agent-row-body p{margin:4px 0 0;color:var(--t2);font-size:11px;line-height:1.5}
+.v48-agent-row-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:8px}
+.v48-agent-row-open{margin-left:auto;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--violet);text-decoration:none;white-space:nowrap}
+.v48-agent-row-open:hover{text-decoration:underline}
+.v48-agent-row-acts{display:flex;gap:6px}
+.v48-agent-row-acts button{width:24px;height:24px;border:1px solid var(--grid);background:#fff;border-radius:50%;color:var(--t3);font-size:11px;cursor:pointer;display:grid;place-items:center;transition:transform .1s var(--ease),border-color .15s var(--ease),background .15s var(--ease),color .15s var(--ease)}
+.v48-agent-row-acts button:hover{border-color:var(--vl);color:var(--violet)}
+.v48-agent-row-acts button:active{transform:scale(.85)}
+.v48-agent-row-acts button.on{border-color:#c7e7d5;background:#eef8f2;color:#1e6b47}
+.v48-agent-row-acts button.no.on{border-color:#f2cdd3;background:#fdf1f3;color:#a6303f}
+.v48-agent-row-acts button:disabled{opacity:.5;cursor:default;transform:none}
+@media(max-width:560px){
+  .v48-agent-head{flex-wrap:wrap}
+  .v48-agent-head-right{margin-left:0}
+  .v48-agent-primary-body{flex-wrap:wrap}
+  .v48-agent-primary-cta{align-self:flex-start}
+  .v48-agent-row-meta{gap:6px}
+  .v48-agent-row-open{margin-left:0;flex-basis:100%}
+}
+
 /* Parcours — cartes d'expérience (logo · titre · période/durée · description ·
    tag source + lien compte), formation en résumé repliable. */
 .v48-cv-panel{padding:6px 20px 20px}

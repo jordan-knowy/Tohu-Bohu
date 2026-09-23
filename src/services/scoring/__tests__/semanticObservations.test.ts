@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {classifyObservations,parseObservations} from '../../../../supabase/functions/_shared/scoring-v6/semanticObservations.ts'
+import {classifyObservations,parseObservations,observationsPrompt} from '../../../../supabase/functions/_shared/scoring-v6/semanticObservations.ts'
 const text='Le problème est grave. Je vous fais confiance pour le résoudre.'
 const observation=(id:string,evidence:string)=>({type:'marker',marker_candidate:id,actor:null,target:null,evidence,confidence:.9,voluntariness:'unknown',conditions:[],identity_quality:'unknown'})
 const input={text,sourceEventId:'event',model:'test-model',registryVersion:'reg-v6.0',at:'2026-09-17'}
@@ -11,4 +11,5 @@ describe('Structured semantic observations',()=>{
   it('rejects invented quotes and unknown markers',()=>{for(const o of [observation('UNKNOWN','Le problème est grave.'),observation('S03','Citation totalement inventée')])expect(()=>parseObservations({observations:[o],abstained:false},text)).toThrow()})
   it('rejects a score produced by the LLM',()=>expect(()=>parseObservations({observations:[],abstained:false,score:67},text)).toThrow('INVALID_SCHEMA'))
   it('source unavailable is not an empirical negative',async()=>expect((await classifyObservations({...input,text:''},async()=>({}))).result_status).toBe('technical_error'))
+  it('prompt is a checklist over the closed registry and demands an exact quote',()=>{const p=observationsPrompt('Merci beaucoup pour votre retour.');for(const id of ['C01','S03','S08','E04'])expect(p).toContain(id);expect(p).toMatch(/citation EXACTE/);expect(p).toContain('Merci beaucoup pour votre retour.')})
 })

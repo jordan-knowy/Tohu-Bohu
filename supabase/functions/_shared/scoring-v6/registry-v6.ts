@@ -27,6 +27,13 @@ const PERSON_MARKERS: MarkerRegistryEntry[] = [
   m('C03', 'confiance', 'moyen', +10, +1, 1.0, 'oui'),
   m('C04', 'confiance', 'moyen', +14, +1, 1.0, 'oui'),
   m('C05', 'confiance', 'important', +18, +1, 1.0, 'non'),
+  // Ajouts 2026-09-20 (additifs : aucun marqueur existant modifié). Confiance n'avait que des
+  // marqueurs rares dans un email ; ceux-ci sont observables dans le corps des échanges, avec
+  // citation exacte, et correspondent à la définition affichée de l'axe (« peut-on compter l'un sur l'autre »).
+  m('C06', 'confiance', 'moyen', +10, +1, 1.0, 'difficile', 'le contact nous confie une tâche, une décision ou une responsabilité'),
+  m('C07', 'confiance', 'moyen', +10, +1, 1.0, 'difficile', 'le contact sollicite notre avis ou notre expertise'),
+  m('C08', 'confiance', 'moyen', +12, +1, 1.0, 'difficile', 'engagement ferme du contact envers nous (action précise + échéance ou confirmation)'),
+  m('C09', 'confiance', 'moyen', -14, -1, 1.0, 'non', 'le contact remet en cause notre fiabilité ou exige des garanties'),
   m('S01', 'satisfaction', 'moyen', -14, -1, 1.0, 'non'),
   m('S02', 'satisfaction', 'important', -16, -1, 1.0, 'non'),
   m('S03', 'satisfaction', 'moyen', -12, -1, 1.0, 'non'),

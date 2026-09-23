@@ -5,7 +5,7 @@ import { scoreWindow, sourceTypeLabel } from './mapping'
 import type { PersonApproachScenario, PersonCognitiveProfile, PersonDetailData, PersonHistoryEvent, PersonMemoryEntry, PersonPrimaryAxis, PersonRecommendation, PersonScorePoint, PrimaryAxisId } from './types'
 import { CareerSection, HistoryCard, MemoryCard, SignalsCard } from './sections2'
 import type { CareerHook } from './sections2'
-import { dismissPersonMemoryEntry, fetchRelationshipNarrative, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
+import { dismissPersonMemoryEntry, resolvePersonMemoryEntry, updatePersonRecommendationStatus } from './service'
 import { isBehavioralSignal, signalTypeLabel } from '../services/signal-labels'
 import { V48Icon, confidenceLevel, formatDate, formatMonth, relativeDate, renderEmphasis, scoreTone, useBusy, useToast } from './ui'
 import { ContactAvatar } from '../components/ContactAvatar'
@@ -789,18 +789,6 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
   const engagementCount = commitments.length + engagementRecos.length
   const delta = relation.phaseDelta
   const [methodologyOpen, setMethodologyOpen] = useState(false)
-  const [narrative, setNarrative] = useState<string | null>(null)
-  const [narrativeState, setNarrativeState] = useState<'idle' | 'loading' | 'error'>('idle')
-
-  useEffect(() => {
-    if (relation.score === null) return
-    let cancelled = false
-    setNarrativeState('loading')
-    fetchRelationshipNarrative(data.person.workspaceId, data.person.id)
-      .then((result) => { if (!cancelled) { setNarrative(result.narrative); setNarrativeState('idle') } })
-      .catch(() => { if (!cancelled) setNarrativeState('error') })
-    return () => { cancelled = true }
-  }, [data.person.workspaceId, data.person.id, relation.score])
 
   // Faits vérifiables pour les chips — jamais une interprétation libre : friction
   // réelle (keyMoments), engagements réellement en retard / sans date (mêmes
@@ -828,8 +816,6 @@ export function V48PersonRelationView({ data, userId, refresh }: ViewProps) {
       data={data}
       relation={relation}
       delta={delta}
-      narrative={narrative}
-      narrativeState={narrativeState}
       previousScoredMonth={previousScoredMonth}
       chips={relationChips}
       onOpenMethodology={() => setMethodologyOpen(true)}
@@ -860,22 +846,20 @@ function weatherBand(score: number | null): 'good' | 'mid' | 'low' | 'na' {
  *  détail des engagements (commitments/engagementRecos, calculés une seule fois
  *  dans V48PersonRelationView) nourrit à la fois les chips ci-dessous et, plus
  *  bas dans l'onglet, la carte « Ce qu'il faut faire » (PersonActionsSection). */
-function RelationOverviewCard({ data, relation, delta, narrative, narrativeState, previousScoredMonth, chips, onOpenMethodology }: {
+function RelationOverviewCard({ data, relation, delta, previousScoredMonth, chips, onOpenMethodology }: {
   data: PersonDetailData
   relation: PersonDetailData['relationship']
   delta: number | null
-  narrative: string | null
-  narrativeState: 'idle' | 'loading' | 'error'
   previousScoredMonth: string | null
   chips: Array<{ text: string; tone: 'critical' | 'neutral' }>
   onOpenMethodology: () => void
 }) {
   const needsConfirm = relation.score !== null && (relation.totalInteractions < SCORE_CONFIRM_MIN_INTERACTIONS || (relation.confidence !== null && relation.confidence < SCORE_CONFIRM_MIN_CONFIDENCE))
+  // La phrase IA de synthèse mensuelle reposait sur les snapshots de l'ancien moteur de score (supprimés le
+  // 2026-09-17) : elle n'est plus générée tant qu'un équivalent V6 n'existe pas.
   const synthesis = relation.score === null
     ? 'Données insuffisantes pour établir une synthèse relationnelle.'
-    : narrativeState === 'loading' ? 'Analyse de l’évolution en cours…'
-      : narrativeState === 'error' ? 'Synthèse indisponible pour le moment.'
-        : narrative
+    : null
 
   return <article className="rel-overview">
     <div className="rel-overview-main">
@@ -937,103 +921,11 @@ function RelationTrendChart({ data }: { data: PersonDetailData }) {
   </div>
 }
 
-/** « il y a X » pour un évènement passé (contrairement à relativeDate, bascule sur
- *  les mois au-delà de 31 j — nécessaire pour dater un changement de poste). */
-function timeAgoLabel(value: string | null): string {
-  if (!value) return 'date à confirmer'
-  const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000))
-  if (days === 0) return 'aujourd’hui'
-  if (days < 31) return `il y a ${days} j`
-  const months = Math.floor(days / 30.44)
-  if (months < 12) return `il y a ${months} mois`
-  const years = Math.floor(months / 12)
-  return `il y a ${years} an${years > 1 ? 's' : ''}`
-}
-
-function InsightBand({ data }: { data: PersonDetailData }) {
-  // Le spotlight « depuis votre dernier échange » privilégie une actualité réelle,
-  // pas un trait comportemental (registre, tonalité…) qui n'est pas un événement daté.
-  const signal = data.signals.find((item) => !isBehavioralSignal(item.type)) ?? data.signals[0]
-  const signalUrl = signal?.provenance.sourceUrl ?? null
-  // Sous-encart daté de la carte gauche : le dernier changement de poste détecté
-  // (jamais inventé — vide si le CV n'a rien détecté de nouveau).
-  const nested = data.careerEntries.find((entry) => entry.entryType === 'detected_change') ?? null
-  const reading = data.summary?.text || data.behavior.executiveSummary || 'Lecture en cours de construction'
-  const sources = data.sources.filter((source) => source.status === 'connected').map((source) => source.label).join(' + ') || 'sources à confirmer'
-  // Icône/badge du spotlight toujours violets (couleur de marque) : contrairement à la
-  // liste des signaux (où la couleur par tonalité aide à scanner), ici une seule mise
-  // en avant n'a pas besoin d'un code couleur — juste de rester cohérente visuellement.
-  const toneColor = 'var(--violet)'
-  return <div className="v48-insight-grid">
-    <article className="v48-insight filled">
-      <div className="v48-insight-head"><span className="v48-insight-ic"><V48Icon name="briefcase" /></span><small>Ce que montrent les échanges</small></div>
-      <strong>{reading}</strong>
-      {nested && <div className="v48-insight-nested">
-        <small>{timeAgoLabel(nested.startedAt)}</small>
-        <b>{nested.title}</b>
-        {nested.description && <p>{nested.description}</p>}
-      </div>}
-      <p className="v48-insight-src">Dérivé de {data.relationship.totalInteractions} échange{data.relationship.totalInteractions > 1 ? 's' : ''} · {sources}</p>
-    </article>
-    <article className="v48-signal-spotlight" style={{ '--spot-tone': toneColor } as React.CSSProperties}>
-      <div className="v48-spot-top">
-        <span className="v48-spot-eyebrow-ic"><V48Icon name="pulse" /></span>
-        <small>Depuis votre dernier échange <b>{formatDate(data.relationship.lastInteractionAt)}</b></small>
-        {signal && <span className="v48-spot-kind">{signalTypeLabel(signal.type)}</span>}
-      </div>
-      {signal ? <div className="v48-spot-body">
-        <span className="v48-spot-icon"><V48Icon name="globe" /></span>
-        <div className="v48-spot-content">
-          <strong>{signal.title}</strong>
-          <p>{signal.summary || 'Signal détecté, détail en cours de consolidation.'}</p>
-          <div className="v48-spot-foot">
-            {signal.provenance.sourceLabel && <span className="v48-sig-chan"><i />{signal.provenance.sourceLabel}</span>}
-            <span className="v48-spot-when">{relativeDate(signal.provenance.observedAt).toLowerCase()}</span>
-          </div>
-        </div>
-      </div> : <p className="v48-spot-empty">Aucun nouveau signal réel depuis le dernier échange.</p>}
-      {signalUrl && <a className="v48-spot-open" href={signalUrl} target="_blank" rel="noreferrer">Voir la publication →</a>}
-    </article>
-  </div>
-}
-
 export function V48PersonLiveView({ data, userId, refresh }: ViewProps) {
-  const currentCareer = data.careerEntries.find((item) => item.current)
-  // Points d'accroche RÉELS (recherche web) en priorité — relations en commun puis
-  // sujets de conversation — sinon repli sur la lecture déjà disponible (synthèse,
-  // actualité de poste, style d'échange) pour ne jamais afficher un vide évitable.
-  const enrichment = data.enrichment
-  // Lien « Voir le profil » : uniquement le vrai profil LinkedIn retrouvé par
-  // l'enrichissement — jamais un lien inventé pour une relation ou un sujet qui
-  // n'a pas d'URL propre.
-  const enrichmentHooks: CareerHook[] = enrichment ? [
-    ...enrichment.relatedPeople.map((person) => ({
-      title: [person.name, person.role].filter(Boolean).join(' · '),
-      text: person.why ?? 'Relation identifiée via la recherche web — peut faciliter une mise en relation.',
-      source: 'LinkedIn · Recherche web',
-      url: null,
-    })),
-    ...enrichment.talkingPoints.map((point) => ({ title: 'Sujet à aborder', text: point, source: 'Recherche web · Suggestion', url: enrichment.linkedinUrl })),
-  ].slice(0, 5) : []
-  const fallbackHookCandidates: Array<CareerHook | null> = [
-    data.summary?.text ? { title: 'Synthèse relationnelle', text: data.summary.text, source: data.summary.provenance?.sourceLabel ?? null, url: null } : null,
-    currentCareer?.description
-      ? { title: 'Actualité professionnelle', text: currentCareer.description, source: currentCareer.provenance.sourceLabel, url: null }
-      : null,
-    data.behavior.executiveSummary ? { title: 'Style d’échange', text: data.behavior.executiveSummary, source: 'Échanges observés', url: null } : null,
-  ]
-  const fallbackHooks = fallbackHookCandidates.filter((item): item is NonNullable<(typeof fallbackHookCandidates)[number]> => item !== null)
-  const hooks = enrichmentHooks.length ? enrichmentHooks : fallbackHooks
-
+  // Onglet Signaux : uniquement l'agent de signal externe (maquette). La lecture
+  // « Ce que montrent les échanges » / spotlight et le Parcours vivent ailleurs
+  // (Profil) — ne pas les dupliquer ici.
   return <div className="v48-person-live">
-    <InsightBand data={data} />
-    <div className="v48-live-layout">
-      <main className="v48-live-main">
-        <CareerSection data={data} userId={userId} refresh={refresh} hooks={hooks} />
-      </main>
-      <aside className="v48-live-rail" id="person-contact-panel">
-        <SignalsCard data={data} userId={userId} refresh={refresh} />
-      </aside>
-    </div>
+    <SignalsCard data={data} userId={userId} refresh={refresh} />
   </div>
 }
