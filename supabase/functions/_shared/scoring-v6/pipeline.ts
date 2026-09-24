@@ -16,8 +16,12 @@ export function detectNormalizedEvents(events: RelationalEvent[], dyad: Foundati
     // independent-evidence-count admissibility check).
     const ids=new Set(d.supportEventIds)
     const supports=available.filter(e=>ids.has(e.id) && Date.parse(e.eventTime)<=Date.parse(d.observedAt)).map(e=>e.id).sort()
+    // d.evidenceText est la description factuelle déjà calculée par le détecteur
+    // (ex. « 3 relances sans réponse sur «sujet» (5 j) ») — jusqu'ici jetée à la
+    // persistance, ce qui vidait la carte « Preuves » de tout marqueur déterministe.
     return {id:`det:${d.markerId}:${d.sense}:${d.evidenceRef}`,dyad,recordedAt:at,effectiveFrom:at,markerId:d.markerId,sense:d.sense,observedAt:d.observedAt,
-      sourceEventIds:supports,state:'active',status:d.status==='accepted'?'accepted':'candidate',registryVersion:'reg-v6.0',detectorVersion:'normalized-detectors-v2',voluntariness:'unknown',intensity:'unknown'}
+      sourceEventIds:supports,state:'active',status:d.status==='accepted'?'accepted':'candidate',registryVersion:'reg-v6.0',detectorVersion:'normalized-detectors-v2',voluntariness:'unknown',intensity:'unknown',
+      evidenceQuote:d.evidenceText}
   })}
 }
 export async function checked<T=any>(q:PromiseLike<{data:T;error:any}>):Promise<T> { const r=await q;if(r.error) throw new Error(r.error.message ?? String(r.error));return r.data }

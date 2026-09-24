@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { initials } from '../lib/auth'
+import { getProfile } from '../services/data'
 import { ContactAvatar } from '../components/ContactAvatar'
 import { AccountConnectorsPill } from '../account-detail/AccountRelationView'
 import { addPersonContactDetail, fetchWorkspaceMembers, getPersonDetail, grantPersonAccess, listAccessGrants, listFicheVisions, renamePerson, revokePersonAccess, setPersonFavorite, setPersonOwner, setPersonRoles, setPersonVisibility, triggerPersonCognitiveSync, triggerPersonEnrichment, validateContactDetail, type FicheVision, type WorkspaceMember } from './service'
@@ -452,7 +453,7 @@ function RelationshipBand({ data }: { data: PersonDetailData }) {
   </div>
 }
 
-function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData; userId: string; refresh: () => Promise<void> }) {
+function CognitiveSyncButton({ data, userId, refresh, admin = false }: { data: PersonDetailData; userId: string; refresh: () => Promise<void>; admin?: boolean }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const run = () => void (async () => {
@@ -482,6 +483,15 @@ function CognitiveSyncButton({ data, userId, refresh }: { data: PersonDetailData
       setBusy(false)
     }
   })()
+  if (admin) return <span className="admin-resync-wrap">
+    <button type="button" className="admin-resync-action" disabled={busy} aria-label="Resync emails (admin)" aria-describedby="admin-resync-tip" onClick={run}>
+      <i aria-hidden="true" />{busy ? '…' : 'sync'}
+    </button>
+    <span id="admin-resync-tip" role="tooltip" className="admin-resync-tip">
+      <b>Action admin — resynchronisation ciblée</b>
+      Relance la synchronisation Gmail / Outlook pour ce contact uniquement et retélécharge le contenu (corps) de tous ses emails. La synchro automatique ne revisite jamais les messages déjà enregistrés : sans cette action, les emails sans corps restent vides et les indicateurs de la relation (Confiance, Satisfaction, Réciprocité…) manquent de preuves.
+    </span>
+  </span>
   return <button type="button" className="cognitive-sync-action" disabled={busy} title="Relire les échanges et produire la carte comportementale à six dimensions" onClick={run}>
     <span aria-hidden="true">{busy ? '…' : '◉'}</span>
     {busy ? 'Analyse en cours…' : 'Synchroniser le profil cognitif'}
@@ -639,6 +649,12 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeOwnerUserId,
 }) {
   const [activeTab, setActiveTab] = useState<PersonDetailTab>('profile')
   const [contactOpen, setContactOpen] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    let alive = true
+    getProfile(userId).then((profile) => { if (alive) setIsAdmin(profile.platform_role === 'super_admin' && profile.is_super_admin) }).catch(() => { if (alive) setIsAdmin(false) })
+    return () => { alive = false }
+  }, [userId])
   // La ré-analyse est proposée dès qu'il y a assez de données : profil absent/ancien
   // (état vide) MAIS AUSSI profil v3 sans conseils d'approche déduits — pour permettre
   // de régénérer et obtenir le « comment aborder » ancré sur les échanges.
@@ -649,6 +665,7 @@ function PageBody({ data, userId, refresh, readOnly, visions, activeOwnerUserId,
       <button type="button" role="tab" aria-selected={activeTab === 'profile'} className={activeTab === 'profile' ? 'on' : ''} onClick={() => setActiveTab('profile')}>Profil</button>
       <button type="button" role="tab" aria-selected={activeTab === 'relation'} className={activeTab === 'relation' ? 'on' : ''} onClick={() => setActiveTab('relation')}>Relation</button>
       <button type="button" role="tab" aria-selected={activeTab === 'live'} className={activeTab === 'live' ? 'on' : ''} onClick={() => setActiveTab('live')}>Signaux</button>
+      {isAdmin && !readOnly && <CognitiveSyncButton admin data={data} userId={userId} refresh={refresh} />}
       {!readOnly && <button type="button" className="v48-tabs-action" aria-haspopup="dialog" onClick={() => setContactOpen(true)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4.4" y="3.6" width="15.2" height="16.8" rx="2.2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
         Contact

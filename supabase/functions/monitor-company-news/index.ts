@@ -2,6 +2,7 @@
 // 2 modes : utilisateur (JWT + organizationId) ou cron (header x-cron-secret valide → toutes les orgs).
 // Chaque signal important génère une NOTIFICATION pour les membres de l'org.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getWebSearchSettings, readWebSearchKeys, runWebSearch, type WebSearchKeys, type WebSearchSettings } from '../_shared/web-search.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,8 +13,7 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const PERPLEXITY_API = 'https://api.perplexity.ai/chat/completions';
-const PERPLEXITY_MODEL = 'sonar';
+type SearchContext = { keys: WebSearchKeys; settings: WebSearchSettings };
 
 const IMPORTANT = new Set(['churn', 'risque', 'croissance', 'marche', 'mobilite', 'levier']);
 function priorityFor(family: string): string {
@@ -58,7 +58,9 @@ function classifyFamily(type: string, text: string): string {
   return 'presence';
 }
 
-async function newsForCompany(key: string, name: string, domain: string | null): Promise<any[]> {
+type NewsResult = { items: any[]; error: string | null; sample?: string };
+
+async function newsForCompany(ctx: SearchContext, name: string, domain: string | null): Promise<NewsResult> {
   const prompt = `Recherche les ÉVÉNEMENTS PUBLICS récents (12 derniers mois) sur l'entreprise "${name}"${domain ? ` (site ${domain})` : ''} susceptibles d'avoir un impact réel sur une relation commerciale avec elle.
 Sources : presse, LinkedIn (page entreprise et prises de parole publiques de ses dirigeants), communiqués, registres (BODACC/Pappers), site web de l'entreprise.
 Cherche, par ordre d'intérêt :
@@ -81,33 +83,31 @@ Réponds UNIQUEMENT par un tableau JSON (max 4 items, les plus significatifs/ré
 [{"type":"levee_fonds|acquisition|dirigeant|recrutement|produit|partenariat|implantation|activite_publique|positionnement|resultats|marche|risque|autre","title":"titre court factuel","summary":"1-2 phrases factuelles, en quoi c'est pertinent pour la relation commerciale","source":"Presse|LinkedIn|Registres|Web","source_url":"url si dispo sinon null","date":"AAAA-MM ou AAAA-MM-JJ si connu sinon null"}]
 Règle stricte : n'invente RIEN. Si aucun événement significatif et fiable trouvé, renvoie [].`;
   try {
-    const res = await fetch(PERPLEXITY_API, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: PERPLEXITY_MODEL,
-        messages: [
-          { role: 'system', content: 'Veille B2B factuelle. Données publiques vérifiables uniquement, avec source. Aucune hallucination. Réponds en JSON strict.' },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 900,
-        temperature: 0.1,
-      }),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const content: string = data.choices?.[0]?.message?.content ?? '';
-    const m = content.match(/\[[\s\S]*\]/);
-    if (!m) return [];
+    const result = await runWebSearch(ctx.keys, ctx.settings, [
+      { role: 'system', content: 'Veille B2B factuelle. Données publiques vérifiables uniquement, avec source. Aucune hallucination. Réponds en JSON strict.' },
+      { role: 'user', content: prompt },
+    ]);
+    if ('error' in result) return { items: [], error: result.error };
+    const content = result.content;
+    // Tableau d'objets (ou vide) — évite de capturer des renvois de citation type "[1]".
+    const m = content.match(/\[\s*\{[\s\S]*\}\s*\]|\[\s*\]/);
+    if (!m) {
+      console.warn(`[monitor-company-news] réponse sans JSON pour ${name}: ${content.slice(0, 150)}`);
+      return { items: [], error: 'no_json_in_response' };
+    }
     const arr = JSON.parse(m[0]);
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
+    return { items: Array.isArray(arr) ? arr : [], error: null, sample: content.slice(0, 160) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[monitor-company-news] échec pour ${name}: ${message}`);
+    return { items: [], error: message.slice(0, 120) };
+  }
 }
 
 type Company = { id: string; name: string; domain: string | null; organization_id: string };
 
-async function processCompany(supabase: any, key: string, c: Company): Promise<{ inserted: any[] }> {
-  const items = await newsForCompany(key, c.name, c.domain);
+async function processCompany(supabase: any, ctx: SearchContext, c: Company): Promise<{ inserted: any[]; error: string | null; found: number; sample?: string }> {
+  const { items, error: newsError, sample } = await newsForCompany(ctx, c.name, c.domain);
   const rows: any[] = [];
   for (const it of items) {
     if (!it?.title) continue;
@@ -136,14 +136,19 @@ async function processCompany(supabase: any, key: string, c: Company): Promise<{
   }
   let inserted: any[] = [];
   if (rows.length) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('company_signals')
       .upsert(rows, { onConflict: 'organization_id,company_id,title', ignoreDuplicates: true })
       .select('id, family, title, summary, company_id, organization_id');
+    if (error) {
+      console.error(`[monitor-company-news] insertion signaux ${c.name}: ${error.message}`);
+      return { inserted: [], error: `db:${error.message}`.slice(0, 120), found: rows.length };
+    }
     inserted = data ?? [];
   }
-  await supabase.from('companies').update({ last_monitored_at: new Date().toISOString() }).eq('id', c.id);
-  return { inserted };
+  // Ne pas marquer un compte « surveillé » quand la recherche a échoué : il sera retenté au prochain passage.
+  if (!newsError) await supabase.from('companies').update({ last_monitored_at: new Date().toISOString() }).eq('id', c.id);
+  return { inserted, error: newsError, found: rows.length, sample };
 }
 
 async function notifyMembers(supabase: any, orgMembers: Map<string, string[]>, companyName: Map<string, string>, signals: any[]) {
@@ -178,8 +183,12 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   );
 
-  const key = Deno.env.get('PERPLEXITY_API_KEY');
-  if (!key) return jsonResponse({ error: 'Veille indisponible (PERPLEXITY_API_KEY manquant).', code: 'NO_KEY' }, 500);
+  const keys = readWebSearchKeys();
+  const settings = await getWebSearchSettings(supabase);
+  if (!keys.openrouter && !(settings.perplexityDirect && keys.perplexity)) {
+    return jsonResponse({ error: 'Veille indisponible : OPENROUTER_API_KEY manquante (ou Perplexity direct activé sans clé).', code: 'NO_KEY' }, 500);
+  }
+  const ctx: SearchContext = { keys, settings };
 
   const body = await req.json().catch(() => ({}));
 
@@ -224,9 +233,13 @@ Deno.serve(async (req) => {
 
   const allInserted: any[] = [];
   const companyName = new Map<string, string>();
+  const failures: { company: string; error: string }[] = [];
+  const empty: { company: string; sample?: string }[] = [];
   for (const c of companies) {
     companyName.set(c.id, c.name);
-    const { inserted } = await processCompany(supabase, key, c);
+    const { inserted, error, found, sample } = await processCompany(supabase, ctx, c);
+    if (error) failures.push({ company: c.name, error });
+    else if (!found) empty.push({ company: c.name, sample });
     allInserted.push(...inserted);
   }
 
@@ -242,5 +255,5 @@ Deno.serve(async (req) => {
     notified = await notifyMembers(supabase, orgMembers, companyName, allInserted);
   }
 
-  return jsonResponse({ success: true, inserted: allInserted.length, scanned: companies.length, notified, mode: isCron ? 'cron' : 'user' });
+  return jsonResponse({ success: true, inserted: allInserted.length, scanned: companies.length, notified, engine: settings.perplexityDirect ? 'perplexity+openrouter' : `openrouter:${settings.model}`, failed: failures.length, failures: failures.slice(0, 5), empty: empty.slice(0, 3), mode: isCron ? 'cron' : 'user' });
 });

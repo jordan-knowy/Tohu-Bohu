@@ -143,7 +143,10 @@ export function buildRelationalState(input: FoundationInput): RelationalState {
     if (units.some(u=>seen.has(u))) continue // overlapping interpretations are not independent repetitions
     units.forEach(u=>seen.add(u)); consumedUnits.set(family,seen)
     // A compound measurement is one occurrence, never N repetitions.
-    admitted.push({markerId:m.markerId,sense:m.sense,observedAt:m.observedAt,evidenceUnitId:JSON.stringify(units),evidenceRef:m.id})
+    // evidenceText porte la citation/l'extrait du marqueur (m.evidenceQuote) jusqu'au
+    // noyau de calcul — jamais utilisé dans le calcul lui-même (cf. MarkerEvent),
+    // uniquement pour que la carte « Preuves » puisse citer une source réelle.
+    admitted.push({markerId:m.markerId,sense:m.sense,observedAt:m.observedAt,evidenceUnitId:JSON.stringify(units),evidenceRef:m.id,evidenceText:m.evidenceQuote?.trim()||null})
     for (const e of support) usedEvents.set(e!.id,e!)
   }
   // Connected support sets count once for P7: an aggregate cadence marker

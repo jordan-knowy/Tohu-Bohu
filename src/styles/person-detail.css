@@ -1116,7 +1116,7 @@
 .pp .krs-col.no .krs-li:before{background:var(--coral)}
 .pp .krs-li.flash{animation:krsLiFlash 1.9s ease}
 
-@keyframes krsLiFlash{0%{box-shadow:0 0 0 5px rgba(110,80,200,.15);background:rgba(110,80,200,.10)}100%{box-shadow:0 0 0 0 rgba(110,80,200,0);background:transparent}}
+@keyframes krsLiFlash{0%{box-shadow:0 0 0 5px rgba(110,80,200,.15);background:rgba(110,80,200,.10)}100%{box-shadow:0 0 0 0 rgba(47,123,255,0);background:transparent}}
 .pp .krs-li.strike{text-decoration:line-through;color:var(--t3);opacity:.45}
 .pp .krs-mini{font-family:var(--mono);font-size:8px;font-weight:700;color:var(--sage);margin-left:7px;padding:1px 5px;border-radius:4px;background:rgba(46,168,106,.14);white-space:nowrap}
 .pp .krs-evo-h{margin-top:15px}
@@ -2512,7 +2512,7 @@
 .v48-orgc{display:flex;flex-direction:column;gap:5px;padding:14px 16px;border:1px solid var(--grid);border-left:3px solid var(--person-tone);border-radius:13px;background:#fff;text-align:left;cursor:pointer;min-width:0}
 .v48-orgc:hover{border-color:var(--person-tone);box-shadow:var(--sh-xs)}
 .v48-orgc-tag{align-self:flex-start;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#fff;background:var(--role-tone,var(--person-tone));border-radius:6px;padding:4px 8px}
-.v48-orgc-name{font-family:var(--font);font-weight:800;font-size:14px;color:var(--t1)}
+.v48-orgc-name{font-family:var(--font);font-weight:800;font-size:14px;color:var(--t1);min-width:0;overflow-wrap:anywhere;word-break:break-word}.v48-orgc-fn{overflow-wrap:anywhere}
 .v48-orgc-share{font-size:11px;color:var(--t2)}.v48-orgc-share b{color:var(--t1)}
 .v48-orgc-fn{margin:0;color:var(--t3);font-size:10.5px;line-height:1.4}
 .v48-orgc footer{display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:8px;border-top:1px solid var(--grid);font-family:var(--mono);font-size:8px;letter-spacing:.03em;text-transform:uppercase;color:var(--t3)}
@@ -2914,3 +2914,15 @@
 .pp .v48-affect-loading{padding:8px 9px;font-size:11px;color:var(--t3)}
 .vision-readonly{position:relative}
 .vision-readonly button,.vision-readonly input,.vision-readonly textarea,.vision-readonly select{pointer-events:none}
+
+/* Bouton admin — resync ciblée des emails du contact (clignotant + infobulle) */
+.pp .admin-resync-wrap{position:relative;display:inline-flex}
+.pp .admin-resync-action{display:inline-flex;align-items:center;gap:5px;padding:0;margin-right:10px;border:0;background:none;color:#2F7BFF;font:700 11px/1 Epilogue,sans-serif;cursor:pointer}
+.pp .admin-resync-action i{width:8px;height:8px;border-radius:50%;background:#2F7BFF}
+.pp .admin-resync-action:hover:not(:disabled) i{box-shadow:0 0 0 3px rgba(47,123,255,.3)}
+.pp .admin-resync-action:disabled{cursor:wait;opacity:.64}
+.pp .admin-resync-tip{position:absolute;top:calc(100% + 8px);left:0;z-index:30;width:300px;max-width:80vw;padding:11px 13px;border-radius:12px;background:#1A1040;color:#fff;font:500 11.5px/1.5 Epilogue,sans-serif;text-align:left;box-shadow:0 10px 30px rgba(26,16,64,.35);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s ease;pointer-events:none;white-space:normal;overflow-wrap:anywhere}
+.pp .admin-resync-tip b{display:block;margin-bottom:5px;font-weight:800}
+.pp .admin-resync-wrap:hover .admin-resync-tip,.pp .admin-resync-wrap:focus-within .admin-resync-tip{opacity:1;visibility:visible;transform:none}
+
+.v48-person-relation .pw-proof-ctx{margin:3px 0 0;font-family:var(--font);font-size:10px;line-height:1.4;color:var(--t3,#8b82b3);overflow-wrap:anywhere}

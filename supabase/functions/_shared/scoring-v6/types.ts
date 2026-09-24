@@ -187,6 +187,12 @@ export interface MarkerContribution {
   rank: number                  // rang après tri par magnitude décroissante
   decayMultiplier: number
   contributionFinale: number    // signe(pointsEffectifs) × magnitude × decayMultiplier
+  // Preuve représentative du groupe (l'occurrence la plus récente qui en porte
+  // une) — jamais utilisée dans le calcul, uniquement pour la carte « Preuves ».
+  // null si aucune occurrence du groupe n'a de citation enregistrée (marqueurs
+  // scorés avant ce champ, ou détecteur qui n'en produit structurellement pas).
+  observedAt: string | null
+  evidenceText: string | null
 }
 
 export interface AxisResult {

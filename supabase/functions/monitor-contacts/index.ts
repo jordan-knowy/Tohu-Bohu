@@ -7,6 +7,8 @@
 // fois la même chose.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { runEnrichmentAgentThrottled } from '../_shared/enrichment-agent.ts';
+import { findLinkedinProfile } from '../_shared/linkedin-finder.ts';
+import { slugMatchesName } from '../_shared/linkedin-match.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -284,6 +286,7 @@ Deno.serve(async (req) => {
       fetchFullCareerHistory = !careerHistoryCount;
     }
     let enr: any = null;
+    let agentError: string | null = null;
     try {
       enr = await runEnrichmentAgentThrottled(supabase, {
         entityType: 'person', fullName: c.full_name ?? '', email, domain: c.companies?.domain ?? domain,
@@ -294,13 +297,19 @@ Deno.serve(async (req) => {
         alreadyKnown: { previousEnrichment: previous, note: 'Détecte surtout les CHANGEMENTS récents (poste, activité) vs le déjà-connu.' },
         usageLog: { client: supabase, organizationId: c.organization_id, userId: c.owner_user_id ?? null, fn: 'monitor-contacts' },
       });
-    } catch { /* ignore — enr reste null, traité comme échec ci-dessous */ }
+    } catch (err) {
+      // enr reste null, traité comme échec ci-dessous — mais on garde la vraie cause.
+      agentError = err instanceof Error ? err.message : String(err);
+      console.error(`[monitor-contacts] agent en échec pour ${c.id}: ${agentError}`);
+    }
 
     await supabase.from('contacts').update({ last_monitored_at: new Date().toISOString() }).eq('id', c.id);
     if (!enr) {
       const { error: failedUpdateError } = await supabase.from('contacts').update({
         enrichment_status: 'failed',
-        enrichment_error: 'Aucune donnée fiable retournée par le moteur d’enrichissement',
+        enrichment_error: agentError
+          ? `Moteur d’enrichissement indisponible : ${agentError}`.slice(0, 500)
+          : 'Aucune donnée fiable retournée par le moteur d’enrichissement',
       }).eq('id', c.id);
       totalFailed++;
       if (failedUpdateError) errors.push({ contactId: c.id, message: failedUpdateError.message });
@@ -328,6 +337,32 @@ Deno.serve(async (req) => {
       }
 
       const enrichedAt = new Date().toISOString();
+      // Agent LinkedIn dédié : l'agent généraliste range souvent l'URL dans ses sources sans
+      // remplir linkedinUrl. On ne cherche que pour une personne au vrai nom connu (jamais un
+      // pseudo d'email), et seulement au palier A — l'URL n'est acceptée que si son identifiant
+      // correspond au nom (voir _shared/linkedin-match.ts).
+      const searchName = typeof enr.fullName === 'string' && looksLikeRealPersonName(enr.fullName, c.companies?.name ?? '')
+        ? enr.fullName
+        : (currentNameIsPlaceholder ? '' : (c.full_name ?? ''));
+      // L'URL fournie par l'agent généraliste n'est retenue que si son identifiant correspond au
+      // nom (sinon c'est souvent un homonyme) ; à défaut on garde l'éventuelle URL déjà en base.
+      let linkedinUrl = sanitizeLinkedinUrl(enr.linkedinUrl);
+      if (linkedinUrl && searchName && !slugMatchesName(linkedinUrl, searchName)) { linkedinUrl = null; enr.linkedinUrl = null; }
+      linkedinUrl = linkedinUrl ?? c.linkedin_url ?? null;
+      if (!linkedinUrl && tier === 'A') {
+        try {
+          const found = searchName
+            ? await findLinkedinProfile(supabase, {
+              fullName: searchName, company: c.companies?.name ?? enr.currentCompany ?? null,
+              domain: c.companies?.domain ?? domain, role: enr.currentRole ?? c.role_title ?? null,
+              knownSources: Array.isArray(enr.sources) ? enr.sources : [],
+            })
+            : null;
+          if (found) { linkedinUrl = found.url; enr.linkedinUrl = found.url; }
+        } catch (err) {
+          console.error(`[monitor-contacts] recherche LinkedIn en échec pour ${c.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       // Résolution du vrai nom : jamais d'écrasement silencieux d'un nom déjà
       // plausible. Auto-appliqué seulement si le nom actuel était un pseudo ET que
       // l'agent est très confiant (2 sources / LinkedIn nominatif) — sinon suggestion
@@ -341,7 +376,7 @@ Deno.serve(async (req) => {
         enrichment_data: enr,
         web_bio: enr.summary ?? null,
         role_title: enr.currentRole ?? c.role_title ?? null,
-        linkedin_url: sanitizeLinkedinUrl(enr.linkedinUrl) ?? c.linkedin_url ?? null,
+        linkedin_url: linkedinUrl,
         location: enr.location ?? c.location ?? null,
         last_enriched_at: enrichedAt,
         enrichment_error: null,

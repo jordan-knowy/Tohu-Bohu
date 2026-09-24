@@ -74,6 +74,8 @@ Deno.serve(async(req)=>{
           id,dyad:dyadForR02,recordedAt:at,effectiveFrom:at,markerId:'R02',sense:1,observedAt:e.eventTime,
           sourceEventIds:[e.id],state:'active',status:'accepted',registryVersion:'reg-v6.0',detectorVersion:'body-initiation-v1',
           voluntariness:'unknown',intensity:'unknown',
+          // Extrait réel du fil qu'il a ouvert — pour la carte « Preuves », jamais utilisé dans le calcul.
+          evidenceQuote:text.slice(0,240),
         }}))
       }
       // `events` already excludes what a previous run classified, so every run simply
@@ -102,8 +104,14 @@ Deno.serve(async(req)=>{
           // literal substring of the source text (enforced in parseObservations), so
           // it doubles as the verbatim quote S07 requires.
           const dyad={organizationId:row.organization_id,collaboratorUserId:row.collaborator_user_id,contactId:row.contact_id}
+          // Un même marqueur peut être renvoyé deux fois pour un email (citations
+          // différentes) : même id + même recordedAt = IMMUTABLE_REVISION_CONFLICT.
+          // On garde la première observation par marqueur et par événement.
+          const seenMarkers=new Set<string>()
           for(const obs of result.observations){
             if(obs.type!=='marker' || !obs.marker_candidate)continue
+            if(seenMarkers.has(obs.marker_candidate))continue
+            seenMarkers.add(obs.marker_candidate)
             const entry=SEMANTIC_REGISTRY[obs.marker_candidate]
             if(!entry || (entry.sense!==1 && entry.sense!==-1))continue
             // A critical marker (S07: Satisfaction capped at 20) is never scored on an
@@ -116,7 +124,11 @@ Deno.serve(async(req)=>{
               sourceEventIds:[event.id],state:'active',status:accepted?'accepted':'candidate',
               registryVersion:'reg-v6.0',detectorVersion:'semantic-observations-v2',
               voluntariness:obs.voluntariness,intensity:'unknown',
-              ...(entry.requiresVerbatim?{criticalValidated:false,evidenceQuote:obs.evidence}:{}),
+              // La citation est toujours enregistrée (pas seulement pour les marqueurs
+              // critiques) — elle alimente la carte « Preuves » ; 'evidence' est déjà
+              // garanti substring littéral du texte source (parseObservations).
+              evidenceQuote:obs.evidence,
+              ...(entry.requiresVerbatim?{criticalValidated:false}:{}),
             }}))
           }
           analyzed++;if(result.result_status==='technical_error')errors++

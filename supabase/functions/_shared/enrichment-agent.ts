@@ -16,11 +16,10 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logAiUsage } from './ai-usage.ts';
 import { getConfiguredModel } from './llm-model-config.ts';
+import { getWebSearchSettings, readWebSearchKeys, runWebSearch, type WebSearchKeys, type WebSearchSettings } from './web-search.ts';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-haiku-4.5';
-const PERPLEXITY_API = 'https://api.perplexity.ai/chat/completions';
-const PERPLEXITY_MODEL = 'sonar';
 const MAX_ITERATIONS = 6;
 const CALL_TIMEOUT_MS = 30000;
 const SLOT_ACQUIRE_TIMEOUT_MS = 60000;
@@ -260,31 +259,13 @@ async function callOpenRouter(apiKey: string, model: string, messages: ChatMessa
   return data;
 }
 
-async function webSearch(apiKey: string, query: string): Promise<string> {
-  try {
-    const res = await fetch(PERPLEXITY_API, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: PERPLEXITY_MODEL,
-        messages: [
-          { role: 'system', content: 'Recherche web factuelle. Réponds de façon concise (5-10 lignes), cite les faits datés et les sources. Aucune invention.' },
-          { role: 'user', content: query },
-        ],
-        max_tokens: 700,
-        temperature: 0.1,
-        search_recency_filter: 'year',
-      }),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-    });
-    if (!res.ok) return `Recherche indisponible (${res.status}).`;
-    const data = await res.json();
-    const content: string = data.choices?.[0]?.message?.content ?? '';
-    const citations: string[] = Array.isArray(data.citations) ? data.citations : [];
-    return citations.length ? `${content}\n\nSources : ${citations.join(', ')}` : content;
-  } catch (err) {
-    return `Recherche impossible : ${err instanceof Error ? err.message : String(err)}`;
-  }
+async function webSearch(keys: WebSearchKeys, settings: WebSearchSettings, query: string): Promise<string> {
+  const result = await runWebSearch(keys, settings, [
+    { role: 'system', content: 'Recherche web factuelle. Réponds de façon concise (5-10 lignes), cite les faits datés et les sources. Aucune invention.' },
+    { role: 'user', content: query },
+  ], { maxTokens: 700, timeoutMs: CALL_TIMEOUT_MS, recencyYear: true });
+  if ('error' in result) return `Recherche indisponible (${result.error}).`;
+  return result.citations.length ? `${result.content}\n\nSources : ${result.citations.join(', ')}` : result.content;
 }
 
 /** Convention imposée pour tout nom de personne dans l'app : prénom en casse
@@ -318,8 +299,11 @@ function safeParseArgs(raw: string): Record<string, unknown> | null {
  *  le budget d'itérations — le code appelant doit alors marquer l'enrichissement en échec. */
 export async function runEnrichmentAgent(input: EnrichmentInput): Promise<EnrichmentProfile | null> {
   const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
-  const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-  if (!openrouterKey || !perplexityKey) throw new Error('OPENROUTER_API_KEY ou PERPLEXITY_API_KEY manquant côté serveur.');
+  if (!openrouterKey) throw new Error('OPENROUTER_API_KEY manquant côté serveur.');
+  const searchKeys = readWebSearchKeys();
+  const searchSettings = input.usageLog
+    ? await getWebSearchSettings(input.usageLog.client)
+    : { perplexityDirect: false, model: 'perplexity/sonar' };
   const model = input.usageLog
     ? await getConfiguredModel(input.usageLog.client, 'enrichment_agent', null, DEFAULT_OPENROUTER_MODEL)
     : DEFAULT_OPENROUTER_MODEL;
@@ -355,7 +339,7 @@ export async function runEnrichmentAgent(input: EnrichmentInput): Promise<Enrich
         }
       } else if (call.function.name === 'web_search') {
         const args = safeParseArgs(call.function.arguments);
-        const result = await webSearch(perplexityKey, String(args?.query ?? ''));
+        const result = await webSearch(searchKeys, searchSettings, String(args?.query ?? ''));
         messages.push({ role: 'tool', tool_call_id: call.id, content: result });
       } else {
         messages.push({ role: 'tool', tool_call_id: call.id, content: 'Outil inconnu.' });

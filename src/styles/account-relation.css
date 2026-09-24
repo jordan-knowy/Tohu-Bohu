@@ -64,14 +64,15 @@
 
 /* ===== Organigramme (cartes compactes, propres à la fiche Compte) ===== */
 .acr .og-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.acr .og-t{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left;font-family:inherit;min-width:0;cursor:pointer;transition:background .14s}
+.acr .og-t{overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left;font-family:inherit;min-width:0;cursor:pointer;transition:background .14s}
 .acr .og-t:hover{background:var(--lav)}
 .acr .og-r{align-self:flex-start;font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:#fff;background:var(--rc);border-radius:999px;padding:4px 10px}
-.acr .og-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:2px}
-.acr .og-row .nm{font-family:'Epilogue',sans-serif;font-weight:800;font-size:13.5px;letter-spacing:-.015em;margin:0;line-height:1.25;min-width:0}
+.acr .og-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-top:2px}
+.acr .og-row .nm{font-family:'Epilogue',sans-serif;font-weight:800;font-size:13.5px;letter-spacing:-.015em;margin:0;line-height:1.25;min-width:0;flex:1 1 0;overflow-wrap:anywhere;word-break:break-word}
 .acr .og-row .v{font-family:'Epilogue',sans-serif;font-weight:800;font-size:20px;letter-spacing:-.03em;line-height:1;flex:none}
 .acr .og-sh{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--pale);margin:0}
 .acr .og-sh b{color:var(--ink)}
+.acr .og-sh,.acr .og-dl{min-width:0;overflow-wrap:anywhere}
 .acr .og-dl{font-family:'Epilogue',sans-serif;font-size:11.5px;line-height:1.4;color:var(--mut);margin:0}
 @media(max-width:1000px){.acr .og-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.acr .og-grid{grid-template-columns:1fr}}

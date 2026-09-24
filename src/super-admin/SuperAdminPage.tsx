@@ -752,6 +752,29 @@ function ModelBadge({ on, label }: { on: boolean; label: string }) {
   return <span className={`sa-model-badge${on ? ' on' : ''}`}>{label}</span>
 }
 
+function ModelCombobox({ current, catalog, disabled, onSelect }: { current: string; catalog: OpenRouterModel[]; disabled: boolean; onSelect: (model: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const needle = text.trim().toLowerCase()
+  const options = useMemo(() => catalog
+    .filter((model) => model.id !== current)
+    .filter((model) => !needle || model.id.toLowerCase().includes(needle) || model.name.toLowerCase().includes(needle))
+    .slice(0, 50), [catalog, current, needle])
+  const pick = (model: string) => { setOpen(false); setText(''); onSelect(model) }
+
+  return <div className="sa-combobox" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setText('') } }}>
+    <input type="text" value={open ? text : current} disabled={disabled} placeholder="Rechercher un modèle…" title={current}
+      onFocus={() => setOpen(true)} onChange={(event) => { setText(event.target.value); setOpen(true) }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); setText('') } if (event.key === 'Enter' && options[0]) { event.preventDefault(); pick(options[0].id) } }} />
+    {open && <ul className="sa-combobox-list">
+      {options.map((model) => <li key={model.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => pick(model.id)}>
+        <strong>{model.is_free ? '🆓 ' : ''}{model.name}</strong><small>{model.id}</small>
+      </button></li>)}
+      {!options.length && <li className="sa-combobox-empty">Aucun modèle trouvé</li>}
+    </ul>}
+  </div>
+}
+
 function AiModelsView() {
   const [config, setConfig] = useState<LlmPurposeConfig[]>([])
   const [catalog, setCatalog] = useState<OpenRouterModel[]>([])
@@ -784,6 +807,10 @@ function AiModelsView() {
     finally { setSyncing(false) }
   }
 
+  const perplexityRow = config.find((row) => row.purpose === 'perplexity_direct')
+  const perplexityDirect = perplexityRow?.current_model === 'on'
+  const modelRows = config.filter((row) => row.purpose !== 'perplexity_direct')
+
   const filtered = useMemo(() => catalog
     .filter((model) => !freeOnly || model.is_free)
     .filter((model) => !query.trim() || model.id.toLowerCase().includes(query.trim().toLowerCase()) || model.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -796,14 +823,24 @@ function AiModelsView() {
     <div className="sa-ai-block">
       <h2>Modèles utilisés actuellement</h2>
       <div className="sa-models-purposes">
-        {config.map((purpose) => <div key={purpose.purpose} className="sa-models-purpose">
+        {perplexityRow && <label className={`sa-models-purpose sa-perplexity-switch${saving === 'perplexity_direct' ? ' is-saving' : ''}`}>
+          <div>
+            <strong>{perplexityRow.label}</strong>
+            <p>{perplexityDirect
+              ? 'Activé : la veille interroge l’API Perplexity directement (compte à alimenter). Si Perplexity refuse la clé, OpenRouter prend le relais automatiquement.'
+              : 'Désactivé : toute la veille externe passe par OpenRouter, avec le modèle « Recherche web » choisi ci-dessous. Aucun crédit Perplexity n’est consommé.'}</p>
+          </div>
+          <span className="sa-switch">
+            <input type="checkbox" role="switch" checked={perplexityDirect} disabled={saving === 'perplexity_direct'} onChange={(event) => void changeModel('perplexity_direct', event.target.checked ? 'on' : 'off')} />
+            <i aria-hidden="true" />
+            <b>{perplexityDirect ? 'Perplexity' : 'OpenRouter'}</b>
+          </span>
+        </label>}
+        {modelRows.map((purpose) => <div key={purpose.purpose} className="sa-models-purpose">
           <div><strong>{purpose.label}</strong><p>{purpose.description}</p></div>
-          <select value={purpose.current_model} disabled={saving === purpose.purpose} onChange={(event) => void changeModel(purpose.purpose, event.target.value)}>
-            <option value={purpose.current_model}>{purpose.current_model}</option>
-            {catalog.filter((model) => model.id !== purpose.current_model).map((model) => <option key={model.id} value={model.id}>{model.is_free ? '🆓 ' : ''}{model.name} ({model.id})</option>)}
-          </select>
+          <ModelCombobox current={purpose.current_model} catalog={catalog} disabled={saving === purpose.purpose} onSelect={(model) => void changeModel(purpose.purpose, model)} />
         </div>)}
-        {!config.length && <p className="sa-ai-none">—</p>}
+        {!modelRows.length && <p className="sa-ai-none">—</p>}
       </div>
     </div>
 

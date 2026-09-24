@@ -6,7 +6,7 @@ import { V48Icon, formatDate } from './ui'
 type Dimension = 'confiance' | 'satisfaction' | 'dynamique' | 'reciprocite' | 'fiabilite' | 'influence'
 type Band = 'good' | 'mid' | 'low' | 'na'
 type WeatherDimension = { id: Dimension; value: number | null; weight: number | null; comparison: number | null; trend: { delta: number; from: number; at: string } | null; measured: boolean }
-type Proof = { type: string; period: string; text: string; source: string; band: Band }
+type Proof = { type: string; period: string; text: string; source: string; band: Band; context?: string | null }
 
 const ORDER: Dimension[] = ['confiance', 'satisfaction', 'dynamique', 'reciprocite', 'fiabilite', 'influence']
 const LABEL: Record<Dimension, string> = {
@@ -108,10 +108,10 @@ function proofsFor(data: PersonDetailData, dim: WeatherDimension): Proof[] {
     text: `Score ${dim.trend.from} le ${formatDate(dim.trend.at)}, ${dim.value} au dernier calcul.`,
     source: 'Historique du score', band: bandOf(dim.value),
   })
-  const prefix: Partial<Record<Dimension, string>> = { confiance: 'C', satisfaction: 'S', dynamique: 'E', reciprocite: 'R' }
+  const prefix: Partial<Record<Dimension, string>> = { confiance: 'C', satisfaction: 'S', dynamique: 'E', reciprocite: 'R', fiabilite: 'A' }
   const markerPrefix = prefix[dim.id]
   if (markerPrefix) for (const marker of data.relationship.markerEvidence.filter((item) => item.markerId.startsWith(markerPrefix)).slice(0, 3)) {
-    result.push({ type: marker.source === 'Réunion' ? 'RÉUNION' : 'ANALYSE', period: formatDate(marker.observedAt), text: marker.text, source: marker.source, band: bandOf(dim.value) })
+    result.push({ type: marker.source === 'Réunion' ? 'RÉUNION' : 'ANALYSE', period: formatDate(marker.observedAt), text: marker.text, source: marker.source, band: bandOf(dim.value), context: marker.context })
   }
   if (dim.id === 'confiance' || dim.id === 'satisfaction') {
     const evidence = data.relationship.dimensionEvidence[dim.id]
@@ -138,7 +138,7 @@ function ProofRow({ proof }: { proof: Proof }) {
       : <><circle cx="12" cy="12" r="8" /><path d="m9 12 2 2 4-4" /></>
   return <div className="pw-proof">
     <span className="pw-proof-dot" style={{ background: COLOR[proof.band] }} />
-    <div className="pw-proof-main"><p className="pw-proof-meta">{proof.type} <span>· {proof.period}</span></p><p className="pw-proof-text">{proof.text}</p></div>
+    <div className="pw-proof-main"><p className="pw-proof-meta">{proof.type} <span>· {proof.period}</span></p><p className="pw-proof-text">{proof.text}</p>{proof.context && <p className="pw-proof-ctx">Dans l’email « {proof.context} »</p>}</div>
     <span className="pw-proof-source" title={proof.source} aria-label={proof.source}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{sourceIcon}</svg></span>
   </div>
 }

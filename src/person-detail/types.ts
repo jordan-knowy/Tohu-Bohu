@@ -350,7 +350,7 @@ export interface PersonDetailData {
     dimensionHistory: Array<{ at: string; confiance: number | null; satisfaction: number | null; dynamique: number | null; reciprocite: number | null }>
     /** Preuves textuelles produites par l'analyse, quand le moteur en a identifié. */
     dimensionEvidence: { confiance: string[]; satisfaction: string[] }
-    markerEvidence: Array<{ markerId: string; observedAt: string; text: string; sourceRef: string | null; source: string }>
+    markerEvidence: Array<{ markerId: string; observedAt: string; text: string; sourceRef: string | null; source: string; context?: string | null }>
     /** Phrase déterministe générée depuis les axes, jamais un simple "score/100". */
     axisInterpretation: string | null
   }

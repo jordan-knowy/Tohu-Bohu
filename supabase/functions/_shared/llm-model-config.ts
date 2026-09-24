@@ -2,7 +2,7 @@
 // Ordre de résolution : base de données -> variable d'env -> défaut en dur.
 export async function getConfiguredModel(
   db: { from: (table: string) => any },
-  purpose: 'analysis' | 'ask_bohu_chat' | 'enrichment_agent',
+  purpose: 'analysis' | 'ask_bohu_chat' | 'enrichment_agent' | 'web_search' | 'perplexity_direct',
   envVar: string | null,
   hardDefault: string,
 ): Promise<string> {

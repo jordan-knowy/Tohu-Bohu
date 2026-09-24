@@ -812,11 +812,12 @@ export function buildPersonDetail(raw: PersonDetailRaw): PersonDetailData {
         const observedAt = text(row.observedAt)
         const evidenceText = text(row.evidenceText)
         const sourceRef = text(row.evidenceRef)
-        const message = sourceRef ? raw.messages.find((item) => text(item.id) === sourceRef) : null
+        const messageId = sourceRef?.match(/message:([0-9a-f-]{36})/i)?.[1] ?? sourceRef
+        const message = messageId ? raw.messages.find((item) => text(item.id) === messageId) : null
         const meeting = sourceRef ? raw.meetings.find((item) => text(item.id) === sourceRef) : null
         const source = message ? (text(message.provider) ?? 'Mail') : meeting ? 'Réunion' : 'Marqueur Tohu'
         return markerId && observedAt && evidenceText
-          ? [{ markerId, observedAt, text: evidenceText, sourceRef, source }]
+          ? [{ markerId, observedAt, text: evidenceText, sourceRef, source, context: message ? text(message.subject) : null }]
           : []
       }),
       axisInterpretation: null,

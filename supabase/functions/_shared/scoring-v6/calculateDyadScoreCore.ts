@@ -75,26 +75,35 @@ export function calculateDyadScoreCore(
 
     // Regroupement par (marker_id, sens effectif). Fixe-signe : sens = entry.sign,
     // donc une seule clé par marqueur. Bipolaire : +1 et -1 sont deux groupes.
-    const groups = new Map<string, { entry: MarkerRegistryEntry; sense: -1 | 1; units: Set<string>; refs: Set<string> }>()
+    // La preuve représentative du groupe (pour la carte « Preuves », jamais pour le
+    // calcul) est l'occurrence la plus récente qui en porte une — un marqueur sans
+    // citation enregistrée ne fabrique jamais un texte de repli.
+    const groups = new Map<string, { entry: MarkerRegistryEntry; sense: -1 | 1; units: Set<string>; refs: Set<string>; evidenceText: string | null; observedAt: string | null }>()
     for (const event of axisEvents) {
       const entry = registry.markers[event.markerId]!
       const sense: -1 | 1 = entry.sign !== 0 ? (entry.sign as -1 | 1) : event.sense
       const key = `${event.markerId}|${sense}`
       const g = groups.get(key)
       const unit = event.evidenceUnitId ?? event.evidenceRef
-      if (g) { g.units.add(unit); g.refs.add(event.evidenceRef) }
-      else groups.set(key, { entry, sense, units: new Set([unit]), refs: new Set([event.evidenceRef]) })
+      const hasNewerEvidence = !!event.evidenceText && (!g?.observedAt || event.observedAt > g.observedAt)
+      if (g) {
+        g.units.add(unit); g.refs.add(event.evidenceRef)
+        if (hasNewerEvidence) { g.evidenceText = event.evidenceText!; g.observedAt = event.observedAt }
+      } else {
+        groups.set(key, { entry, sense, units: new Set([unit]), refs: new Set([event.evidenceRef]),
+          evidenceText: hasNewerEvidence ? event.evidenceText! : null, observedAt: hasNewerEvidence ? event.observedAt : null })
+      }
     }
 
     // Contributions (avant décroissance)
     const raw: Array<Omit<MarkerContribution, 'rank' | 'decayMultiplier' | 'contributionFinale'>> = []
-    for (const { entry, sense, units, refs } of groups.values()) {
+    for (const { entry, sense, units, refs, evidenceText, observedAt } of groups.values()) {
       const count = units.size
       const pts = effectivePoints(entry, sense, params)
       const vol = renormVolontarite(entry.volBase, role, params)
       const rep = repetitionMultiplier(count, params)
       const magnitude = Math.abs(pts) * vol * rep
-      raw.push({ markerId: entry.markerId, sense, occurrences: count, evidenceUnitIds: [...units].sort(), evidenceRefs: [...refs].sort(), pointsEffectifs: pts, volontarite: vol, repetitionMultiplier: rep, magnitude })
+      raw.push({ markerId: entry.markerId, sense, occurrences: count, evidenceUnitIds: [...units].sort(), evidenceRefs: [...refs].sort(), pointsEffectifs: pts, volontarite: vol, repetitionMultiplier: rep, magnitude, evidenceText, observedAt })
     }
 
     // Equal magnitudes share the arithmetic mean of occupied rank coefficients.
