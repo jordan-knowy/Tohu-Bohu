@@ -111,6 +111,32 @@ export function AddEntitiesModal({ workspaceId, initialTab = 'compte', filterAcc
     setSelectedAccounts((current) => new Set(current).add(id))
   }
 
+  // Sélectionne/désélectionne tous les comptes actuellement affichés (recherche
+  // appliquée). Respecte la capacité de l'offre — s'arrête et prévient plutôt que
+  // de dépasser silencieusement la limite.
+  const toggleAllAccounts = () => {
+    const ids = displayedAccounts.map(accountRowId)
+    const allOn = ids.length > 0 && ids.every((id) => selectedAccounts.has(id))
+    if (allOn) {
+      const next = new Set(selectedAccounts)
+      ids.forEach((id) => next.delete(id))
+      setSelectedAccounts(next)
+      return
+    }
+    const next = new Set(selectedAccounts)
+    let newCount = newAccountIds.length
+    let skipped = false
+    for (const candidate of displayedAccounts) {
+      const id = accountRowId(candidate)
+      if (next.has(id)) continue
+      if (!candidate.alreadyTracked && typeof capacity === 'number' && existingTrackedCount + newCount >= capacity) { skipped = true; continue }
+      next.add(id)
+      if (!candidate.alreadyTracked) newCount++
+    }
+    setSelectedAccounts(next)
+    if (skipped) toast(`Ton offre est limitée à ${capacity} comptes suivis — seuls les premiers comptes tiennent dans la limite.`, 'error')
+  }
+
   const togglePerson = (candidate: PersonCandidate) => {
     const id = candidate.contactId
     if (selectedPeople.has(id)) {
@@ -182,6 +208,65 @@ export function AddEntitiesModal({ workspaceId, initialTab = 'compte', filterAcc
     return [...map.values()].sort((a, b) => b.items.reduce((s, p) => s + p.interactions, 0) - a.items.reduce((s, p) => s + p.interactions, 0))
   }, [filteredPeople, accountsById, selectedAccounts])
 
+  // Sélectionne/désélectionne toutes les personnes d'un même compte (groupe de la
+  // maquette). Même règle que togglePerson : ajoute le compte s'il n'est pas
+  // encore couvert, sans dépasser la capacité.
+  const toggleGroup = (group: PersonGroup) => {
+    const ids = group.items.map((p) => p.contactId)
+    const allOn = ids.length > 0 && ids.every((id) => selectedPeople.has(id))
+    if (allOn) {
+      const next = new Set(selectedPeople)
+      ids.forEach((id) => next.delete(id))
+      setSelectedPeople(next)
+      return
+    }
+    const companyId = group.items[0]?.companyId ?? null
+    const account = companyId ? accountsById.get(companyId) : undefined
+    const accountCovered = !account || account.alreadyTracked || selectedAccounts.has(accountRowId(account))
+    if (account && !accountCovered && typeof capacity === 'number' && projectedTotal >= capacity) {
+      toast(`Ton offre est limitée à ${capacity} comptes suivis. « ${account.name} » ne peut pas être ajouté sans dépasser cette limite.`, 'error')
+      return
+    }
+    const next = new Set(selectedPeople)
+    ids.forEach((id) => next.add(id))
+    setSelectedPeople(next)
+    if (account && !accountCovered) {
+      setSelectedAccounts((current) => new Set(current).add(accountRowId(account)))
+      toast(`« ${account.name} » ajouté à ta sélection de comptes.`)
+    }
+  }
+
+  // Sélectionne/désélectionne toutes les personnes actuellement affichées (tous
+  // groupes confondus), ajoutant les comptes pas encore couverts au passage —
+  // s'arrête à la capacité plutôt que de dépasser silencieusement la limite.
+  const allPeopleSelected = filteredPeople.length > 0 && filteredPeople.every((p) => selectedPeople.has(p.contactId))
+  const toggleAllPeople = () => {
+    if (allPeopleSelected) {
+      const shown = new Set(filteredPeople.map((p) => p.contactId))
+      setSelectedPeople(new Set([...selectedPeople].filter((id) => !shown.has(id))))
+      return
+    }
+    const nextPeople = new Set(selectedPeople)
+    const accountsToAdd = new Set<string>()
+    const skippedAccountNames = new Set<string>()
+    let newAccCount = newAccountIds.length
+    for (const person of filteredPeople) {
+      if (nextPeople.has(person.contactId)) continue
+      const account = person.companyId ? accountsById.get(person.companyId) : undefined
+      const accountId = account ? accountRowId(account) : null
+      const accountCovered = !account || account.alreadyTracked || selectedAccounts.has(accountId!) || accountsToAdd.has(accountId!)
+      if (account && !accountCovered) {
+        if (typeof capacity === 'number' && existingTrackedCount + newAccCount >= capacity) { skippedAccountNames.add(account.name); continue }
+        accountsToAdd.add(accountId!)
+        newAccCount++
+      }
+      nextPeople.add(person.contactId)
+    }
+    setSelectedPeople(nextPeople)
+    if (accountsToAdd.size) setSelectedAccounts((current) => { const next = new Set(current); accountsToAdd.forEach((id) => next.add(id)); return next })
+    if (skippedAccountNames.size) toast(`Ton offre est limitée à ${capacity} comptes suivis — ${[...skippedAccountNames].join(', ')} n'${skippedAccountNames.size > 1 ? 'ont' : 'a'} pas pu être ajouté${skippedAccountNames.size > 1 ? 's' : ''}.`, 'error')
+  }
+
   const hasWork = newAccountIds.length > 0 || selectedPeople.size > 0
 
   const confirm = async () => {
@@ -243,11 +328,14 @@ export function AddEntitiesModal({ workspaceId, initialTab = 'compte', filterAcc
               : <>
                 <div className="tin-toolbar">
                   <div className="tin-search">{SearchIcon}<input value={accQuery} onChange={(event) => setAccQuery(event.target.value)} placeholder="Rechercher un compte…" aria-label="Rechercher un compte" /></div>
+                  <button type="button" className="tin-selall" onClick={toggleAllAccounts}>
+                    {displayedAccounts.length > 0 && displayedAccounts.every((c) => selectedAccounts.has(accountRowId(c))) ? 'Tout désélectionner' : `Tout sélectionner (${displayedAccounts.length})`}
+                  </button>
                 </div>
                 <div className="tin-tblwrap">
                   <table className="tin-tbl">
                     <thead><tr>
-                      <th className="nosort" />
+                      <th className="nosort"><span className={`tin-ck${displayedAccounts.length > 0 && displayedAccounts.every((c) => selectedAccounts.has(accountRowId(c))) ? ' on' : ''}`} role="checkbox" aria-checked={displayedAccounts.length > 0 && displayedAccounts.every((c) => selectedAccounts.has(accountRowId(c)))} aria-label="Tout sélectionner" onClick={toggleAllAccounts} /></th>
                       <th className={accSortKey === 'name' ? 'sorted' : ''} onClick={() => sortAccountsBy('name')}>Compte {accArrow('name')}</th>
                       <th className="nosort opt">Interlocuteurs</th>
                       <th className={`opt ${accSortKey === 'interactions' ? 'sorted' : ''}`} onClick={() => sortAccountsBy('interactions')}>Historique {accArrow('interactions')}</th>
@@ -287,10 +375,18 @@ export function AddEntitiesModal({ workspaceId, initialTab = 'compte', filterAcc
               : <>
                 <div className="tin-toolbar">
                   <div className="tin-search">{SearchIcon}<input value={perQuery} onChange={(event) => setPerQuery(event.target.value)} placeholder="Rechercher une personne ou un compte…" aria-label="Rechercher une personne" /></div>
+                  <button type="button" className="tin-selall" onClick={toggleAllPeople}>{allPeopleSelected ? 'Tout désélectionner' : `Tout sélectionner (${filteredPeople.length})`}</button>
                 </div>
                 <div className="tin-tblwrap">
-                  {peopleGroups.length ? peopleGroups.map((group) => <div className="tin-grp" key={group.key}>
-                    <div className="tin-grp-head"><span>{group.accountName}</span><span className={`n ${group.tracked ? 'tracked' : 'new'}`}>{group.tracked ? 'compte suivi' : 'compte pas encore suivi'}</span></div>
+                  {peopleGroups.length ? peopleGroups.map((group) => {
+                    const groupAllOn = group.items.length > 0 && group.items.every((p) => selectedPeople.has(p.contactId))
+                    return <div className="tin-grp" key={group.key}>
+                    <div className="tin-grp-head" role="checkbox" aria-checked={groupAllOn} onClick={() => toggleGroup(group)}>
+                      <span className={`tin-ck${groupAllOn ? ' on' : ''}`} aria-hidden="true" />
+                      <span>{group.accountName}</span>
+                      <span className="tin-grp-count">{group.items.length} personne{group.items.length > 1 ? 's' : ''}</span>
+                      <span className={`n ${group.tracked ? 'tracked' : 'new'}`}>{group.tracked ? 'compte suivi' : 'compte pas encore suivi'}</span>
+                    </div>
                     {group.items.map((person) => {
                       const on = selectedPeople.has(person.contactId)
                       return <div key={person.contactId} className={`tin-prow${on ? ' sel' : ''}`} onClick={() => togglePerson(person)}>
@@ -302,7 +398,7 @@ export function AddEntitiesModal({ workspaceId, initialTab = 'compte', filterAcc
                         <span className="tin-hist">{person.interactions} échange{person.interactions > 1 ? 's' : ''} · {relLabel(person.lastInteractionAt)}</span>
                       </div>
                     })}
-                  </div>) : <div className="tin-state">Aucune personne ne correspond à ta recherche.</div>}
+                  </div>}) : <div className="tin-state">Aucune personne ne correspond à ta recherche.</div>}
                 </div>
               </>}
       </div>}
