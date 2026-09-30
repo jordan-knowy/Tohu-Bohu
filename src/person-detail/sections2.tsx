@@ -365,7 +365,9 @@ function buildRelationalMoments(data: PersonDetailData): RelMoment[] {
 }
 
 function momentDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  const date = new Date(iso)
+  const currentYear = new Date().getFullYear()
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', ...(date.getFullYear() !== currentYear ? { year: 'numeric' } : {}) })
 }
 
 type ClassifiedEvent = { id: string; occurredAt: string; upcoming: boolean; title: string; detail: string; tag: EventTag }

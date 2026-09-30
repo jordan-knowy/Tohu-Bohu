@@ -2815,7 +2815,7 @@
 .pp .v48-person-relation .kmi.renforce{--kml:#EEF8F2;--kmd:#2EA86A;--kmb:#EEF8F2;--kmt:#1E6B47}
 .pp .v48-person-relation .kmi.jalon{--kml:#F4F1FC;--kmd:#6E50C8;--kmb:#F4F1FC;--kmt:#6E50C8}
 .pp .v48-person-relation .kmi.neutre{--kml:#F6F5FB;--kmd:#8B84A3;--kmb:#EFEEF6;--kmt:#5F5878}
-.pp .v48-person-relation .kmi-d{flex:0 0 76px;font-family:var(--mono);font-size:10.5px;color:var(--t3);white-space:nowrap}
+.pp .v48-person-relation .kmi-d{flex:0 0 92px;font-family:var(--mono);font-size:10.5px;color:var(--t3);white-space:nowrap}
 .pp .v48-person-relation .kmi-p{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--kmd)}
 .pp .v48-person-relation .kmi-c{flex:1;min-width:0}
 .pp .v48-person-relation .kmi-t{font-family:var(--font);font-weight:800;font-size:13.5px;line-height:1.4;margin:0;letter-spacing:-.01em}
