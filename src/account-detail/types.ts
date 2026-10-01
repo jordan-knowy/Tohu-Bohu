@@ -68,6 +68,31 @@ export type AccountMemoryEntry = {
   provenance: Provenance
 }
 
+// Mémoire et moments clés remontés depuis chaque personne du compte (fiche
+// Personne), cumulés ici pour donner une vision compte — jamais une donnée
+// dupliquée en base, juste la même source lue avec contact_id IN (people).
+export type AccountPersonMemoryEntry = {
+  id: string
+  personId: string
+  personName: string
+  personAvatarUrl: string | null
+  entryType: string
+  content: string
+  authorName: string
+  createdAt: string
+}
+
+export type AccountPersonKeyMoment = {
+  id: string
+  personId: string
+  personName: string
+  personAvatarUrl: string | null
+  occurredAt: string
+  title: string
+  summary: string | null
+  impact: 'friction' | 'reinforce' | 'milestone'
+}
+
 export type AccountFirmographicFact = {
   id: string
   key: string
@@ -155,5 +180,8 @@ export interface AccountDetailData {
   // veille coupée), sans changer ce que voit l'onglet Relation via `signals`.
   signalsHistory: AccountSignal[]
   memoryEntries: AccountMemoryEntry[]
+  // Mémoire/moments clés des personnes du compte, cumulés (§ vision compte).
+  personMemoryEntries: AccountPersonMemoryEntry[]
+  personKeyMoments: AccountPersonKeyMoment[]
   firmographics: AccountFirmographicFact[]
 }

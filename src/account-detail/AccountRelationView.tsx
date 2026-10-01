@@ -446,7 +446,7 @@ function StrategicReadingSection({ data, brain }: { data: AccountDetailData; bra
 }
 
 // ── Historique & mémoire ─────────────────────────────────────────────────────
-type Moment = { id: string; date: string | null; impact: 'renf' | 'frict' | 'jalon' | 'neut'; label: string; title: string; meta: string | null; avatarLabel: string | null }
+type Moment = { id: string; date: string | null; impact: 'renf' | 'frict' | 'jalon' | 'neut'; label: string; title: string; meta: string | null; avatarLabel: string | null; avatarUrl?: string | null }
 const IMPACT_LABEL: Record<Moment['impact'], string> = { renf: 'Renforce', frict: 'Friction', jalon: 'Jalon', neut: 'Contexte' }
 const BRAIN_IMPACT_TO_MOMENT: Record<string, Moment['impact']> = { friction: 'frict', reinforce: 'renf', milestone: 'jalon', neutral: 'neut' }
 
@@ -459,6 +459,18 @@ function momentsFrom(data: AccountDetailData, brain: AccountBrainDTO | null): Mo
     return { id: `sig-${s.id}`, date: s.provenance.observedAt, impact, label: s.title, title: s.title, meta: s.summary ?? s.impact ?? s.provenance.sourceLabel, avatarLabel: person ? initials(person.name) : null }
   })
   const fromMemory: Moment[] = data.memoryEntries.map((m) => ({ id: `mem-${m.id}`, date: m.createdAt, impact: 'neut', label: m.content, title: m.content, meta: `${m.entryType} · ${m.authorName}`, avatarLabel: initials(m.authorName) }))
+  // Mémoire et moments clés cumulés depuis chaque fiche Personne du compte
+  // (person_memory_entries / person_key_moments) — même contenu que dans
+  // « Historique & mémoire » côté Personne, avec photo/initiale pour savoir
+  // à qui chaque moment est attribué (vision compte, §ce message).
+  const fromPersonMemory: Moment[] = data.personMemoryEntries.map((m) => ({
+    id: `pmem-${m.id}`, date: m.createdAt, impact: 'neut', label: m.content, title: m.content,
+    meta: `${m.entryType} · ${m.personName}`, avatarLabel: initials(m.personName), avatarUrl: m.personAvatarUrl,
+  }))
+  const fromPersonMoments: Moment[] = data.personKeyMoments.map((m) => ({
+    id: `pkm-${m.id}`, date: m.occurredAt, impact: BRAIN_IMPACT_TO_MOMENT[m.impact] ?? 'jalon', label: m.title, title: m.title,
+    meta: [m.summary, m.personName].filter(Boolean).join(' · '), avatarLabel: initials(m.personName), avatarUrl: m.personAvatarUrl,
+  }))
   // Engagements tenus/écartés (account_brain.history) : un engagement RESOLVED
   // retiré de « Ce qu'il faut faire » réapparaît ici comme moment réel — jamais
   // un événement fabriqué pour combler la timeline.
@@ -466,7 +478,7 @@ function momentsFrom(data: AccountDetailData, brain: AccountBrainDTO | null): Mo
     id: `fact-${h.id}`, date: h.occurred_at, impact: BRAIN_IMPACT_TO_MOMENT[h.impact ?? ''] ?? 'neut',
     label: h.title, title: h.title, meta: h.status === 'resolved' ? 'Engagement tenu' : h.status, avatarLabel: null,
   }))
-  return [...fromSignals, ...fromMemory, ...fromBrain].filter((m) => m.date).sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
+  return [...fromSignals, ...fromMemory, ...fromPersonMemory, ...fromPersonMoments, ...fromBrain].filter((m) => m.date).sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
 }
 
 const FILTERABLE_IMPACTS: Moment['impact'][] = ['renf', 'frict']
@@ -478,7 +490,7 @@ function MomentCard({ moment, onDismiss }: { moment: Moment; onDismiss?: () => v
     <span className="kmi-d">{dateLabel(moment.date)}</span>
     <span className="kmi-p" aria-hidden="true" />
     <div className="kmi-c"><p className="kmi-t">{moment.title}</p>{moment.meta && <p className="kmi-s">{moment.meta}</p>}</div>
-    {moment.avatarLabel && <span className="kmi-av" title={moment.avatarLabel}>{moment.avatarLabel}</span>}
+    {moment.avatarLabel && <span className="kmi-av" title={moment.avatarLabel}>{moment.avatarUrl ? <img src={moment.avatarUrl} alt="" /> : moment.avatarLabel}</span>}
     <span className="kmi-e">{IMPACT_LABEL[moment.impact]}</span>
   </div>
 }
@@ -513,6 +525,7 @@ function HistorySection({ data, userId, refresh, brain }: { data: AccountDetailD
 
   const moments = useMemo(() => momentsFrom(data, brain), [data, brain])
   const visible = useMemo(() => moments.filter((m) => !dismissedIds.has(m.id)), [moments, dismissedIds])
+  const memoryCount = data.memoryEntries.length + data.personMemoryEntries.length
   const filtered = filter === 'all' ? visible : visible.filter((m) => m.impact === filter)
   const shown = expanded ? filtered : filtered.slice(0, 5)
   const rest = filtered.length - shown.length
@@ -528,7 +541,7 @@ function HistorySection({ data, userId, refresh, brain }: { data: AccountDetailD
     <section className="sec">
       <div className="sec-h">
         <span className="hm-i">{HistoryIcon}</span><p className="sec-t">Historique &amp; mémoire du compte</p>
-        <span className="memc">{data.memoryEntries.length} engagement{data.memoryEntries.length > 1 ? 's' : ''} en mémoire</span>
+        <span className="memc">{memoryCount} engagement{memoryCount > 1 ? 's' : ''} en mémoire</span>
         <button type="button" className="hm-collapse" aria-expanded={!collapsed} onClick={() => setCollapsed((v) => !v)}>{collapsed ? 'Déplier ↓' : 'Replier ↑'}</button>
       </div>
       {!collapsed && <div className="sec-b">

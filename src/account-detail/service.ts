@@ -4,6 +4,8 @@ import type {
   AccountFirmographicFact,
   AccountMemoryEntry,
   AccountPerson,
+  AccountPersonKeyMoment,
+  AccountPersonMemoryEntry,
   AccountRecommendation,
   AccountSignal,
   Provenance,
@@ -167,6 +169,55 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     }
   })
   const peopleNames = new Map(people.map((person) => [person.id, person.name]))
+  const peopleById = new Map(people.map((person) => [person.id, person]))
+  // Vision compte = même mémoire/moments clés que chaque fiche Personne
+  // (person_memory_entries / person_key_moments), lus pour tous les contacts
+  // du compte — jamais une table dupliquée, juste la source réelle cumulée.
+  const personIds = people.map((person) => person.id)
+  const emptyResult: QueryResult = { data: [], error: null }
+  const [personMemoryResult, personKeyMomentsResult]: [QueryResult, QueryResult] = personIds.length
+    ? await Promise.all([
+      client.from('person_memory_entries').select('*').eq('organization_id', workspaceId).in('contact_id', personIds).eq('author_user_id', visionOwnerId).order('created_at', { ascending: false }).limit(200),
+      client.from('person_key_moments').select('*').eq('organization_id', workspaceId).in('contact_id', personIds).order('occurred_at', { ascending: false }).limit(200),
+    ])
+    : [emptyResult, emptyResult]
+  const personMemoryRows = rows(optional(personMemoryResult, 'Mémoire des personnes', degradedReasons))
+  const personKeyMomentRows = rows(optional(personKeyMomentsResult, 'Moments clés des personnes', degradedReasons))
+  const newAuthorIds = [...new Set(personMemoryRows.map((row) => text(row.author_user_id)).filter((id): id is string => id !== null && !profileNames.has(id)))]
+  if (newAuthorIds.length) {
+    const { data: extraProfileData } = await client.from('profiles').select('id,full_name').in('id', newAuthorIds)
+    rows(extraProfileData).forEach((row) => profileNames.set(String(row.id), text(row.full_name) ?? 'Membre Tohu'))
+  }
+  const personMemoryEntries: AccountPersonMemoryEntry[] = personMemoryRows.flatMap((row) => {
+    const person = peopleById.get(String(row.contact_id))
+    if (!person) return []
+    return [{
+      id: String(row.id),
+      personId: person.id,
+      personName: person.name,
+      personAvatarUrl: person.avatarUrl,
+      entryType: text(row.entry_type) ?? 'note',
+      content: text(row.content) ?? '',
+      authorName: profileNames.get(String(row.author_user_id)) ?? 'Membre Tohu',
+      createdAt: text(row.created_at) ?? new Date().toISOString(),
+    }]
+  })
+  const KEY_MOMENT_IMPACTS = new Set(['friction', 'reinforce', 'milestone'])
+  const personKeyMoments: AccountPersonKeyMoment[] = personKeyMomentRows.flatMap((row) => {
+    const person = peopleById.get(String(row.contact_id))
+    const impact = String(row.impact ?? 'milestone')
+    if (!person) return []
+    return [{
+      id: String(row.id),
+      personId: person.id,
+      personName: person.name,
+      personAvatarUrl: person.avatarUrl,
+      occurredAt: text(row.occurred_at) ?? text(row.created_at) ?? new Date().toISOString(),
+      title: text(row.title) ?? 'Moment',
+      summary: text(row.summary),
+      impact: (KEY_MOMENT_IMPACTS.has(impact) ? impact : 'milestone') as AccountPersonKeyMoment['impact'],
+    }]
+  })
   const latestScore: Row = object(scoreRows[0])
   const meetingRows = rows(meetingsResult.data)
   const meetingProviders = new Map<string, number>()
@@ -328,6 +379,8 @@ export async function getAccountDetail(workspaceId: string, accountId: string, v
     signals: visibleSignals,
     signalsHistory,
     memoryEntries,
+    personMemoryEntries,
+    personKeyMoments,
     firmographics,
   }
 }

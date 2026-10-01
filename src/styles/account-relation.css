@@ -169,7 +169,8 @@
 .acr .kmi-c{flex:1;min-width:0}
 .acr .kmi-t{font-family:'Epilogue',sans-serif;font-weight:800;font-size:13.5px;line-height:1.4;margin:0;letter-spacing:-.01em}
 .acr .kmi-s{font-size:11.5px;line-height:1.5;color:var(--mut);margin:3px 0 0}
-.acr .kmi-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#EFEBF9;color:var(--v);display:flex;align-items:center;justify-content:center;font-family:'Epilogue',sans-serif;font-weight:800;font-size:9px}
+.acr .kmi-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#EFEBF9;color:var(--v);display:flex;align-items:center;justify-content:center;font-family:'Epilogue',sans-serif;font-weight:800;font-size:9px;overflow:hidden}
+.acr .kmi-av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .acr .kmi-e{flex:0 0 auto;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.11em;text-transform:uppercase;border-radius:999px;padding:4px 10px;background:var(--kmb);color:var(--kmt)}
 .acr .kmi-x{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:0;border-radius:50%;background:rgba(255,255,255,.7);color:var(--pale);cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s}
 .acr .kmi-x svg{width:11px;height:11px}
