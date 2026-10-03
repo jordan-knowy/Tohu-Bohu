@@ -31,6 +31,11 @@ export interface BrainEngagement {
   id: string; title: string; detail: string | null; status: string; due_window_end: string | null
   is_overdue: boolean | null; resolved_at: string | null; occurred_at: string | null; evidence_count: number
   owner_contact_id: string | null; owner_user_id: string | null; evidence: BrainFactEvidence[]
+  /** 'person_memory' = engagement détecté sur une personne (person_memory_entries),
+   *  sinon fait du registre account_facts. contact_id = personne concernée. */
+  origin?: 'person_memory'; contact_id?: string | null
+  /** 'manual' = saisie dans l'UI, 'detected' = lue dans l'analyse des échanges. */
+  due_source?: 'manual' | 'detected' | null
 }
 export interface AccountBrainDTO {
   generated_at: string
@@ -103,9 +108,16 @@ export async function fetchAccountBrain(organizationId: string, companyId: strin
 }
 
 /** ✓ « Fait » sur un engagement actif — statut terminal global (tenu). */
-export async function resolveAccountEngagement(organizationId: string, companyId: string, factId: string, userId: string): Promise<void> {
+export async function resolveAccountEngagement(organizationId: string, companyId: string, factId: string, userId: string, origin?: BrainEngagement['origin']): Promise<void> {
   const { getSupabase } = await import('../../lib/supabase')
   const now = new Date().toISOString()
+  if (origin === 'person_memory') {
+    const { error } = await getSupabase().from('person_memory_entries')
+      .update({ resolved_at: now, resolved_by: userId, updated_at: now })
+      .eq('id', factId).eq('organization_id', organizationId)
+    if (error) throw error
+    return
+  }
   const { error } = await getSupabase().from('account_facts')
     .update({ status: 'resolved', resolved_at: now, resolved_by: userId, updated_at: now })
     .eq('organization_id', organizationId).eq('company_id', companyId).eq('id', factId)
@@ -115,11 +127,30 @@ export async function resolveAccountEngagement(organizationId: string, companyId
 /** × « Pas pour moi » sur un engagement — masque UNIQUEMENT pour l'utilisateur
  *  courant (account_fact_user_state.ignored_at), même doctrine que
  *  dismissRecommendationForMe : ne touche jamais account_facts.status. */
-export async function dismissAccountEngagementForMe(organizationId: string, companyId: string, factId: string, userId: string): Promise<void> {
+export async function dismissAccountEngagementForMe(organizationId: string, companyId: string, factId: string, userId: string, origin?: BrainEngagement['origin']): Promise<void> {
   const { getSupabase } = await import('../../lib/supabase')
+  if (origin === 'person_memory') {
+    // Même mécanique que la fiche personne : sorti du suivi actif, jamais supprimé.
+    const now = new Date().toISOString()
+    const { error } = await getSupabase().from('person_memory_entries')
+      .update({ dismissed_at: now, dismissed_by: userId, updated_at: now })
+      .eq('id', factId).eq('organization_id', organizationId)
+    if (error) throw error
+    return
+  }
   const { error } = await getSupabase().from('account_fact_user_state').upsert({
     fact_id: factId, user_id: userId, organization_id: organizationId, company_id: companyId,
     ignored_at: new Date().toISOString(), ignore_reason: 'not_relevant',
   }, { onConflict: 'fact_id,user_id' })
+  if (error) throw error
+}
+
+/** Échéance saisie à la main sur un engagement détecté (date AAAA-MM-JJ, ou null
+ *  pour l'effacer). Prime sur la date éventuellement détectée dans le texte. */
+export async function setEngagementDue(organizationId: string, entryId: string, dueDate: string | null): Promise<void> {
+  const { getSupabase } = await import('../../lib/supabase')
+  const { error } = await getSupabase().from('person_memory_entries')
+    .update({ due_at: dueDate, updated_at: new Date().toISOString() })
+    .eq('id', entryId).eq('organization_id', organizationId)
   if (error) throw error
 }

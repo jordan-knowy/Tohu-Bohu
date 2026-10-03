@@ -6,7 +6,7 @@ import { fetchWorkspaceMembers, type WorkspaceMember } from '../person-detail/se
 import { addAccountNote, dismissRecommendationForMe, setRecommendationAssignee, updateRecommendationStatus } from './service'
 import type { AccountDetailData, AccountPerson } from './types'
 import { WeatherHero, WeatherSection, useAccountBrain } from './AccountWeatherV6'
-import { dismissAccountEngagementForMe, resolveAccountEngagement } from '../services/account-brain/accountBrain'
+import { dismissAccountEngagementForMe, resolveAccountEngagement, setEngagementDue } from '../services/account-brain/accountBrain'
 import type { AccountBrainDTO, BrainEngagement } from '../services/account-brain/accountBrain'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -257,11 +257,14 @@ function RecOwnerAvatar({ rec, data, userId, refresh, members, loadMembers }: {
  *  recommandations). Jamais d'owner inventé : contact/membre réels ou état
  *  « non attribué » explicite. */
 function EngagementOwner({ eng, data, members }: { eng: BrainEngagement; data: AccountDetailData; members: WorkspaceMember[] | null }) {
-  const contact = eng.owner_contact_id ? data.people.find((p) => p.id === eng.owner_contact_id) ?? null : null
+  // Personne concernée par l'engagement : celle qui s'est engagée, sinon (direction
+  // inconnue) celle sur qui il a été détecté — jamais un owner deviné.
+  const contactId = eng.owner_contact_id ?? (eng.owner_user_id ? null : eng.contact_id ?? null)
+  const contact = contactId ? data.people.find((p) => p.id === contactId) ?? null : null
   const member = !contact && eng.owner_user_id ? members?.find((m) => m.id === eng.owner_user_id) ?? null : null
   if (contact) {
     const tone = ownerTone(contact.id)
-    return <span className="mv-owner" style={{ borderColor: tone.border, color: tone.border, background: tone.bg }} title={`Porté par ${contact.name}`}>
+    return <span className="mv-owner" style={{ borderColor: tone.border, color: tone.border, background: tone.bg }} title={`Engagement de ${contact.name}`}>
       {contact.avatarUrl ? <img src={contact.avatarUrl} alt="" /> : initials(contact.name)}
     </span>
   }
@@ -327,7 +330,7 @@ function ActionRow({ item, data, userId, refresh, busy, open, onToggleOpen, onDo
       <div className="acf-c">
         <div className="acf-h">
           <p className="acf-t">{eng.title}</p>
-          <span className={`acf-due ${due?.overdue ? 'overdue' : ''}`}>{due?.label ?? 'échéance à confirmer'}</span>
+          <EngagementDue eng={eng} organizationId={data.account.workspaceId} refresh={refresh} />
         </div>
         {eng.detail && <p className="acf-d">{eng.detail}</p>}
         {open && <div className="acf-detail">
@@ -346,6 +349,34 @@ function ActionRow({ item, data, userId, refresh, busy, open, onToggleOpen, onDo
       </div>
     </article>
   )
+}
+
+/** Échéance d'un engagement : lue automatiquement quand l'analyse l'a trouvée,
+ *  sinon saisie ici à la main (clic → date). Seuls les engagements détectés sur
+ *  une personne (origin person_memory) sont éditables. */
+function EngagementDue({ eng, organizationId, refresh }: { eng: BrainEngagement; organizationId: string; refresh: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const due = dueLabel(eng.due_window_end, eng.is_overdue)
+  const editable = eng.origin === 'person_memory'
+  const save = (value: string | null) => {
+    setBusy(true)
+    void setEngagementDue(organizationId, eng.id, value).then(refresh).then(() => setEditing(false)).finally(() => setBusy(false))
+  }
+  if (editing && editable) {
+    return <span className="acf-due-edit">
+      <input type="date" autoFocus disabled={busy} defaultValue={eng.due_window_end?.slice(0, 10) ?? ''} aria-label="Échéance"
+        onChange={(event) => { if (event.target.value) save(event.target.value) }} onKeyDown={(event) => { if (event.key === 'Escape') setEditing(false) }} />
+      {eng.due_source === 'manual' && <button type="button" disabled={busy} onClick={() => save(null)} title="Effacer l’échéance">Effacer</button>}
+      <button type="button" disabled={busy} onClick={() => setEditing(false)}>Annuler</button>
+    </span>
+  }
+  const text = due?.label ?? 'échéance à confirmer'
+  if (!editable) return <span className={`acf-due ${due?.overdue ? 'overdue' : ''}`}>{text}</span>
+  return <button type="button" className={`acf-due acf-due-btn ${due?.overdue ? 'overdue' : ''}`} onClick={() => setEditing(true)}
+    title={eng.due_source === 'detected' ? 'Échéance détectée dans l’échange — cliquer pour la modifier' : 'Cliquer pour renseigner l’échéance'}>
+    {due ? `${text}${eng.due_source === 'manual' ? '' : ' · détectée'}` : '+ ajouter une échéance'}
+  </button>
 }
 
 const ACTIONS_PAGE_SIZE = 4
@@ -410,10 +441,10 @@ function ActionsSection({ data, userId, refresh, brain, organizationId }: {
                 busy={busy === item.id} open={openKey === key} onToggleOpen={() => setOpenKey((v) => (v === key ? null : key))}
                 onDone={() => item.kind === 'mouvement'
                   ? run(item.id, () => updateRecommendationStatus(data, item.id, userId, 'completed'))
-                  : run(item.id, () => resolveAccountEngagement(organizationId, data.account.id, item.id, userId))}
+                  : run(item.id, () => resolveAccountEngagement(organizationId, data.account.id, item.id, userId, item.eng.origin))}
                 onDismiss={() => item.kind === 'mouvement'
                   ? run(item.id, () => dismissRecommendationForMe(data, item.id, userId))
-                  : run(item.id, () => dismissAccountEngagementForMe(organizationId, data.account.id, item.id, userId))}
+                  : run(item.id, () => dismissAccountEngagementForMe(organizationId, data.account.id, item.id, userId, item.eng.origin))}
                 members={members} loadMembers={loadMembers} />
             })}
           </div>
@@ -642,7 +673,7 @@ export function AccountRelationView({ data, userId, currentUserName, refresh, na
   organizationId: string
   v6Enabled: boolean
 }) {
-  const brain = useAccountBrain(organizationId, data.account.id, v6Enabled)
+  const brain = useAccountBrain(organizationId, data.account.id, true)
   // Ordre narratif (brief refonte fiche Compte) : où on en est → météo → ce qui
   // a changé récemment → organigramme → ce qu'il faut faire (engagements +
   // mouvements fusionnés, §24) → mémoire relationnelle. Une seule colonne — la
@@ -650,14 +681,14 @@ export function AccountRelationView({ data, userId, currentUserName, refresh, na
   // sections V6 (météo/changement récent/engagements) ne s'affichent que
   // derrière le flag scoring_v6_ui et seulement une fois account_brain chargé —
   // jamais un état intermédiaire fabriqué pendant le chargement ; sans le
-  // flag, « Ce qu'il faut faire » ne montre que les mouvements Tohu (les
-  // engagements ne viennent que de account_brain).
+  // flag, seules les sections météo/changement récent sont masquées : les
+  // engagements (account_brain) alimentent toujours « Ce qu'il faut faire ».
   return (
     <div className="acr">
       <StrategicReadingSection data={data} brain={v6Enabled ? brain : null} />
       {v6Enabled && brain && <WeatherSection brain={brain} />}
       <StakeholderSection people={data.people} navigate={navigate} />
-      <ActionsSection data={data} userId={userId} refresh={refresh} brain={v6Enabled ? brain : null} organizationId={organizationId} />
+      <ActionsSection data={data} userId={userId} refresh={refresh} brain={brain} organizationId={organizationId} />
       <HistorySection data={data} userId={userId} refresh={refresh} brain={v6Enabled ? brain : null} />
     </div>
   )
